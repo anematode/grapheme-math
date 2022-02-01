@@ -6,6 +6,7 @@
 
 import { flrLog2, frExp, getExponentAndMantissa, isDenormal, pow2 } from '../fp/manip.js'
 import { ROUNDING_MODE } from '../rounding_modes.js'
+import {leftZeroPad, trimLeft} from "../../grapheme_shared.js"
 
 const BIGFLOAT_WORD_BITS = 30
 const RECIP_BIGFLOAT_WORD_BITS = 1 / BIGFLOAT_WORD_BITS
@@ -3490,22 +3491,6 @@ export class BigFloat {
 // Used for intermediate calculations to avoid allocating floats unnecessarily
 const DOUBLE_STORE = BigFloat.new(53)
 
-function leftZeroPad (str, len, char = '0') {
-  if (str.length >= len) return str
-
-  return char.repeat(len - str.length) + str
-}
-
-function trimLeft (str, char) {
-  let i = 0
-  for (; i < str.length; ++i) {
-    if (str.charAt(i) !== char)
-      break
-  }
-
-  return str.substring(i)
-}
-
 export function prettyPrintMantissa (mantissa, color="\x1b[32m") {
   return '[ ' + Array.from(mantissa).map(toHex).map(s => `${color}${s}\x1b[0m`).join(', ') + ' ]'
 }
@@ -3534,4 +3519,60 @@ export function verifyMantissa (mantissa) {
     else if (m > 0x3fffffff)
       throw new Error(`Mantissa has an overflowed word ${toHex(m)} at index ${i}`)
   }
+}
+
+function referenceMultiplyMantissas (mant1, mant2, precision, targetMantissa, roundingMode) {
+  let arr = new Int32Array(mant1.length + mant2.length + 1)
+
+  for (let i = mant1.length; i >= 0; --i) {
+    let mant1Word = mant1[i] | 0
+    let mant1WordLo = mant1Word & 0x7fff
+    let mant1WordHi = mant1Word >> 15
+
+    let carry = 0,
+      j = mant2.length - 1
+    for (; j >= 0; --j) {
+      let mant2Word = mant2[j] | 0
+      let mant2WordLo = mant2Word & 0x7fff
+      let mant2WordHi = mant2Word >> 15
+
+      let low = Math.imul(mant1WordLo, mant2WordLo),
+        high = Math.imul(mant1WordHi, mant2WordHi)
+      let middle =
+        (Math.imul(mant2WordLo, mant1WordHi) +
+          Math.imul(mant1WordLo, mant2WordHi)) |
+        0
+
+      low += ((middle & 0x7fff) << 15) + carry + arr[i + j + 1]
+      low >>>= 0
+
+      if (low > 0x3fffffff) {
+        high += low >>> 30
+        low &= 0x3fffffff
+      }
+
+      high += middle >> 15
+
+      arr[i + j + 1] = low
+      carry = high
+    }
+
+    arr[i] += carry
+  }
+
+  let shift = 0
+
+  if (arr[0] === 0) {
+    leftShiftMantissa(arr, 30)
+    shift -= 1
+  }
+
+  shift += roundMantissaToPrecision(
+    arr,
+    precision,
+    targetMantissa,
+    roundingMode
+  )
+
+  return shift
 }
