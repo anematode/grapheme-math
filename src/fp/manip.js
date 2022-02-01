@@ -2,34 +2,6 @@
 export const floatStore = new Float64Array(1)
 export const intView = new Uint32Array(floatStore.buffer)
 
-/**
- * Returns the next floating point number after a positive x, but doesn't account for special cases.
- * @param x {number}
- * @returns {number}
- * @private
- */
-function _roundUp (x) {
-  floatStore[0] = x
-
-  if (++intView[0] === 4294967296 /* uint32_max + 1 */) ++intView[1]
-
-  return floatStore[0]
-}
-
-/**
- * Returns the previous floating point number before a positive x, but doesn't account for special cases.
- * @param x {number}
- * @returns {number}
- * @private
- */
-function _roundDown (x) {
-  floatStore[0] = x
-
-  if (--intView[0] === -1) --intView[1]
-
-  return floatStore[0]
-}
-
 const MAGIC_ROUND_C = 1.1113332476497816e-16 // just above machine epsilon / 2
 
 /**
@@ -61,24 +33,19 @@ export function roundUp (x) {
  * roundDown(Infinity) is Number.MAX_VALUE.
  * @param x {number} Any floating-point number
  * @returns {number} The previous representable floating-point number, handling special cases
- * @function roundDown
- * @memberOf FP
  */
 export function roundDown (x) {
-  if (x === Infinity) return Number.MAX_VALUE
-  if (x === -Infinity) return -Infinity
-  if (x === 0) return -Number.MIN_VALUE
-  if (Number.isNaN(x)) return NaN
+  if (x > -POSITIVE_NORMAL_MIN && x <= POSITIVE_NORMAL_MIN) {
+    return x - POSITIVE_DENORMAL_MIN
+  } else if (x === Infinity) {
+    return Number.MAX_VALUE
+  }
 
-  return x < 0 ? -_roundUp(-x) : _roundDown(x)
+  return x - Math.abs(x) * MAGIC_ROUND_C
 }
 
-// The first positive normal number
 const POSITIVE_NORMAL_MIN = 2.2250738585072014e-308
-
-// The first negative normal number
 const NEGATIVE_NORMAL_MAX = -POSITIVE_NORMAL_MIN
-
 const POSITIVE_DENORMAL_MIN = Number.MIN_VALUE
 
 /**
