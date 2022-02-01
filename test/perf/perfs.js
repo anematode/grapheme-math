@@ -1,5 +1,5 @@
 import { log, benchmark } from "./perf.js"
-import {PATHOLOGICAL_NUMBERS, TYPICAL_NUMBERS} from "../test_common.js"
+import { PATHOLOGICAL_NUMBERS, TYPICAL_NUMBERS } from "../test_common.js"
 import { roundUp } from "../../src/main.js"
 import { roundUp as referenceRoundUp } from "../../src/fp/reference.js"
 
