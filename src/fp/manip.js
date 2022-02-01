@@ -2,16 +2,17 @@
 export const floatStore = new Float64Array(1)
 export const intView = new Uint32Array(floatStore.buffer)
 
+const POSITIVE_NORMAL_MIN = 2.2250738585072014e-308
+const NEGATIVE_NORMAL_MAX = -POSITIVE_NORMAL_MIN
+const POSITIVE_DENORMAL_MIN = Number.MIN_VALUE
+const MAX_VALUE = Number.MAX_VALUE
+
 const MAGIC_ROUND_C = 1.1113332476497816e-16 // just above machine epsilon / 2
 
 /**
  * Returns the next floating point number after x. For example, roundUp(0) returns Number.MIN_VALUE.
- * Special cases (±inf, NaNs, 0) are handled separately. (An interesting special case is -Number.MIN_VALUE,
- * which would normally return -0 and thus must be handled separately.) Then, the float is put into a TypedArray,
- * treated as an integer, and incremented, which sets it to the next representable value. roundUp should
- * NEVER return -0 or -Infinity, but it can accept those values. On my computer both these functions take about
- * 20 ns / call (October 2020). They need to be performant because they are called very often (every interval
- * function, pretty much).
+ * inf -> inf, -inf -> -min negative value, nan -> nan, -0, 0 -> min positive denormal, max negative denormal -> 0. This
+ * function is pretty darn fast and if it's inlined, is probably 2-4 ns / call.
  * @param x {number} Any floating-point number
  * @returns {number} The next representable floating-point number, handling special cases
  */
@@ -21,16 +22,14 @@ export function roundUp (x) {
     return x + POSITIVE_DENORMAL_MIN
   } else if (x === -Infinity) {
     // special case
-    return -Number.MAX_VALUE
+    return -MAX_VALUE
   }
 
   return x + Math.abs(x) * MAGIC_ROUND_C
 }
 
 /**
- * Returns the previous floating point number before x. For example, roundUp(0) returns -Number.MIN_VALUE. This function
- * should NEVER return -0 or +Infinity, but it can accept those values; roundDown(0) is -Number.MIN_VALUE and
- * roundDown(Infinity) is Number.MAX_VALUE.
+ * Returns the previous floating point number before x. Equivalent to -roundUp(-x)
  * @param x {number} Any floating-point number
  * @returns {number} The previous representable floating-point number, handling special cases
  */
@@ -38,15 +37,11 @@ export function roundDown (x) {
   if (x > -POSITIVE_NORMAL_MIN && x <= POSITIVE_NORMAL_MIN) {
     return x - POSITIVE_DENORMAL_MIN
   } else if (x === Infinity) {
-    return Number.MAX_VALUE
+    return MAX_VALUE
   }
 
   return x - Math.abs(x) * MAGIC_ROUND_C
 }
-
-const POSITIVE_NORMAL_MIN = 2.2250738585072014e-308
-const NEGATIVE_NORMAL_MAX = -POSITIVE_NORMAL_MIN
-const POSITIVE_DENORMAL_MIN = Number.MIN_VALUE
 
 /**
  * Return whether a number is denormal; see {@link https://en.wikipedia.org/wiki/Denormal_number|Wikipedia} for a
