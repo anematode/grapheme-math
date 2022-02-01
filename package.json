@@ -5,7 +5,8 @@
     "mocha": "^9.2.0"
   },
   "scripts": {
-    "test": "mocha --require esm"
+    "test": "mocha --require esm",
+    "start": "http-server -a localhost -p 8000 --ext js"
   },
   "type": "module"
 }

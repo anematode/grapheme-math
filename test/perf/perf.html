@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Grapheme Performance Tester</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            display: flex;
+        }
+
+        #test-list-wrapper {
+            padding: 10px;
+            width: 60%;
+            overflow-y: scroll;
+        }
+
+        #test-list > li {
+            display: flex;
+        }
+
+        .perf-name-label {
+            margin-right: 20px;
+        }
+
+        #console-wrapper {
+            padding: 10px;
+            width: 40%;
+            overflow-x: hidden;
+            overflow-y: hidden;
+        }
+
+        #console-contents {
+            width: 100%;
+            min-height: 60em;
+            overflow-x: hidden;
+            font-family: Courier New, monospace;
+        }
+
+        #console-input {
+            font-family: Courier New, monospace;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div id="test-list-wrapper">
+    <ul id="test-list"></ul>
+</div>
+<div id="console-wrapper">
+    <div id="console">
+        <textarea id="console-contents" contenteditable="false"></textarea>
+    </div>
+    <input id="console-input" />
+</div>
+
+<script type="module" src="perf.js"></script>
+<script type="module" src="perfs.js"></script>
+
+</body>
+</html>
