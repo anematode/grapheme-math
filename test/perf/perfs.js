@@ -1,6 +1,6 @@
 import { log, benchmark } from "./perf.js"
 import { PATHOLOGICAL_NUMBERS, TYPICAL_NUMBERS } from "../test_common.js"
-import { roundUp } from "../../src/main.js"
+import {addMantissas, roundUp} from "../../src/main.js"
 import { roundUp as referenceRoundUp } from "../../src/fp/reference.js"
 
 let displayedPerfList = document.getElementById("test-list")
@@ -26,7 +26,8 @@ function runPerf(perf) {
 
 let perfList = [
   { type: "single", name: "roundUp", benchmark: { f: roundUp, inputs: TYPICAL_NUMBERS.map(a => [a]), iterations: 1e5, exchangeLoops: false } },
-  { type: "single", name: "reference roundUp", benchmark: { f: referenceRoundUp, inputs: TYPICAL_NUMBERS.map(a => [a]), iterations: 4e4, exchangeLoops: false } }
+  { type: "single", name: "reference roundUp", benchmark: { f: referenceRoundUp, inputs: TYPICAL_NUMBERS.map(a => [a]), iterations: 4e4, exchangeLoops: false } },
+  { type: "single", name: "addMantissas", benchmark: {}}
 ]
 
 for (let perf of perfList) {

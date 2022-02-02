@@ -92,3 +92,8 @@ const typicalWords = [ 0x20000000, 0x2eefcafe, 0x32ab30ca, 0x00000000, 0x0000004
 typicalWords.forEach(w => w ? typicalMantissas.push([ w ]) : 0)
 typicalWords.forEach(w1 => w1 ? typicalWords.forEach(w2 => typicalMantissas.push([ w1, w2 ])) : 0)
 typicalWords.forEach(w1 => w1 ? typicalWords.forEach(w2 => typicalWords.forEach(w3 => typicalMantissas.push([ w1, w2, w3 ]))) : 0)
+
+// Credit to https://stackoverflow.com/a/43053803/13458117
+export function cartesianProduct (...args) {
+  return a.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat(1))))
+}
