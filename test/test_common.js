@@ -87,4 +87,8 @@ troublesomeWords.forEach(w => w ? difficultMantissas.push([ w ]) : 0)
 troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => difficultMantissas.push([ w1, w2 ])) : 0)
 troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => troublesomeWords.forEach(w3 => difficultMantissas.push([ w1, w2, w3 ]))) : 0)
 
+const typicalWords = [ 0x20000000, 0x2eefcafe, 0x32ab30ca, 0x00000000, 0x00000040, 0x0024feef ]
 
+typicalWords.forEach(w => w ? typicalMantissas.push([ w ]) : 0)
+typicalWords.forEach(w1 => w1 ? typicalWords.forEach(w2 => typicalMantissas.push([ w1, w2 ])) : 0)
+typicalWords.forEach(w1 => w1 ? typicalWords.forEach(w2 => typicalWords.forEach(w3 => typicalMantissas.push([ w1, w2, w3 ]))) : 0)

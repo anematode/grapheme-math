@@ -22,7 +22,7 @@ import {
   subtractMantissas as referenceSubtractMantissas,
   multiplyMantissas as referenceMultiplyMantissas
 } from "../src/arb/reference.js"
-import {difficultMantissas} from "./test_common.js"
+import {difficultMantissas, typicalMantissas} from "./test_common.js"
 import {expectMultipleCases} from "./test.js"
 
 const BF = BigFloat
@@ -98,7 +98,7 @@ describe("roundMantissaToPrecision", () => {
     testMantissaCase(roundMantissaToPrecision, [ [ 0x1fffffff, 0 ], 20, 200 /* excess target length */, RM.NEAREST, 0, 0 ], argNames, [ 0x20000000, 0 ], 0)
   })
 
-  // TODO test cases....
+  // TODO test cases... if there's a bug in here, I won't find it for a while...
 })
 
 describe("addMantissas", () => {
@@ -176,8 +176,6 @@ describe("subtractMantissas", () => {
   })
 })
 
-
-
 describe("multiplyMantissas", () => {
   it("should behave identically to the reference implementation", () => {
     let argNames = ["mant1", "mant2", "prec", "target", "round"]
@@ -185,24 +183,29 @@ describe("multiplyMantissas", () => {
     let cases = 0
     let startTime = Date.now()
 
-    for (let i = 0; i < difficultMantissas.length; ++i) {
-      const m1 = difficultMantissas[i]
-      for (const m2 of difficultMantissas) {
-        for (let targetSize = 0; targetSize < 5; ++targetSize) {
-          for (let precision of [30, 53, 59, 60, 120]) {
-            for (let roundingMode of [0, 1, 2, 5]) {
-              let target = new Int32Array(neededWordsForPrecision(precision))
-              let ret = referenceMultiplyMantissas(m1, m2, precision, target, roundingMode)
+    let testMantissas = [ ...typicalMantissas, ...difficultMantissas ]
 
-              testMantissaCase(multiplyMantissas, [m1, m2, precision, target.length, roundingMode], argNames, target, ret)
-              cases++
+
+      for (let i = 0; i < testMantissas.length; ++i) {
+        const m1 = testMantissas[i]
+        for (const m2 of testMantissas) {
+          for (let targetSize = 0; targetSize < 5; ++targetSize) {
+            for (let precision of [30, 53, 59, 60, 120]) {
+              for (let roundingMode of [0, 1, 2, 5]) {
+                let target = new Int32Array(neededWordsForPrecision(precision))
+                let ret = referenceMultiplyMantissas(m1, m2, precision, target, roundingMode)
+
+                testMantissaCase(multiplyMantissas, [m1, m2, precision, target.length, roundingMode], argNames, target, ret)
+                cases++
+              }
             }
           }
         }
-      }
 
-      (!(i % 10)) ? console.log(`Progress: ${(i / difficultMantissas.length * 100).toPrecision(4)}% complete`) : 0
+        (!(i % 10)) ? console.log(`Progress: ${(i / testMantissas.length * 100).toPrecision(4)}% complete`) : 0
     }
+
+    console.log(globalThis.cow)
 
     let endTime = Date.now()
     console.log(`Completed ${cases} test cases for multiplyMantissas, comparing to referenceMultiplyMantissas, in ${(endTime - startTime) / 1000} seconds.`)
@@ -252,6 +255,8 @@ describe("getTrailingInfo2", () => {
     expectMultipleCases(getTrailingInfo2, cases)
   })
 })
+
+// TODO: write tests for canRoundMantissa
 
 /*describe("DeltaFloat", () => {
   const DF = DeltaFloat

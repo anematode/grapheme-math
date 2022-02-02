@@ -631,12 +631,38 @@ export function canMantissaBeRounded (
     return maxPos + maxNeg < (1 << truncateLen)
   }
 
-  if (truncateLen === 1) {
-    if (isTies) return false;
-    if (isUp) {
-
-    }
+  let info = -5
+  function getTrailingInfo () {
+    return (info === -5) ? (info = getTrailingInfo2(mantissa, endWord + 1)) : info
   }
+
+  if (truncateLen === 1) {
+    // No matter what, the result might be different
+    return false;
+  }
+
+  let min = rem - maxNeg, max = rem + maxPos
+
+  if (isUp || isDown) {
+    if (rem === 0) {
+      if (min < -(1 << truncateLen) || (min < 0 && getTrailingInfo() >= 0) || (min === -(1 << truncateLen) && getTrailingInfo() < 0))
+        return false
+
+      return !(max > (1 << truncateLen) || (max > 0 && getTrailingInfo() <= 0) || (max === (1 << truncateLen) && getTrailingInfo() > 0))
+    }
+
+    if (min < 0) return false
+    if (max > (1 << truncateLen)) return false
+    if (min === 0 && getTrailingInfo() <= 0) return false
+    if (max === (1 << truncateLen) && getTrailingInfo() >= 0) return false
+
+    return true
+  }
+
+  // ties TODO: make less conservative and more efficient
+  let tieSplit = 1 << (truncateLen - 1)
+
+  return (rem > tieSplit) ? !(min < tieSplit || max > 3 * tieSplit) : !(min < -tieSplit || max > tieSplit)
 }
 
 /**
@@ -1173,7 +1199,7 @@ export function multiplyMantissas (
 
   // Low words that weren't counted on the first pass. Note that this number may overflow the 32 bit integer limit
   let ignoredLows = 0
-  let maxI = Math.min(targetMantissaLen, mant1Len - 1), maxJ = Math.min(targetMantissaLen - i, mant2Len - 1)
+  let maxI = Math.min(targetMantissaLen, mant1Len - 1)
 
   // Only add the products whose high words are within targetMantissa
   for (let i = maxI; i >= 0; --i) {
@@ -1182,7 +1208,7 @@ export function multiplyMantissas (
     let mant1Hi = mant1Word >> 15
 
     let carry = 0
-    for (let j = maxJ; j >= 0; --j) {
+    for (let j = Math.min(targetMantissaLen - i, mant2Len - 1); j >= 0; --j) {
       let writeIndex = i + j
 
       let mant2Word = mant2[j]
@@ -1231,10 +1257,10 @@ export function multiplyMantissas (
     shift = 0
   }
 
-  let canBeRounded = canMantissaBeRounded(targetMantissa, precision, maxI + maxJ, roundingMode, 0, maxErr)
-  console.log(prettyPrintMantissa(target), maxErr)
+  let canBeRounded = canMantissaBeRounded(targetMantissa, precision, targetMantissaLen - 1, roundingMode, 0, maxErr)
 
-  if (!canBeRounded) { // pain ensues, but this is relatively rare
+  if (!canBeRounded) {
+    // TODO: make this more unlikely. Currently this fallback happens in about 10% of cases, which is way too much
     return slowExactMultiplyMantissas(mant1, mant2, precision, targetMantissa, roundingMode)
   }
 
