@@ -454,7 +454,8 @@ export function addMantissas (
 
   // Need to compute to higher precision first
   if (mant1Len > newMantLen) {
-    newMantLen = Math.max(mant1Len, neededWordsForPrecision(prec))
+    let neededWords = neededWordsForPrecision(prec)
+    newMantLen = mant1Len > neededWords ? mant1Len : neededWords
     newMant = new Int32Array(newMantLen)
   }
 
@@ -470,7 +471,7 @@ export function addMantissas (
     }
   }
 
-  let mant2Bound1 = Math.min(mant2End, newMantLen)
+  let mant2Bound1 = mant2End < newMantLen ? mant2End : newMantLen
   for (let i = mant2Shift; i < mant2Bound1; ++i) {
     newMant[i] += mant2[i - mant2Shift]
   }
@@ -500,7 +501,7 @@ export function addMantissas (
 
   if (needsTrailingInfo) {
     let trailingShift = newMantLen - mant2Shift
-    trailingInfo = getTrailingInfo(mant2, Math.max(trailingShift, 0))
+    trailingInfo = getTrailingInfo(mant2, trailingShift > 0 ? trailingShift : 0)
 
     // If the trailing info is shifted, then round it to 0 or 1 as appropriate
     if (trailingShift < 0) trailingInfo = +!!trailingInfo
@@ -524,7 +525,7 @@ export function addMantissas (
       }
     }
 
-    rightShiftMantissa(newMant, 30)
+    for (let i = newMantLen - 2; i >= 0; --i) newMant[i + 1] = newMant[i]
 
     newMant[0] = 1
     shift += 1
