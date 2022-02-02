@@ -55,6 +55,7 @@ function createMantissa (prec) {
  *              ^ index            gives 3.
  * mant = [ 0x3fffffff, 10000000, 00000000 ]
  *              ^ index            gives 2.
+ * This function only supports all-positive mantissas.
  * @param mantissa {Int32Array}
  * @param index {number} From which index (not bit!) to search
  * @returns {number}
@@ -73,15 +74,73 @@ export function getTrailingInfo (mantissa, index) {
       } else if (mantissa[index] > 1 << 29) {
         return 3
       }
-    } else {
+    } else { // index < mantissaLen
       return 0
     }
-  } else {
+  } else { // index >= 0
     index = 0
   }
 
   for (let i = index; i < mantissa.length; ++i) {
     if (mantissa[i] !== 0) return 1
+  }
+
+  return 0
+}
+
+/**
+ * Like getTrailingInfo, but handles negative numbers. -1 if greater than -0.5, -2 if equal to -0.5, -3 if greater than -0.75
+ * @param mantissa
+ * @param index
+ * @returns {number}
+ */
+export function getTrailingInfo2 (mantissa, index) {
+  let mantissaLen = mantissa.length
+  let sign = 1
+
+  const TIE_SPLIT = 1 << 29
+
+  if (index >= 0) {
+    if (index < mantissaLen) {
+      let v = mantissa[index]
+      if (v >= TIE_SPLIT) {
+        if (v === TIE_SPLIT) { // maybe a tie
+          for (let i = index + 1; i < mantissa.length; ++i) {
+            if (mantissa[i] > 0) return 3;
+            if (mantissa[i] < 0) return 1;
+          }
+
+          return 2;
+        } else { // greater than a tie
+          return 3;
+        }
+      } else if (v <= -TIE_SPLIT) {
+        if (v === -TIE_SPLIT) { // maybe a negative tie
+          for (let i = index + 1; i < mantissa.length; ++i) {
+            if (mantissa[i] > 0) return -1;
+            if (mantissa[i] < 0) return -3;
+          }
+
+          return -2
+        } else { // less than a negative tie
+          return -3
+        }
+      } else if (v > 0) {
+        return 1
+      } else if (v < 0) {
+        return -1
+      }
+    } else { // index < mantissaLen
+      return 0
+    }
+  } else { // index >= 0
+    index = 0
+  }
+
+  for (let i = index; i < mantissa.length; ++i) {
+    // Any negative/positive number means whole thing is negative/positive
+    if (mantissa[i] > 0) return 1
+    if (mantissa[i] < 0) return -1
   }
 
   return 0
@@ -485,9 +544,21 @@ export function addMantissas (
 /**
  * Returns whether a mantissa can be correctly rounded, assuming a maximum error of maxNeg and maxPos in the last word.
  * This often allows rounding to happen before extra computation is requested. Assumes maxNeg < BIGFLOAT_WORD_MAX and
- * maxPos < BIGFLOAT_WORD_MAX
+ * maxPos < BIGFLOAT_WORD_MAX. This function can handle mantissa with negative words after the uncertain word, which is
+ * required because it is used in subtractMantissas.
+ * Examples:
+ *                               v end of precision is here, ±0x2
+ * mant = [ 0x3fffffff, 0x00000000, 0x00000001 ], precision = 59, round = NEAREST, maxNeg = 0, maxPos = 1
+ *                         ^ uncertainWord
+ * Cannot be rounded, because we are rounding ties to even. If it were round up or down, it could be rounded.
+ *                               v end of precision is here, ±0x2
+ * mant = [ 0x3fffffff, 0x00000000, -0x00000001 ], precision = 59, round = NEAREST, maxNeg = 0, maxPos = 1
+ *                         ^ uncertainWord
+ * Can be rounded, because we are rounding ties. If it were round up or down, it could not be rounded
+ *
  * @param mantissa {Int32Array}
  * @param precision {number}
+ * @param uncertainWord {number}
  * @param round {number}
  * @param maxNeg {number}
  * @param maxPos {number}
@@ -495,98 +566,76 @@ export function addMantissas (
 export function canMantissaBeRounded (
   mantissa,
   precision,
+  uncertainWord,
   round,
   maxNeg,
   maxPos
 ) {
-  if (maxNeg === 0 && maxPos === 0) return true
+  if (maxNeg === 0 && maxPos === 0) return true // trivial
 
   let zeros = clzMantissa(mantissa)
 
   let endOfPrec = zeros + precision
   let endWord = (endOfPrec / 30) | 0
-  let mantissaLen = mantissa.length
 
-  if (endWord >= mantissaLen) {
+  if (uncertainWord < endWord) {
+    // mant = [ 0x3fffffff,         0x00000002 ], precision = 59
+    //              ^ uncertainWord     ^ endWord
+    // ANY change in the uncertain word will change the rounding
     return false
   }
 
-  let truncateLen = 30 - (endOfPrec - endWord * 30)
+  let mantissaLen = mantissa.length
+
+  if (endWord >= mantissaLen) {
+    // TODO
+    return false
+  }
+
+  let truncateLen = 30 - (endOfPrec - endWord * 30)  // in [1, 30]
   let truncatedWord = (mantissa[endWord] >> truncateLen) << truncateLen
+  // If we truncated to precision, this is the remainder
   let rem = mantissa[endWord] - truncatedWord
 
+  // TODO rewrite mantissa code to avoid these redundant checks
   let isUp = round === ROUNDING_MODE.UP || round === ROUNDING_MODE.TOWARD_INF
   let isDown = round === ROUNDING_MODE.DOWN || round === ROUNDING_MODE.TOWARD_ZERO
   let isTies = round === ROUNDING_MODE.TIES_AWAY || round === ROUNDING_MODE.TIES_EVEN
 
-  function wontCarryUp () {
-    for (let i = endWord + 1; i < mantissaLen - 1; ++i) {
-      if (mantissa[i] < BIGFLOAT_WORD_MAX) return true
-    }
-
-    let last = mantissa[mantissaLen - 1] + maxPos
-
-    return isDown ? (last < BIGFLOAT_WORD_SIZE) : (last <= BIGFLOAT_WORD_SIZE)
-  }
-
-  function wontCarryDown () {
-    for (let i = endWord + 1; i < mantissaLen - 1; ++i) {
-      if (mantissa[i] > 0) return true
-    }
-
-    let last = mantissa[mantissaLen - 1] - maxNeg
-
-    return isUp ? (last > 0) : last >= 0
-  }
-
-  if (endWord < mantissaLen - 1) {
-    // We examine rem and the words after endWord to make our conclusion
-
-    if (round === ROUNDING_MODE.WHATEVER) {
-      return maxNeg + maxPos < BIGFLOAT_WORD_MAX
-    }
-
-    if (isUp || isDown) {
-      if (rem === 0) {
-        if (!wontCarryDown()) return false
-      }
-
-      if (rem === ((1 << truncateLen) - 1)) {
-        return wontCarryUp()
-      }
-
-      return true
-    }
-
-    if (isTies) {
-      let tie = 1 << (truncateLen - 1)
-
-      if (rem === tie) {
-        return wontCarryDown()
-      } else if (rem === tie - 1) {
-        return wontCarryUp()
-      }
-
-      return true
-    }
-  }
+  // We can round if adding maxPos to rem and subtracting maxNeg from rem both give the same result after roundMantissa.
+  // Note that 1 << truncateLen is the last bit of precision, and 1 << (truncateLen - 1) is the bit after the last bit
+  // of precision. truncateLen == 1 has to be handled specially in the latter case.
+  //
+  // rem is the current truncation amount. Let t be the tying behavior of the words past endWord: 0 if all zeros, 1 if
+  // less than 0.5, 2 if exactly 0.5, 3 if above, -1 if greater than -0.5, -2 if exactly -0.5, -3 otherwise.
+  //  mant = [ 0x3fffffff, 0x20000001, 0x20000000 ], precision = 58, truncateLen = 2, rem = 2
+  //                          ^ endWord    ^ t = 2
+  // Suppose we are rounding up. If there were no uncertainty, we'd get [ 0x3fffffff, 0x20000004, 0 ]. If maxNeg is 1
+  // and maxPos is 0, then we can still safely round up, because [ 0x3fffffff, 0x20000000, 0x20000000 ] rounded up is
+  // the same. If t <= 0, we cannot round up, because it might be exactly [ ... 0x20000000, 0 ] or [ ... 0x20000000, -x].
+  // If maxNeg is 2 we cannot round up. If maxNeg is 0 and maxPos is 2, we can safely round up because 2 + 1 < 4. If maxPos is 3, we cannot
+  // safely round up because it will go to [ 0x3fffffff, 0x20000004, 0x20000000 ], rounding to [ 0x3fffffff, 0x20000008,
+  // 0 ]. Thus, if rem + maxPos = 1 << truncateLen, we can only round if t == 0.
+  //
+  // The basic strategy here is we determine what direction in which the mantissa WILL be rounded up, then check whether
+  // the result would be different if rem were rem - maxNeg and rem + maxPos.
+  //
+  // Consider the value of rem and t, the trailing value. If we are rounding up, then we truncate if rem = 0 and t <= 0,
+  // and round up otherwise. If we are rounding down, we truncate if rem = 0 and t >= 0, and round down otherwise. If we
+  // are rounding ties to even and truncateLen > 1, we truncate if rem is in [0, 1 << (truncateLen - 1)),
+  // rem == 1 << (truncateLen - 1) and t = 0, and round up otherwise. If we are rounding ties to inf, then the second
+  // case is a round up. If truncateLen = 1, then rem = 0 and any value of maxNeg or maxPos will not be okay.
 
   if (round === ROUNDING_MODE.WHATEVER) {
-    // To be within 1 ulp of the result
-    return (maxNeg + maxPos < (1 << truncateLen))
+    // TODO verify
+    return maxPos + maxNeg < (1 << truncateLen)
   }
 
-  if (isUp) {
-    return (rem - maxNeg > 0 && rem + maxPos <= (1 << truncateLen))
-  } else if (isDown) {
-    return (rem - maxNeg >= 0 && rem + maxPos < (1 << truncateLen))
-  }
+  if (truncateLen === 1) {
+    if (isTies) return false;
+    if (isUp) {
 
-  if (isTies) {
-    if (truncateLen === 1) return false
-
-    let min = rem - maxNeg, max = rem + maxPos, tie = 1 << (truncateLen - 1)
-    return ((min < tie && max < tie) || (min > tie && max > tie)) && (min > -tie && max < 3 * tie)
+    }
   }
 }
 
@@ -749,7 +798,7 @@ export function subtractMantissas (
 
     return -positiveComputedWordIndex + roundMantissaToPrecision(target, prec, target, round)
   } else {
-    let canBeRounded = canMantissaBeRounded(target, prec, round, 1, 1)
+    let canBeRounded = canMantissaBeRounded(target, prec, wordIndex, round, 1, 1)
     let trailingInfo = 0
 
     if (!canBeRounded) {
@@ -1124,15 +1173,16 @@ export function multiplyMantissas (
 
   // Low words that weren't counted on the first pass. Note that this number may overflow the 32 bit integer limit
   let ignoredLows = 0
+  let maxI = Math.min(targetMantissaLen, mant1Len - 1), maxJ = Math.min(targetMantissaLen - i, mant2Len - 1)
 
   // Only add the products whose high words are within targetMantissa
-  for (let i = Math.min(targetMantissaLen, mant1Len - 1); i >= 0; --i) {
+  for (let i = maxI; i >= 0; --i) {
     let mant1Word = mant1[i]
     let mant1Lo = mant1Word & 0x7fff
     let mant1Hi = mant1Word >> 15
 
     let carry = 0
-    for (let j = Math.min(targetMantissaLen - i, mant2Len - 1); j >= 0; --j) {
+    for (let j = maxJ; j >= 0; --j) {
       let writeIndex = i + j
 
       let mant2Word = mant2[j]
@@ -1157,7 +1207,7 @@ export function multiplyMantissas (
       high += middle >> 15
 
       if (writeIndex < targetMantissaLen) targetMantissa[writeIndex] = low
-      else ignoredLows += low
+      else ignoredLows += low // keep track of lows that we never actually included
 
       carry = high | 0
     }
@@ -1181,7 +1231,8 @@ export function multiplyMantissas (
     shift = 0
   }
 
-  let canBeRounded = canMantissaBeRounded(targetMantissa, precision, roundingMode, 0, maxErr)
+  let canBeRounded = canMantissaBeRounded(targetMantissa, precision, maxI + maxJ, roundingMode, 0, maxErr)
+  console.log(prettyPrintMantissa(target), maxErr)
 
   if (!canBeRounded) { // pain ensues, but this is relatively rare
     return slowExactMultiplyMantissas(mant1, mant2, precision, targetMantissa, roundingMode)
@@ -3491,8 +3542,8 @@ export class BigFloat {
 // Used for intermediate calculations to avoid allocating floats unnecessarily
 const DOUBLE_STORE = BigFloat.new(53)
 
-export function prettyPrintMantissa (mantissa, color="\x1b[32m") {
-  return '[ ' + Array.from(mantissa).map(toHex).map(s => `${color}${s}\x1b[0m`).join(', ') + ' ]'
+export function prettyPrintMantissa (mantissa, color="") {
+  return '[ ' + Array.from(mantissa).map(toHex).map(s => `${color}${s}${color ? "\x1b[0m" : ''}`).join(', ') + ' ]'
 }
 
 /**
@@ -3519,60 +3570,4 @@ export function verifyMantissa (mantissa) {
     else if (m > 0x3fffffff)
       throw new Error(`Mantissa has an overflowed word ${toHex(m)} at index ${i}`)
   }
-}
-
-function referenceMultiplyMantissas (mant1, mant2, precision, targetMantissa, roundingMode) {
-  let arr = new Int32Array(mant1.length + mant2.length + 1)
-
-  for (let i = mant1.length; i >= 0; --i) {
-    let mant1Word = mant1[i] | 0
-    let mant1WordLo = mant1Word & 0x7fff
-    let mant1WordHi = mant1Word >> 15
-
-    let carry = 0,
-      j = mant2.length - 1
-    for (; j >= 0; --j) {
-      let mant2Word = mant2[j] | 0
-      let mant2WordLo = mant2Word & 0x7fff
-      let mant2WordHi = mant2Word >> 15
-
-      let low = Math.imul(mant1WordLo, mant2WordLo),
-        high = Math.imul(mant1WordHi, mant2WordHi)
-      let middle =
-        (Math.imul(mant2WordLo, mant1WordHi) +
-          Math.imul(mant1WordLo, mant2WordHi)) |
-        0
-
-      low += ((middle & 0x7fff) << 15) + carry + arr[i + j + 1]
-      low >>>= 0
-
-      if (low > 0x3fffffff) {
-        high += low >>> 30
-        low &= 0x3fffffff
-      }
-
-      high += middle >> 15
-
-      arr[i + j + 1] = low
-      carry = high
-    }
-
-    arr[i] += carry
-  }
-
-  let shift = 0
-
-  if (arr[0] === 0) {
-    leftShiftMantissa(arr, 30)
-    shift -= 1
-  }
-
-  shift += roundMantissaToPrecision(
-    arr,
-    precision,
-    targetMantissa,
-    roundingMode
-  )
-
-  return shift
 }

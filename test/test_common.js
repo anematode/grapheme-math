@@ -1,3 +1,5 @@
+import {rightZeroPad} from "../grapheme_shared.js"
+
 export const NONFINITE_NUMBERS = [ NaN, Infinity, -Infinity ]
 
 export const PATHOLOGICAL_NUMBERS = [
@@ -49,3 +51,40 @@ function getRNG (seed=0) {
     return (h ^= h >>> 16) >>> 0;
   }
 }
+
+// Garden variety mantissas
+export const typicalMantissas = []
+
+// List of mantissas that are likely to cause trouble
+export const difficultMantissas = []
+
+// Mantissas consisting of only ones
+export const mantissaAllOnes = []
+
+function mantissaFromBinaryString (str) {
+  let arr = []
+
+  for (let i = 0; i < str.length; i += 30) {
+    arr.push(parseInt(rightZeroPad(str.slice(i, i + 30), 30), 2))
+  }
+
+  return arr
+}
+
+for (let i = 0; i < 29; ++i) {
+  for (let count = 0; count < 100; ++count) {
+    let str = '0'.repeat(i) + '1'.repeat(count)
+
+    mantissaAllOnes.push(mantissaFromBinaryString(str))
+  }
+}
+
+
+// Mantissas containing various troublesome words like 0x20000000 and 0x1fffffff
+const troublesomeWords = [ 0x20000000, 0x1fffffff, 0x00000000, 0x00000001, 0x3fffffff, 0x1ffffffe, 0x20000001 ]
+
+troublesomeWords.forEach(w => w ? difficultMantissas.push([ w ]) : 0)
+troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => difficultMantissas.push([ w1, w2 ])) : 0)
+troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => troublesomeWords.forEach(w3 => difficultMantissas.push([ w1, w2, w3 ]))) : 0)
+
+

@@ -1,13 +1,20 @@
 import {
   addMantissas,
   BigFloat,
-  compareMantissas, getTrailingInfo, leftShiftMantissa, multiplyMantissas, neededWordsForPrecision, prettyPrintMantissa,
+  compareMantissas,
+  getTrailingInfo,
+  getTrailingInfo2,
+  leftShiftMantissa,
+  multiplyMantissas,
+  neededWordsForPrecision,
+  prettyPrintMantissa,
   rightShiftMantissa,
   roundMantissaToPrecision,
-  subtractMantissas, verifyMantissa
+  subtractMantissas,
+  verifyMantissa
 } from '../src/arb/bigfloat.js'
 
-import { ROUNDING_MODE } from "../src/rounding_modes.js"
+import { ROUNDING_MODE, roundingModeToString } from "../src/rounding_modes.js"
 import { expect } from "chai"
 import {deepEquals, rightZeroPad} from "../grapheme_shared.js"
 import {
@@ -15,16 +22,20 @@ import {
   subtractMantissas as referenceSubtractMantissas,
   multiplyMantissas as referenceMultiplyMantissas
 } from "../src/arb/reference.js"
+import {difficultMantissas} from "./test_common.js"
+import {expectMultipleCases} from "./test.js"
 
 const BF = BigFloat
 const RM = ROUNDING_MODE
 
-function prettyPrintArg (arg) {
+function prettyPrintArg (arg, smart=true /* for rounding mode*/) {
   if (arg instanceof Int32Array) {
-    return prettyPrintMantissa(arg)
+    return prettyPrintMantissa(arg, '\x1b[32m')
   } else if (typeof arg === "number") {
     if (Object.is(arg, -0)) {
       return "-0"
+    } else if (smart && Object.values(RM).includes(arg)) {
+      return roundingModeToString(arg)
     } else {
       return arg + ''
     }
@@ -59,56 +70,26 @@ function testMantissaCase (func, args, argNames, expectedTarget, expectedReturn)
 
   let ret = func(...args)
 
-  function formatArgs () {
+  function formatArgs (smart=true) {
     let out = ""
     for (let _i = 0; _i < argNames.length; ++_i) {
-      out += `\n\x1b[32m${argNames[_i]}\x1b[0m: ${prettyPrintArg((i === _i) ? originalTarget : args[_i])}`
+      out += `\n\x1b[32m${argNames[_i]}\x1b[0m: ${prettyPrintArg((i === _i) ? originalTarget : args[_i], smart)}`
     }
     return out
   }
 
-  if (!deepEquals(target, expectedTarget)) {
-    throw new Error(`Incorrect result while testing function ${func.name}. Arguments are as follows: ${formatArgs()}\nExpected target mantissa: ${prettyPrintArg(expectedTarget)}\nActual mantissa:          ${prettyPrintMantissa(target, '\u001b[31m')}\n\n`)
-  }
-
-  if (!deepEquals(ret, expectedReturn)) {
-    throw new Error(`Incorrect result while testing function ${func.name}. Arguments are as follows: ${formatArgs()}\nExpected return: ${prettyPrintArg(expectedReturn)}\nActual return: ${prettyPrintArg(ret)}\n`)
-  }
-}
-
-function mantissaFromBinaryString (str) {
-  let arr = []
-
-  for (let i = 0; i < str.length; i += 30) {
-    arr.push(parseInt(rightZeroPad(str.slice(i, i + 30), 30), 2))
-  }
-
-  return arr
-}
-
-// Garden variety mantissas
-const typicalMantissas = []
-
-// List of mantissas that are likely to cause trouble
-const difficultMantissas = []
-
-// Mantissas consisting of only ones
-const mantissaAllOnes = []
-
-for (let i = 0; i < 29; ++i) {
-  for (let count = 0; count < 100; ++count) {
-    let str = '0'.repeat(i) + '1'.repeat(count)
-
-    mantissaAllOnes.push(mantissaFromBinaryString(str))
+  let wrongTarget = !deepEquals(target, expectedTarget)
+  let wrongRet = !deepEquals(ret, expectedReturn)
+  if (wrongTarget || wrongRet) {
+    let toReproduce = `let target = ${prettyPrintArg(originalTarget)};
+console.log("returned: ", GMath.${func.name}(${args.map((a, i) => argNames[i] === "target" ? "target" : prettyPrintArg(a, false)).join(', ')}));
+console.log("target: ", GMath.prettyPrintMantissa(target, ''));`
+    if (wrongTarget)
+      throw new Error(`Incorrect result while testing function ${func.name}. Arguments are as follows: ${formatArgs()}\nExpected target mantissa: ${prettyPrintArg(expectedTarget)}\nActual mantissa:          ${prettyPrintMantissa(target, '\u001b[31m')}\n\nTo reproduce:\n${toReproduce}\n`)
+    if (wrongRet)
+      throw new Error(`Incorrect result while testing function ${func.name}. Arguments are as follows: ${formatArgs()}\nExpected return: ${prettyPrintArg(expectedReturn)}\nActual return: ${prettyPrintArg(ret)}\n\nTo reproduce:\n${toReproduce}\n`)
   }
 }
-
-// Mantissas containing various troublesome words like 0x20000000 and 0x1fffffff
-const troublesomeWords = [ 0x20000000, 0x1fffffff, 0x00000000, 0x00000001, 0x3fffffff, 0x1ffffffe, 0x20000001 ]
-
-troublesomeWords.forEach(w => w ? difficultMantissas.push([ w ]) : 0)
-troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => difficultMantissas.push([ w1, w2 ])) : 0)
-troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => troublesomeWords.forEach(w3 => difficultMantissas.push([ w1, w2, w3 ]))) : 0)
 
 describe("roundMantissaToPrecision", () => {
   const argNames = ["mant", "prec", "target", "round", "trailing", "trailingInfo"]
@@ -116,6 +97,8 @@ describe("roundMantissaToPrecision", () => {
   it('fills in unused words with 0', () => {
     testMantissaCase(roundMantissaToPrecision, [ [ 0x1fffffff, 0 ], 20, 200 /* excess target length */, RM.NEAREST, 0, 0 ], argNames, [ 0x20000000, 0 ], 0)
   })
+
+  // TODO test cases....
 })
 
 describe("addMantissas", () => {
@@ -228,17 +211,45 @@ describe("multiplyMantissas", () => {
 
 describe("getTrailingInfo", () => {
   it("should return correct results", () => {
-    expect(getTrailingInfo([0,0x20000000], 1)).to.equal(2)
-    expect(getTrailingInfo([0,0x20000001], 1)).to.equal(3)
-    expect(getTrailingInfo([0,0x20000000,0], 1)).to.equal(2)
-    expect(getTrailingInfo([0,0x20000000,0,1], 1)).to.equal(3)
-    expect(getTrailingInfo([0,0x20000000], 0)).to.equal(1)
-    expect(getTrailingInfo([0,0], 0)).to.equal(0)
-    expect(getTrailingInfo([0x25000000], 0)).to.equal(3)
-    expect(getTrailingInfo([0x25000000], 1)).to.equal(0)
-    expect(getTrailingInfo([0x1f000000], 0)).to.equal(1)
-    expect(getTrailingInfo([0x25000000], -1)).to.equal(1)
-    expect(getTrailingInfo([0], -1)).to.equal(0)
+    let cases = [
+      [[[0, 0x20000000], 1], 2],
+      [[[0, 0x20000000, 0, 1], 1], 3],
+      [[[0, 0x20000000, 0, 0], 1], 2],
+      [[[0, 0x1fffffff, 0, 0], 1], 1],
+      [[[0, 0x3fffffff, 0, 0], 1], 3],
+      [[[0, 0, 0x3fffffff, 0], 1], 1],
+      [[[0, 0, 0, 0], 1], 0],
+      [[[0, 0, 0, 1], -1], 1]
+    ]
+
+    expectMultipleCases(getTrailingInfo, cases)
+  })
+})
+
+describe("getTrailingInfo2", () => {
+  it("should return correct results", () => {
+    let cases = [
+      [[[0, 0x20000000], 1], 2],
+      [[[0, 0x20000000, 0, 1], 1], 3],
+      [[[0, 0x20000000, 0, -1], 1], 1],
+      [[[0, 0x20000000, 0, 0], 1], 2],
+      [[[0, 0x1fffffff, 0, 0], 1], 1],
+      [[[0, 0x3fffffff, 0, 0], 1], 3],
+      [[[0, 0, 0x3fffffff, 0], 1], 1],
+      [[[0, 0, 0, -1], 1], -1],
+      [[[0, 0, 0, 0], 1], 0],
+      [[[0, 0, 0, -0x3fffffff], 2], -1],
+      [[[0, 0, -0x3fffffff, 0], 2], -3],
+      [[[0, -0x20000000], 1], -2],
+      [[[0, -0x20000000, 0, 1], 1], -1],
+      [[[0, -0x20000000, 0, -1], 1], -3],
+      [[[0, -0x20000000, 0, 0], 1], -2],
+      [[[0, -0x1fffffff, 0, 0], 1], -1],
+      [[[0, 0, 0, 1], -1], 1],
+      [[[0, 0, 0, -1], -1], -1]
+    ]
+
+    expectMultipleCases(getTrailingInfo2, cases)
   })
 })
 
