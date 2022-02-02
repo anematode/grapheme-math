@@ -531,7 +531,7 @@ export function addMantissas (
     shift += 1
   }
 
-  let roundingShift = roundMantissaToPrecision(
+  let roundingShift = round === ROUNDING_MODE.WHATEVER ? 0 : roundMantissaToPrecision(
     newMant,
     prec,
     target,
