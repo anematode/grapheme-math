@@ -1,4 +1,5 @@
 import {rightZeroPad} from "../grapheme_shared.js"
+import {ROUNDING_MODE} from "../src/rounding_modes.js"
 
 export const NONFINITE_NUMBERS = [ NaN, Infinity, -Infinity ]
 
@@ -39,6 +40,8 @@ export const TYPICAL_NUMBERS = RANDOM_NUMBERS.map(d => {
   let k = Math.log2(Math.abs(d))
   return Math.cbrt(Math.sin(k) ** 30 * k * Math.cbrt(d))
 })
+
+export const ROUNDING_MODES = Object.values(ROUNDING_MODE)
 
 // Credit to https://github.com/bryc, https://stackoverflow.com/a/47593316/13458117
 // Generates in [0, 2^32 - 1]

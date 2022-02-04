@@ -1,5 +1,5 @@
 // Reference function. Slow but (hopefully) accurate
-import {leftShiftMantissa, prettyPrintMantissa, rightShiftMantissa} from "./bigfloat.js"
+import {leftShiftMantissa, prettyPrintMantissa, rightShiftMantissa} from "./old.js"
 import {ROUNDING_MODE} from "../rounding_modes.js"
 
 const BIGFLOAT_WORD_BITS = 30

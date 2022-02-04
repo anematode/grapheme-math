@@ -1,5 +1,5 @@
 export const ROUNDING_MODE = Object.freeze({
-  WHATEVER: 0, // do whatever's fastest (including no rounding at all)
+  WHATEVER: 0, // do whatever's fastest (including no rounding at all), guaranteeing a result with error <= 1 ulp
   NEAREST: 0b10, // nearest neighbor, ties to even
   TIES_EVEN: 0b10,
   TIES_ODD: 0b110,
@@ -22,8 +22,8 @@ export const ROUNDING_MODE = Object.freeze({
 // Simple checking for behavior in mantissa functions
 // if (!rm) { /* whatever */ }
 // else if (rm & 2) { /* ties */ }
-// else if (rm & 1) { /* inf or up */ }
-// else { /* zero or donw */ }
+// else if (!(rm & 1)) { /* inf or up */ }
+// else { /* zero or down */ }
 
 // Flipping rounding modes when necessary
 // if (rm & 16 && flip) { /* up or down, ties away or ties zero, toward inf or toward zero */ rm ^= 1 }
@@ -56,4 +56,20 @@ export function roundingModeToString (mode) {
     case ROUNDING_MODE.TOWARD_ZERO:
       return 'TOWARD_ZERO'
   }
+}
+
+/**
+ * Whether a given number is a recognized rounding mode
+ * @param n {number}
+ * @returns {boolean}
+ */
+export function isRoundingMode (n) {
+  if (typeof n !== "number") return false
+
+  return (n === 0 || n === 0b10 || n === 0b110 || n === 0b10010 || n === 0b10011 || n === 0b10000 || n === 0b10001 || n === 0b110000 || n === 0b110001)
+}
+
+// Flip on sign
+export function flipRoundingMode (n) {
+  if (n & 16) return n ^ 1
 }
