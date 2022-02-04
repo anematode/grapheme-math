@@ -1,6 +1,14 @@
 import * as GMath from "../../src/main.js"
+Object.assign(window, GMath)
+
+let overwriteLog = true
 
 let inputBox = document.getElementById("console-input")
+if (!inputBox) {
+  console.log("In playground")
+  overwriteLog = false
+}
+
 let consoleContents = document.getElementById("console-contents")
 let inputHistory = []
 let currentInput = ""
@@ -30,7 +38,8 @@ export let warn = (...args) => {
   oldWarn(...args)
 }
 
-Object.assign(console, { log, error, warn })
+if (overwriteLog)
+  Object.assign(console, { log, error, warn })
 
 function muckCommand (str) {
   // needed for the variable to be declared
@@ -62,7 +71,7 @@ function loadCommandToConsole() {
   inputBox.value = cmd
 }
 
-inputBox.onkeydown = evt => {
+if (inputBox) inputBox.onkeydown = evt => {
   if (evt.key === "Enter") {
     evt.preventDefault()
     let cmd = inputBox.value
@@ -225,5 +234,3 @@ export function benchmark(f, {
   // TODO make others
   return _benchmarkGeneric(f, iterations, inputs, exchangeLoops)
 }
-
-Object.assign(window, { benchmark, GMath })
