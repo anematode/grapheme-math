@@ -8,7 +8,9 @@ export const PATHOLOGICAL_NUMBERS = [
   ...NONFINITE_NUMBERS,
   -5e-324, Number.MAX_VALUE, -Number.MAX_VALUE, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER,
   2.2250738585072009e-308 /* smallest positive normal */, -2.2250738585072009e-308,
-  2.2250738585072004e-308 /* largest denormal */, -2.2250738585072004e-308
+  2.2250738585072004e-308 /* largest denormal */, -2.2250738585072004e-308,
+  1.401298464324817e-45 /* smallest positive f32 */, -1.401298464324817e-45,
+  7.006492321624085e-46 /* half of smallest positive f32 */, -7.006492321624085e-46,
 ]
 
 let a = new Float64Array(1)
@@ -42,6 +44,7 @@ export const TYPICAL_NUMBERS = RANDOM_NUMBERS.map(d => {
 })
 
 export const ROUNDING_MODES = Object.values(ROUNDING_MODE)
+export const STRICT_ROUNDING_MODES = ROUNDING_MODES.filter(s => s !== ROUNDING_MODES.WHATEVER)
 
 // Credit to https://github.com/bryc, https://stackoverflow.com/a/47593316/13458117
 // Generates in [0, 2^32 - 1]
@@ -98,5 +101,5 @@ typicalWords.forEach(w1 => w1 ? typicalWords.forEach(w2 => typicalWords.forEach(
 
 // Credit to https://stackoverflow.com/a/43053803/13458117
 export function cartesianProduct (...args) {
-  return a.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat(1))))
+  return args.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat(1))))
 }

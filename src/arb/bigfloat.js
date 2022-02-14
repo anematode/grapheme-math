@@ -106,6 +106,8 @@ function createMantissa (prec) {
   return new Int32Array(neededWordsForPrecision(prec))
 }
 
+const SCRATCH_MANTISSA = createMantissa(53)
+
 /**
  * Throws if a mantissa is invalid, with a reason
  * @param m {Int32Array}
@@ -327,6 +329,7 @@ export function roundMantissaToPrecision (m, mLen, t, tLen, prec, rm, trailing=0
       let i = truncWordI - 1
       for (; i >= 0; --i) {
         let word = t[i] + 1
+        t[i] = word
 
         // We keep carrying until the word is not larger than 0x3fffffff
         if (word > BIGFLOAT_WORD_MAX) t[i] = 0
@@ -364,7 +367,6 @@ class BigFloat {
   static new (prec=WORKING_PRECISION) {
     precisionInRangeThrows(prec)
 
-    // Empty mantissa
     let mant = createMantissa(prec)
     return new BigFloat(0, 0, prec, mant)
   }
@@ -385,47 +387,55 @@ class BigFloat {
   toNumber (rm = WORKING_RM, f32 = false) {
     if (this.isSpecial()) return this.sign
 
-    let m = this.mant,
-      exp = (this.exp - 1) * BIGFLOAT_WORD_BITS // exp in base 2
+    let m = this.mant, unshiftedExp = (this.exp - 1) * BIGFLOAT_WORD_BITS // exp in base 2
+
     if (!rm) {
       // Rounding mode whatever: Short-circuit calculation for efficiency
-      return pow2(exp) * (m[0] + m[1] * recip2Pow30 + ((f32 || m.length < 3) ? 0 : m[2] * recip2Pow60))
+      return pow2(unshiftedExp) * (m[0] + m[1] * recip2Pow30 + ((f32 || m.length < 3) ? 0 : m[2] * recip2Pow60))
     }
 
     let prec = f32 ? 24 : 53
-    let roundedMantissa = createMantissa(prec)
+    let roundedMantissa = SCRATCH_MANTISSA
 
     if (rm & 16 && this.sign === -1) rm ^= 1 // flip rounding mode for sign
 
     // Round to the nearest float32 or float64, ignoring denormal numbers for now
-    const shift = roundMantissaToPrecision(m, m.length, roundedMantissa, roundedMantissa.length, prec, rm)
+    let shift = roundMantissaToPrecision(m, m.length, roundedMantissa, 3, prec, rm)
 
-    // Calculate an exponent and mant such that mant * 2^exponent = the number
-    let mAsInt
-    if (shift) {
-      mAsInt = 1 << 30
-    } else {
-      mAsInt =
-        roundedMantissa[0] +
-        roundedMantissa[1] * recip2Pow30 +
-        (f32 ? 0 : roundedMantissa[2] * recip2Pow60) // because the mantissa is rounded, this is exact
-    }
-
-    // Normalize mant to be in the range [0.5, 1), which lines up exactly with a normal double
-    let expShift = flrLog2(mAsInt) + 1
-    mAsInt /= pow2(expShift)
-    exp += expShift
-
-    let MIN_EXPONENT = f32 ? -148 : -1073
+    let MIN_EXPONENT = f32 ? -149 : -1074
+    let MIN_NORMAL_EXPONENT = f32 ? -126 : -1022
     let MAX_EXPONENT = f32 ? 127 : 1023
     let MIN_VALUE = f32 ? 1.175494e-38 : Number.MIN_VALUE
     let MAX_VALUE = f32 ? 3.40282347e38 : Number.MAX_VALUE
 
-    // We now do various things depending on the rounding mode. The range of a normal double's exponent is -1024 to 1023,
-    // inclusive, so if the exponent is outside of those bounds, we clamp it to a value depending on the rounding mode.
+    // Calculate an exponent and mant such that mant * 2^exponent = the number
+    let mAsInt = 0, expShift = 0, exp = 0, denormal = false
+    do {
+      if (shift) {
+        mAsInt = 1 << 30
+      } else {
+        mAsInt =
+          roundedMantissa[0] +
+          roundedMantissa[1] * recip2Pow30 +
+          (f32 ? 0 : roundedMantissa[2] * recip2Pow60) // because the mantissa is rounded, this is exact
+      }
+
+      // Normalize mant to be in the range [0.5, 1)
+      expShift = flrLog2(mAsInt) + 1
+      mAsInt /= pow2(expShift)
+      exp = unshiftedExp + expShift
+
+      if (exp < MIN_NORMAL_EXPONENT && exp >= MIN_EXPONENT && !denormal) {
+        // denormal, round to a different precision
+        shift = roundMantissaToPrecision(m, m.length, roundedMantissa, 3, exp - MIN_EXPONENT, rm)
+        denormal = true
+      } else break
+    } while (denormal)
+
+    // If the exponent is outside of bounds, we clamp it to a value depending on the rounding mode
     if (exp < MIN_EXPONENT) {
       if (rm & 2) { // tie
-        // Deciding between 0 and Number.MIN_VALUE. Unfortunately at 0.5 * 2^1074 there is a TIE
+        // Deciding between 0 and MIN_VALUE. Unfortunately at 0.5 * 2^1074 there is a TIE
         if (exp === MIN_EXPONENT - 1) {
           // If greater or ties away
           if (mAsInt > 0.5 || (rm === ROUNDING_MODE.TIES_AWAY
@@ -434,12 +444,12 @@ class BigFloat {
           }
         }
 
-        return 0
+        return this.sign * 0
       } else {
         if (!(rm & 1)) { // ties up or inf; note that rm has been flipped already to correspond to the magnitude
           return this.sign * MIN_VALUE
         } else { // down
-          return 0
+          return this.sign * 0
         }
       }
     } else if (exp > MAX_EXPONENT) {
@@ -539,14 +549,20 @@ export function toHex (a) {
   return ((a < 0) ? '-' : '') + "0x" + leftZeroPad(Math.abs(a).toString(16), 8, '0')
 }
 
+export function toBinary (a) {
+  return ((a < 0) ? '-' : '') + "0b" + leftZeroPad(Math.abs(a).toString(2), 30, '0')
+}
+
 /**
  * Pretty print a mantissa for analysis
  * @param mantissa {Int32Array}
  * @param color {string} Optional, of the form \x1b[32m, etc; used for command-line prettifying
+ * @param binary {string} Whether to display it as 30-bit padded binary
  * @returns {string}
  */
-export function prettyPrintMantissa (mantissa, color="") {
-  return '[ ' + Array.from(mantissa).map(toHex).map(s => `${color}${s}${color ? "\x1b[0m" : ''}`).join(', ') + ' ]'
+export function prettyPrintMantissa (mantissa, color="", binary=false) {
+  return '[ ' + Array.from(mantissa).map(binary ? toBinary : toHex)
+    .map(s => `${color}${s}${color ? "\x1b[0m" : ''}`).join(', ') + ' ]'
 }
 
 

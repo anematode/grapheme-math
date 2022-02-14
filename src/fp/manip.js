@@ -134,12 +134,14 @@ export function pow2 (exp) {
   if (exp > 1023) return Infinity
   if (exp < -1074) return 0
 
+  exp |= 0
+
   if (exp < -1022) {
-    // Works because of JS's insane casting systems
+    // Works because of JS's insane casting :)
     const field = 1 << (exp + 1074)
 
     if (exp > -1043) {
-      // denormalized case 1
+      // denormal case 1
       intView[0] = 0
       intView[1] = field
     } else {
@@ -149,7 +151,7 @@ export function pow2 (exp) {
     }
   } else {
     intView[0] = 0
-    intView[1] = (exp + 1023) << 20
+    intView[1] = ((exp + 1023) | 0) << 20
   }
 
   return floatStore[0]

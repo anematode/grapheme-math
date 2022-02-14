@@ -87,6 +87,13 @@ describe("BigFloat", function () {
     expectMultipleCases((n, rm) => f.setFromNumber(n, rm).toNumber(), cases)
   })
 
+  it("behaves like Math.fround when f32=true", () => {
+    let f = BigFloat.new(53)
+    let cases = cartesianProduct([ ...TYPICAL_NUMBERS, PATHOLOGICAL_NUMBERS ], ROUNDING_MODES).map(([n, rm]) => [[n, rm], Math.fround(n)])
+
+    expectMultipleCases((n, rm) => f.setFromNumber(n, rm).toNumber(ROUNDING_MODES.NEAREST, true), cases)
+  })
+
   describe("roundMantissaToPrecision", () => {
     let args = ["m", "mLen", "t", "tLen", "prec", "rm", "trailing"]
     it("satisfies difficult test cases", () => {
@@ -106,6 +113,12 @@ describe("BigFloat", function () {
         [ [ 0x3fffffff, 0x3ffffff0, 0x00000000 ], 3, [ 1, 0, 0 ], 3, 56, RM.UP, 1, 1 ],
         [ [ 0x3fffffff, 0x3ffffff0, 0x00000000 ], 3, [ 0x3fffffff, 0x3ffffff0, 0x00000000 ], 3, 56, RM.DOWN, 0, 0 ],
         [ [ 0x3fffffff, 0x3ffffff0, 0x00000000 ], 3, [ 0x3fffffff, 0x3ffffff0, 0x00000000 ], 3, 56, RM.DOWN, 1, 0 ],
+        [ [ 0x3fffffff, 0x3ffffff0, 0x00000000 ], 3, [ 0x3fffffff, 0x3ffffff0, 0x00000000 ], 3, 56, RM.DOWN, 1, 0 ],
+
+        // Rounding occurs at a word boundary
+        [ [ 0x008954e2, 0x3089d80e, 0x00000000 ], 3, [ 0x008954e3, 0x00000000 ], 2, 24, RM.NEAREST, 0, 0 ],
+        [ [ 0x008954e2, 0x3089d80e, 0x00000000 ], 3, [ 0x008954e2, 0x00000000 ], 2, 24, RM.DOWN, 0, 0 ],
+        [ [ 0x008954e2, 0x3089d80e, 0x00000000 ], 3, [ 0x008954e3, 0x00000000 ], 2, 24, RM.UP, 0, 0 ],
       ]
 
       for (let c of testCases) {
