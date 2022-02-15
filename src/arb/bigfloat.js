@@ -713,6 +713,50 @@ class BigFloat {
   isSpecial () {
     return !Number.isFinite(this.sign) || this.sign === 0
   }
+
+  /**
+   * Add two floating point numbers, writing to the destination BigFloat
+   * @param f1 {BigFloat}
+   * @param f2 {BigFloat}
+   * @param target {BigFloat}
+   * @param rm {number} Rounding mode
+   */
+  static addTo (f1, f2, target, rm) {
+    let f1Sign = f1.sign, f2Sign = f2.sign
+    if (!Number.isFinite(f1Sign) || !Number.isFinite(f2.sign)) {
+      target.sign = f1Sign + f2Sign
+      return
+    }
+
+    if (f1Sign === 0) {
+      target.setFromFloat(f2, rm)
+      return
+    } else if (f2Sign === 0) {
+      target.setFromFloat(f1, rm)
+      return
+    }
+
+    let f1m = f1.mant, f2m = f2.mant, f1e = f1.exp, f2e = f2.exp
+    let tm = target.mant, tml = tm.length, tPrec = target.prec
+
+    if (f1Sign === f2Sign) {
+      if (f1e < f2e) { // swap
+        let tmp = f1m
+        f1m = f2m
+        f2m = tmp
+
+        let tmp2 = f1e
+        f1e = f2e
+        f2e = tmp2
+      }
+
+      let f1ml = f1m.length, f2ml = f2m.length
+      let shift = addMantissas(f1m, f1ml, f2m, f2ml, f1e - f2e, tm, tml, tPrec, rm)
+
+      target.exp = shift + f1e
+      target.sign = f1Sign
+    }
+  }
 }
 
 // Convenience functions
