@@ -181,11 +181,53 @@ export function ulpError (m1, mLen, m2, m2shift, tLen, prec) {
 }
 
 /**
+ * Given a subarray of a mantissa, return 0 if infinite zeros; 1 if between 0 and 0.5; 2 if a tie; 3 if between a tie
+ * and 1. The stuff beyond the mantissa is considered to be all zeros. This is useful when rounding. As an example,
+ * mant = [ 0x3fffffff, 00000000, 00000001 ]
+ *              ^ index            gives 1.
+ * mant = [ 0x3fffffff, 10000000, 00000001 ]
+ *              ^ index            gives 3.
+ * mant = [ 0x3fffffff, 10000000, 00000000 ]
+ *              ^ index            gives 2.
+ * This function only supports all-positive mantissas.
+ * @param mantissa {Int32Array}
+ * @param index {number} From which index (not bit!) to search
+ * @returns {number}
+ */
+export function getTrailingInfo (mantissa, index) {
+  let mantissaLen = mantissa.length
+
+  if (index >= 0) {
+    if (index < mantissaLen) {
+      if (mantissa[index] === 1 << 29) {
+        // Potential tie
+        for (let i = index + 1; i < mantissaLen; ++i) {
+          if (mantissa[i] !== 0) return 3
+        }
+        return 2
+      } else if (mantissa[index] > 1 << 29) {
+        return 3
+      }
+    } else { // index < mantissaLen
+      return 0
+    }
+  } else { // index >= 0
+    index = 0
+  }
+
+  for (let i = index; i < mantissa.length; ++i) {
+    if (mantissa[i] !== 0) return 1
+  }
+
+  return 0
+}
+
+/**
  * Round an (unsigned) mantissa to a given precision, in one of a few rounding modes. Also returns a shift if the
  * rounding operation brings the float to a higher exponent. Trailing information may be provided about the digits
  * following the mantissa to ensure correct rounding in those cases. This function allows aliasing, meaning the target
  * mantissa and the given mantissa can be the same array, leading to an in-place operation. Trailing information about
- * the mantissa may be provided for correct rounding (are tbhe words beyond the end of the mantissa negative, zero, or
+ * the mantissa may be provided for correct rounding (are the words beyond the end of the mantissa negative, zero, or
  * positive?)
  * @param m {Int32Array}
  * @param mLen {number} Treated length of the mantissa (assumed correct)
@@ -193,7 +235,7 @@ export function ulpError (m1, mLen, m2, m2shift, tLen, prec) {
  * @param tLen {number} Treated length of the target (assumed correct)
  * @param prec {number} Precision (target mantissa length assumed to be sufficient)
  * @param rm {number} Rounding mode (assumed to be valid)
- * @param trailing {number} Trailing information about the mantissa. 0 -> all zeros, 1 -> positive
+ * @param trailing {number} Trailing information about the mantissa. 0 -> all zeros, 1 -> between 0 and 0.5, 2 -> tie (0.5), 3 -> greater than 0.5
  * @return {number} The shift, in words, of the new mantissa
  */
 export function roundMantissaToPrecision (m, mLen, t, tLen, prec, rm, trailing=0) {
@@ -269,7 +311,7 @@ export function roundMantissaToPrecision (m, mLen, t, tLen, prec, rm, trailing=0
       doTruncation = false
     } else {
       // Try to break the tie; any nonzero word implies a round up
-      if (trailing === 1)
+      if (trailing >= 1)
         doTruncation = false
       else for (let i = truncWordI + 1; i < mLen; ++i) {
           if (m[i] > 0) {
@@ -356,6 +398,128 @@ export function roundMantissaToPrecision (m, mLen, t, tLen, prec, rm, trailing=0
   for (let i = truncWordI + 1; i < tLen; ++i) t[i] = 0 // clear the remainder of target
 
   return shift
+}
+
+/**
+ * Add two mantissas together, potentially with an integer word shift on the second mantissa. The result mantissa may
+ * also have a shift applied to it, which is relative to mant1. This function seems like it would be relatively simple,
+ * but the shifting brings annoyingness, especially with the rounding modes. The overall concept is we compute as much
+ * of the addition as needed without doing any carrying, then when we get to the end of the area of needed precision,
+ * we continue computing until we can determine with certainty the carry and the rounding direction. This function
+ * allows aliasing mant1 to be the target mantissa. TODO optimize
+ * @param mant1 {Int32Array}
+ * @param mant1Len {number} Length of the first mantissa; how many words to actually use
+ * @param mant2 {Int32Array} Nonnegative shift applied to mantissa 2
+ * @param mant2Len {number} Length of the second mantissa; how many words to actually use
+ * @param mant2Shift {number}
+ * @param prec {number} Precision to compute and round to
+ * @param target {Int32Array} The mantissa that is written to
+ * @param targetLen {number} Number of words in the target mantissa
+ * @param round {number}
+ */
+export function addMantissas (
+    mant1,
+    mant1Len,
+    mant2,
+    mant2Len,
+    mant2Shift,
+    target,
+    targetLen,
+    prec,
+    round = WORKING_RM
+) {
+  let isAliased = mant1 === target
+
+  let mant2End = mant2Len + mant2Shift
+
+  let newMantLen = targetLen
+  let newMant = target
+
+  // Need to compute to higher precision first
+  if (mant1Len > newMantLen) {
+    let neededWords = neededWordsForPrecision(prec)
+    newMantLen = mant1Len > neededWords ? mant1Len : neededWords
+    newMant = new Int32Array(newMantLen)
+  }
+
+  // We first copy over all the parts of the addition we definitely need:
+  if (!isAliased) {
+    for (let i = 0; i < mant1Len; ++i) {
+      newMant[i] = mant1[i]
+    }
+
+    for (let i = mant1Len; i < newMantLen; ++i) {
+      newMant[i] = 0
+    }
+  }
+
+  let mant2Bound1 = mant2End < newMantLen ? mant2End : newMantLen
+  for (let i = mant2Shift; i < mant2Bound1; ++i) {
+    newMant[i] += mant2[i - mant2Shift]
+  }
+
+  // Do the carry
+  let carry = 0
+  for (let i = mant1Len - 1; i >= 0; --i) {
+    let word = newMant[i] + carry
+
+    if (word > 0x3fffffff) {
+      word -= 0x40000000
+      newMant[i] = word
+      carry = 1
+    } else {
+      newMant[i] = word
+      carry = 0
+    }
+  }
+
+  // All that remains are the words of mant2 to the right of newMantLen - mant2Shift
+  let trailingInfo = 0
+  let needsTrailingInfo = (round & 2) || (!(round & 1)) // ties or inf/up
+
+  if (needsTrailingInfo) {
+    let trailingShift = newMantLen - mant2Shift
+    trailingInfo = getTrailingInfo(mant2, trailingShift > 0 ? trailingShift : 0)
+
+    // If the trailing info is shifted, then round it to 0 or 1 as appropriate
+    if (trailingShift < 0) trailingInfo = +!!trailingInfo
+  }
+
+  let shift = 0
+
+  if (carry) {
+    // Get trailing info from beyond the end of the truncation due to right shifting LOL
+    if (needsTrailingInfo) {
+      let lastWord = newMant[newMantLen - 1]
+
+      if (lastWord === 0) {
+        trailingInfo = +!!trailingInfo
+      } else if (lastWord < 0x20000000) {
+        trailingInfo = 1
+      } else if (lastWord === 0x20000000) {
+        trailingInfo = trailingInfo ? 3 : 2
+      } else {
+        trailingInfo = 3
+      }
+    }
+
+    for (let i = newMantLen - 2; i >= 0; --i) newMant[i + 1] = newMant[i]
+
+    newMant[0] = 1
+    shift += 1
+  }
+
+  let roundingShift = round === ROUNDING_MODE.WHATEVER ? 0 : roundMantissaToPrecision(
+      newMant,
+      newMantLen,
+      target,
+      targetLen,
+      prec,
+      round,
+      trailingInfo
+  )
+
+  return roundingShift + shift
 }
 
 class BigFloat {
@@ -593,6 +757,50 @@ class BigFloat {
    */
   isSpecial () {
     return !Number.isFinite(this.sign) || this.sign === 0
+  }
+
+  /**
+   * Add two floating point numbers, writing to the destination BigFloat
+   * @param f1 {BigFloat}
+   * @param f2 {BigFloat}
+   * @param target {BigFloat}
+   * @param rm {number} Rounding mode
+   */
+  static addTo (f1, f2, target, rm) {
+    let f1Sign = f1.sign, f2Sign = f2.sign
+    if (!Number.isFinite(f1Sign) || !Number.isFinite(f2.sign)) {
+      target.sign = f1Sign + f2Sign
+      return
+    }
+
+    if (f1Sign === 0) {
+      target.setFromFloat(f2, rm)
+      return
+    } else if (f2Sign === 0) {
+      target.setFromFloat(f1, rm)
+      return
+    }
+
+    let f1m = f1.mant, f2m = f2.mant, f1e = f1.exp, f2e = f2.exp
+    let tm = target.mant, tml = tm.length, tPrec = target.prec
+
+    if (f1Sign === f2Sign) {
+      if (f1e < f2e) { // swap
+        let tmp = f1m
+        f1m = f2m
+        f2m = tmp
+
+        let tmp2 = f1e
+        f1e = f2e
+        f2e = tmp2
+      }
+
+      let f1ml = f1m.length, f2ml = f2m.length
+      let shift = addMantissas(f1m, f1ml, f2m, f2ml, f1e - f2e, tm, tml, tPrec, rm)
+
+      target.exp = shift + f1e
+      target.sign = f1Sign
+    }
   }
 }
 

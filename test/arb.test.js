@@ -7,9 +7,10 @@ import {
   ROUNDING_MODES, STRICT_ROUNDING_MODES,
   TYPICAL_NUMBERS, typicalMantissas
 } from "./test_common.js"
-import { roundMantissaToPrecision } from "../src/arb/bigfloat.js"
+import { roundMantissaToPrecision,addMantissas, neededWordsForPrecision } from "../src/arb/bigfloat.js"
 import {expectMultipleCases} from "./test.js"
 import {deepEquals} from "../grapheme_shared.js"
+import { addMantissas as referenceAddMantissas } from "../src/arb/reference.js";
 
 const BF = BigFloat
 const RM = ROUNDING_MODE
@@ -69,7 +70,7 @@ function testMantissaCase (func, args, argNames, expectedTarget, expectedReturn)
   let wrongRet = !deepEquals(ret, expectedReturn)
   if (wrongTarget || wrongRet) {
     let toReproduce = `let target = ${prettyPrintArg(originalTarget)};
-console.log("returned: ", ${func.name}(${args.map((a, i) => argNames[i] === "t" ? "target" : prettyPrintArg(a, false)).join(', ')}));
+console.log("returned: ", ${func.name}(${args.map((a, i) => argNames[i] === "target" ? "target" : prettyPrintArg(a, false)).join(', ')}));
 console.log("target: ", prettyPrintMantissa(target, ''));`
 
     if (wrongTarget)
@@ -130,5 +131,49 @@ describe("BigFloat", function () {
     /*it("is correct on typical mantissas", () => {
 
     })*/
+  })
+
+  describe("addMantissas", () => {
+    it("behaves like the reference implementation", () => {
+        let argNames = [
+            "mant1", "mant1Len", "mant2", "mant2Len", "mant2Shift", "target", "targetLen", "prec", "rm"
+        ]
+
+        let cases = 0
+        let startTime = Date.now()
+
+        let mantissas = [ ...difficultMantissas, ...typicalMantissas ]
+
+        // About 102 million test cases, should be somewhat thorough in terms of carry and rounding checking
+        for (let i = 0; i < mantissas.length; ++i) {
+          const m1 = mantissas[i]
+          for (const m2 of mantissas) {
+            for (let shift = 0; shift < 5; ++shift) {
+              for (let targetSize = 1; targetSize < 5; ++targetSize) {
+                for (let precision of [30, 53, 59, 60, 120]) {
+                  for (let roundingMode of [
+                      ROUNDING_MODE.DOWN, ROUNDING_MODE.UP, ROUNDING_MODE.TIES_EVEN, ROUNDING_MODE.TIES_ODD,
+                      ROUNDING_MODE.TIES_AWAY
+                  ]) {
+                    let target = new Int32Array(Math.max(neededWordsForPrecision(precision), targetSize))
+                    const args = [m1, m1.length, m2, m2.length, shift, target, target.length, precision, roundingMode]
+                    let ret = referenceAddMantissas(...args)
+
+                    testMantissaCase(addMantissas, args, argNames, target, ret)
+                    cases++
+                  }
+                }
+              }
+            }
+          }
+
+          (!(i % 10)) ? console.log(`Progress: ${(i / mantissas.length * 100).toPrecision(4)}% complete`) : 0
+        }
+
+        let endTime = Date.now()
+        let elapsed = (endTime - startTime) / 1000
+
+        console.log(`Completed ${cases} test cases for addMantissas, comparing to referenceAddMantissas, in ${elapsed} seconds.`)
+    })
   })
 })
