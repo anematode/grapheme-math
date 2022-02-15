@@ -521,6 +521,7 @@ class BigFloat {
       mant[2] = rem % cow << (38 - bitshift)
     } else {
       mant[1] = rem << (8 - bitshift)
+      mant[2] = 0
     }
 
     // Special handling; for tiny denormal numbers, the first word is 0, so we shift them over
