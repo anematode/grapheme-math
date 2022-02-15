@@ -114,8 +114,6 @@ function createMantissa (prec) {
   return new Int32Array(neededWordsForPrecision(prec))
 }
 
-const SCRATCH_MANTISSA = createMantissa(53)
-
 /**
  * Throws if a mantissa is invalid, with a reason
  * @param m {Int32Array}
@@ -371,6 +369,7 @@ class BigFloat {
   /**
    * Create a BigFloat, initialized to zero, of a given precision
    * @param prec {number}
+   * @returns {BigFloat}
    */
   static new (prec=WORKING_PRECISION) {
     precisionInRangeThrows(prec)
@@ -379,15 +378,24 @@ class BigFloat {
     return new BigFloat(0, 0, prec, mant)
   }
 
-  static fromNumber (n, prec=WORKING_PRECISION) {
+  /**
+   * Create a BigFloat from a JS number, rounding in the given direction. Special numbers will be preserved
+   * @param n {number} Any JS number
+   * @param prec {number} Precision
+   * @param rm {number} Rounding mode
+   * @returns {BigFloat}
+   */
+  static fromNumber (n, prec=WORKING_PRECISION, rm=WORKING_RM) {
     let f = BigFloat.new(prec)
-    f.setFromNumber(n)
+    f.setFromNumber(n, rm)
+
     return f
   }
 
   /**
    * Convert this BigFloat to a normal JS number, rounding in the given direction and optionally rounding to the nearest
-   * float32 value. It *does* handle denormal numbers, unfortunately for me.
+   * float32 value. That functionality is more given to verify the double logic. It *does* handle denormal numbers,
+   * unfortunately for me.
    * @param rm {number}
    * @param f32 {boolean} Whether to cast to a float32 instead of a float64
    * @returns {number}
@@ -395,11 +403,11 @@ class BigFloat {
   toNumber (rm = WORKING_RM, f32 = false) {
     if (this.isSpecial()) return this.sign
 
-    let m = this.mant, unshiftedExp = (this.exp - 1) * BIGFLOAT_WORD_BITS // exp in base 2
+    let m = this.mant, unshiftedExp = (this.exp - 1) * BIGFLOAT_WORD_BITS, mLen = m.length // exp in base 2
 
     if (!rm) {
       // Rounding mode whatever: Short-circuit calculation for efficiency
-      let m0 = m[0], m1 = m[1], m2 = (m.length < 3) ? 0 : m[2]
+      let m0 = m[0], m1 = m[1], m2 = (mLen < 3) ? 0 : m[2]
 
       return pow2(unshiftedExp) * (m0 + m1 * recip2Pow30 + m2 * recip2Pow60)
     }
@@ -410,7 +418,7 @@ class BigFloat {
     if (rm & 16 && this.sign === -1) rm ^= 1 // flip rounding mode for sign
 
     // Round to the nearest float32 or float64, ignoring denormal numbers for now
-    let shift = roundMantissaToPrecision(m, m.length, roundedMantissa, 3, prec, rm)
+    let shift = roundMantissaToPrecision(m, mLen, roundedMantissa, 3, prec, rm)
 
     let MIN_EXPONENT = f32 ? -149 : -1074
     let MIN_NORMAL_EXPONENT = f32 ? -126 : -1022
@@ -437,15 +445,15 @@ class BigFloat {
 
       if (exp < MIN_NORMAL_EXPONENT && exp >= MIN_EXPONENT && !denormal) {
         // denormal, round to a different precision
-        shift = roundMantissaToPrecision(m, m.length, roundedMantissa, 3, exp - MIN_EXPONENT, rm)
-        denormal = true
+        shift = roundMantissaToPrecision(m, mLen, roundedMantissa, 3, exp - MIN_EXPONENT, rm)
+        denormal = true // go back and calculate mAsInt
       } else break
     } while (denormal)
 
     // If the exponent is outside of bounds, we clamp it to a value depending on the rounding mode
     if (exp < MIN_EXPONENT) {
       if (rm & 2) { // tie
-        // Deciding between 0 and MIN_VALUE. Unfortunately at 0.5 * 2^1074 there is a TIE
+        // Deciding between 0 and MIN_VALUE. Unfortunately at 0.5 * 2^-1074 there is a TIE omg
         if (exp === MIN_EXPONENT - 1) {
           // If greater or ties away
           if (mAsInt > 0.5 || (rm === ROUNDING_MODE.TIES_AWAY
@@ -487,15 +495,52 @@ class BigFloat {
   }
 
   /**
+   * Set the value of this BigFloat from a BigFloat, keeping this float's precision.
+   * @param f
+   * @param rm
+   * @returns {BigFloat} This, for chaining
+   */
+  setFromBigFloat (f, rm=WORKING_RM) {
+    if (!(f instanceof BigFloat)) throw new TypeError("BigFloat.setFromBigFloat takes a BigFloat")
+
+    let fs = f.sign
+    this.sign = fs
+
+    if (fs === 0 || !Number.isFinite(fs)) return this
+
+    let fm = f.mant, fml = fm.length, fe = f.exp, tm = this.mant, tml = tm.length
+    let shift = roundMantissaToPrecision(fm, fml, tm, tml, this.prec, rm) // copy over
+
+    let e = shift + fe
+    if (e > BIGFLOAT_MAX_EXP) {
+      // overflow
+      this.sign = Infinity
+    } else {
+      this.exp = e
+    }
+
+    return this
+  }
+
+  /**
    * Set the value of this BigFloat from a JS number. TODO: make more efficient
    * @param n {number}
    * @param rm {number} Rounding mode to be used; only relevant if prec < 53
    * @returns {BigFloat}
    */
   setFromNumber (n, rm=WORKING_RM) {
+    if (this.prec < 53) {
+      // Weird and rare case. Rounding to a lower precision is needed
+
+      SCRATCH_DOUBLE.setFromNumber(n)
+      this.setFromBigFloat(SCRATCH_DOUBLE)
+      return this
+    }
+
+    if (typeof n !== "number") throw new TypeError("BigFloat.setFromNumber takes a JS number")
     n = +n
 
-    const mant = this.mant
+    const mant = this.mant  // mant.length guaranteed >= 3
 
     let nDenormal = isDenormal(n)
     setFloatStore(n)
@@ -550,6 +595,9 @@ class BigFloat {
     return !Number.isFinite(this.sign) || this.sign === 0
   }
 }
+
+const SCRATCH_MANTISSA = createMantissa(53)
+const SCRATCH_DOUBLE = BigFloat.new(53)
 
 // Convenience functions
 
