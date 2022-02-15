@@ -1,5 +1,5 @@
 // Reference function. Slow but (hopefully) accurate
-import {leftShiftMantissa, prettyPrintMantissa, rightShiftMantissa} from "./old.js"
+import {compareMantissas, leftShiftMantissa, prettyPrintMantissa, rightShiftMantissa} from "./old.js"
 import {roundMantissaToPrecision} from "./bigfloat.js";
 import {ROUNDING_MODE} from "../rounding_modes.js"
 
@@ -54,7 +54,13 @@ export function addMantissas (mant1, mant1Len, mant2, mant2Len, mant2Shift, targ
   return carry + roundingShift
 }
 
-export function subtractMantissas (mant1, mant2, mant2Shift, prec, target, round=CURRENT_ROUNDING_MODE) {
+function subtractMantissas (mant1, mant2, mant2Shift, prec, target, round) {
+  let cmp = compareMantissas(mant1, mant2)
+  if (cmp === 0) return 0b10
+  else if (cmp === -1) {
+    ;[mant2, mant1] = [mant2, mant1]
+  }
+
   let output = new Int32Array(Math.max(mant1.length, mant2.length + mant2Shift) + 1)
 
   for (let i = 0; i < mant1.length; ++i) {
@@ -83,7 +89,7 @@ export function subtractMantissas (mant1, mant2, mant2Shift, prec, target, round
     throw new Error(`Invalid mantissas ${prettyPrintMantissa(mant1)}, ${prettyPrintMantissa(mant2)}`)
   }
 
-  return roundMantissaToPrecision(output, prec, target, round)
+  let roundingShift = roundMantissaToPrecision(output, output.length, target, target.length, prec, round)
 }
 
 export function multiplyMantissas (mant1, mant2, precision, targetMantissa, roundingMode) {

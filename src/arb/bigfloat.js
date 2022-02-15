@@ -9,6 +9,7 @@ import {
   pow2,
   setFloatStore
 } from "../fp/manip.js"
+import {canMantissaBeRounded, leftShiftMantissa} from "./old.js"
 
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
 // the float. m = m_1 / 2^30 + m_2 / 2^60 + ... . The precision is the number of bits kept track of in the words. Since
@@ -407,60 +408,49 @@ export function roundMantissaToPrecision (m, mLen, t, tLen, prec, rm, trailing=0
  * of the addition as needed without doing any carrying, then when we get to the end of the area of needed precision,
  * we continue computing until we can determine with certainty the carry and the rounding direction. This function
  * allows aliasing mant1 to be the target mantissa. TODO optimize
- * @param mant1 {Int32Array}
- * @param mant1Len {number} Length of the first mantissa; how many words to actually use
- * @param mant2 {Int32Array} Nonnegative shift applied to mantissa 2
- * @param mant2Len {number} Length of the second mantissa; how many words to actually use
- * @param mant2Shift {number}
+ * @param m1 {Int32Array}
+ * @param m1l {number} Length of the first mantissa; how many words to actually use
+ * @param m2 {Int32Array} Nonnegative shift applied to mantissa 2
+ * @param m2l {number} Length of the second mantissa; how many words to actually use
+ * @param m2shift {number} Number of words by which the second mantissa is shifted to the right (must be >= 0)
  * @param prec {number} Precision to compute and round to
- * @param target {Int32Array} The mantissa that is written to
- * @param targetLen {number} Number of words in the target mantissa
- * @param round {number}
+ * @param t {Int32Array} The mantissa that is written to
+ * @param tLen {number} Number of words in the target mantissa
+ * @param rm {number} Rounding mode
  */
-export function addMantissas (
-    mant1,
-    mant1Len,
-    mant2,
-    mant2Len,
-    mant2Shift,
-    target,
-    targetLen,
-    prec,
-    round = WORKING_RM
-) {
-  let isAliased = mant1 === target
+export function addMantissas (m1, m1l, m2, m2l, m2shift, t, tLen, prec, rm = WORKING_RM) {
+  let isAliased = m1 === t
+  let mant2End = m2l + m2shift
 
-  let mant2End = mant2Len + mant2Shift
-
-  let newMantLen = targetLen
-  let newMant = target
+  let newMantLen = tLen
+  let newMant = t
 
   // Need to compute to higher precision first
-  if (mant1Len > newMantLen) {
+  if (m1l > newMantLen) {
     let neededWords = neededWordsForPrecision(prec)
-    newMantLen = mant1Len > neededWords ? mant1Len : neededWords
+    newMantLen = m1l > neededWords ? m1l : neededWords
     newMant = new Int32Array(newMantLen)
   }
 
   // We first copy over all the parts of the addition we definitely need:
   if (!isAliased) {
-    for (let i = 0; i < mant1Len; ++i) {
-      newMant[i] = mant1[i]
+    for (let i = 0; i < m1l; ++i) {
+      newMant[i] = m1[i]
     }
 
-    for (let i = mant1Len; i < newMantLen; ++i) {
+    for (let i = m1l; i < newMantLen; ++i) {
       newMant[i] = 0
     }
   }
 
   let mant2Bound1 = mant2End < newMantLen ? mant2End : newMantLen
-  for (let i = mant2Shift; i < mant2Bound1; ++i) {
-    newMant[i] += mant2[i - mant2Shift]
+  for (let i = m2shift; i < mant2Bound1; ++i) {
+    newMant[i] += m2[i - m2shift]
   }
 
   // Do the carry
   let carry = 0
-  for (let i = mant1Len - 1; i >= 0; --i) {
+  for (let i = m1l - 1; i >= 0; --i) {
     let word = newMant[i] + carry
 
     if (word > 0x3fffffff) {
@@ -475,11 +465,11 @@ export function addMantissas (
 
   // All that remains are the words of mant2 to the right of newMantLen - mant2Shift
   let trailingInfo = 0
-  let needsTrailingInfo = (round & 2) || (!(round & 1)) // ties or inf/up
+  let needsTrailingInfo = (rm & 2) || (!(rm & 1)) // ties or inf/up
 
   if (needsTrailingInfo) {
-    let trailingShift = newMantLen - mant2Shift
-    trailingInfo = getTrailingInfo(mant2, trailingShift > 0 ? trailingShift : 0)
+    let trailingShift = newMantLen - m2shift
+    trailingInfo = getTrailingInfo(m2, trailingShift > 0 ? trailingShift : 0)
 
     // If the trailing info is shifted, then round it to 0 or 1 as appropriate
     if (trailingShift < 0) trailingInfo = +!!trailingInfo
@@ -509,17 +499,115 @@ export function addMantissas (
     shift += 1
   }
 
-  let roundingShift = round === ROUNDING_MODE.WHATEVER ? 0 : roundMantissaToPrecision(
+  let roundingShift = rm === ROUNDING_MODE.WHATEVER ? 0 : roundMantissaToPrecision(
       newMant,
       newMantLen,
-      target,
-      targetLen,
+      t,
+      tLen,
       prec,
-      round,
+      rm,
       trailingInfo
   )
 
   return roundingShift + shift
+}
+
+/**
+ * Subtract two (positive) mantissas, with mant2 under a given shift, returning a bit field of the
+ * following:
+ * <------      0 / 1         0 / 1
+ *   shift   equals zero  flipped sign
+ * So if mant2 > mant1, (returnedShift & 1) === 1; if (mant2 === mant1), (returnedShift & 2) === 1. The net shift
+ * relative to the larger mantissa, in words, is returnedShift >> 2. If mant2 === mant1, the target mantissa is
+ * UNTOUCHED.
+ * @param m1 {Int32Array}
+ * @param m1Len
+ * @param m2 {Int32Array}
+ * @param m2Len
+ * @param m2shift {number}
+ * @param t {Int32Array} The mantissa to write to
+ * @param tLen
+ * @param prec {number}
+ * @param rm {number}
+ */
+export function subtractMantissas (m1, m1Len, m2, m2Len, m2shift, t, tLen, prec, rm) {
+  // My algorithm for (efficient) subtraction is a bit complicated. The reference implementation allocates a mantissa
+  // large enough to store the exact result, computes the exact result, and rounds it. But if m2shift is large, this
+  // approach allocates and calculates way more stuff than it needs to. Ideally, we allocate little or nothing and only
+  // compute as much as necessary for the target mantissa to be rounded to prec bits.
+
+  // We already assume that mant1 and mant2 are both valid mantissas, and that mant1 > mant2. We need to find the
+  // location of the first word of the result mantissa.
+
+  m1Len |= 0
+  m2Len |= 0
+  tLen |= 0
+  // m2shift may be large
+  m2shift = +m2shift
+
+  let m2end = m2Len + m2shift // it's okay if this overflows; that only happens if mant2 is way beyond mant1
+  let exactEnd = m1Len > m2end ? m1Len : m2end // The end of exact computation, relative to the first word of mant1
+  let exchanged = false // whether the mantissas have been exchanged
+
+  // We can visualize the situation as follows:
+  //  <--           mant1Len = 4                  -->
+  // [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0xcafecafe]
+  //  <-- mant2Shift = 2 --> [ 0xbeadbeef, 0xbeadbeef, 0xbeadbeef ]
+  //                          <--         mant2Len = 3         -->
+  //  <--               exactEnd = mant2End = 5                --> (maximum of mant1Len and mant2End)
+
+  // We calculate words of the result relative to the first word of m1 (generally, this is how we index things). If a
+  // word is 0, then the start of the result occurs later. If the first word we discover is negative, we exchange m1 and
+  // m2, because m2 > m1. Then, if a word is 1, the start of the result may be there, or may be later, depending on the
+  // next computed word: If the next computed word is negative, then the result begins later; if the next computed word
+  // is 0, then the result may begin later; if the next computed word is positive, the result begins at the word that is
+  // 1. If a word is 2 or greater, the start of the result is there.
+
+  // mant1:      [ 0xcafecafe, 0xcafecafe, 0xcafecafd, 0x00000001 ]
+  // mant2:      [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0x00000000 ]
+  // computed words:    0           0           -1
+  //                                            ^ need to exchange m1 and m2!
+  // After exchanging...
+  // mant1:      [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0x00000001 ]
+  // mant2:      [ 0xcafecafe, 0xcafecafe, 0xcafecafd, 0x00000000 ]
+  // computed words:    0           0           1       1 (positive)
+  //                                            ^ result begins here
+
+  // mant1:      [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0x00000000 ]
+  // mant2:      [ 0xcafecafe, 0xcafecafe, 0xcafecafd, 0x00000001 ]
+  // computed words:    0           0           1       -1 (negative)
+  //                                            result begins later due to carry -->
+  // after carry:[ 0x00000000, 0x00000000, 0x00000000, 0x3fffffff ]
+  //                                                        ^ result begins here
+
+
+
+  // In any case, once a positive word is discovered, we start storing computed words in the target mantissa. Once the
+  // target mantissa is exhausted, we do the carry and count how many of the first n words are 0. If n > 0, we shift the
+  // target mantissa left by n words and continue computing words, etc. etc. If n == 0, we note that the maximum
+  // possible imprecision in the result is +-1 units in the last place (of the last word), so we check whether this
+  // error bound is sufficient for us to call it quits under the current precision and rounding mode. If not, we must
+  // compute the (positive or negative) trailing information of words following the target mantissa. In particular, we
+  // need to know which range the stuff after the target lies in: (-0x40000000, -0x20000000), -0x20000000 (tie),
+  // (-0x20000000, 0x00000000), 0x00000000 (zero), (0x00000000, 0x20000000), 0x20000000 (tie), (0x20000000, 0x40000000).
+  // These cases are enumerated as -3, -2, -1, 0, 1, 2, and 3, respectively.
+
+  // mant1:      [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0x00000000 ]
+  // mant2:      [ 0xcafecafe, 0xcafecafe, 0xcafecafd, 0x00000001 ]
+  // computed words:    0           0           1 = positiveComputedWord
+  //                                            ^ positiveComputedWordIndex
+
+    // Before: [ 0x00000002, -0x3fffffff, -0x3fffffff, -0x3ffffffe ]
+    // After:  [ 0x00000001,  0x00000000,  0x00000000,  0x00000002 ]
+    //          n = 0 zero words
+
+    // Before: [ 0x00000001, -0x3fffffff, -0x3fffffff, -0x3ffffffe ]
+    // After:  [ 0x00000000,  0x00000000,  0x00000000,  0x00000002 ]
+    //          <--       n = 3 zero words        -->
+
+    // Before: [ 0x00000000,  0x00000000,  0x00000000,  0x00000002 ]
+    //          <--       n = 3 zero words        -->
+    // After:  [ 0x00000002,  0x00000000,  0x00000000,  0x00000000 ]
 }
 
 class BigFloat {
