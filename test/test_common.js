@@ -44,7 +44,7 @@ export const TYPICAL_NUMBERS = RANDOM_NUMBERS.map(d => {
 })
 
 export const ROUNDING_MODES = Object.values(ROUNDING_MODE)
-export const STRICT_ROUNDING_MODES = ROUNDING_MODES.filter(s => s !== ROUNDING_MODES.WHATEVER)
+export const STRICT_ROUNDING_MODES = ROUNDING_MODES.filter(s => s !== 0)
 
 // Credit to https://github.com/bryc, https://stackoverflow.com/a/47593316/13458117
 // Generates in [0, 2^32 - 1]

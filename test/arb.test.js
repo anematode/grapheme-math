@@ -4,7 +4,7 @@ import {
   cartesianProduct,
   difficultMantissas,
   PATHOLOGICAL_NUMBERS,
-  ROUNDING_MODES,
+  ROUNDING_MODES, STRICT_ROUNDING_MODES,
   TYPICAL_NUMBERS, typicalMantissas
 } from "./test_common.js"
 import { roundMantissaToPrecision } from "../src/arb/bigfloat.js"
@@ -82,9 +82,10 @@ console.log("target: ", prettyPrintMantissa(target, ''));`
 describe("BigFloat", function () {
   it("losslessly converts to and from numbers", () => {
     let f = BigFloat.new(53)
-    let cases = cartesianProduct([ ...TYPICAL_NUMBERS, PATHOLOGICAL_NUMBERS ], ROUNDING_MODES).map(([n, rm]) => [[n, rm], n])
+    let cases = cartesianProduct([ PATHOLOGICAL_NUMBERS, ...TYPICAL_NUMBERS ], ROUNDING_MODES).map(([n, rm]) => [[n, rm], n])
 
-    expectMultipleCases((n, rm) => f.setFromNumber(n, rm).toNumber(), cases)
+    expectMultipleCases((n, rm) =>
+      f.setFromNumber(n, rm).toNumber(), cases)
   })
 
   it("behaves like Math.fround when f32=true", () => {
@@ -126,8 +127,8 @@ describe("BigFloat", function () {
       }
     })
 
-    it("is correct on typical mantissas", () => {
+    /*it("is correct on typical mantissas", () => {
 
-    })
+    })*/
   })
 })

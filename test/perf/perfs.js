@@ -5,23 +5,10 @@ import { roundUp as referenceRoundUp } from "../../src/fp/reference.js"
 
 let displayedPerfList = document.getElementById("test-list")
 
-let TIME_PREC = 6
-function showTime(ms) {
-  if (ms < 1e-3) {
-    return (ms * 1e6).toPrecision(TIME_PREC) + "ns"
-  } else if (ms < 1) {
-    return (ms * 1e3).toPrecision(TIME_PREC) + "µs"
-  } else if (ms < 1000) {
-    return ms.toPrecision(TIME_PREC) + "ms"
-  } else {
-    return (ms / 1000).toPrecision(TIME_PREC) + "s"
-  }
-}
-
 function runPerf(perf) {
   let results = benchmark(perf.benchmark.f, perf.benchmark)
 
-  log(`Benchmark ${perf.name} completed ${results.totalInputs} inputs in ${showTime(results.total)}, average ${showTime(results.msPerInput)} per input`)
+  log(results.explain())
 }
 
 let perfList = [

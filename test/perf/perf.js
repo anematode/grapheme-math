@@ -159,6 +159,20 @@ function _benchmarkSingleArg(f, iterations, inputs, exchangeLoops) {
   let msPerInput = (end - start) / totalInputs
   return { f, iterations, exchangeLoops, inputs, totalInputs, msPerInput, total: end - start, result }
 }
+
+let TIME_PREC = 6
+function showTime(ms) {
+  if (ms < 1e-3) {
+    return (ms * 1e6).toPrecision(TIME_PREC) + "ns"
+  } else if (ms < 1) {
+    return (ms * 1e3).toPrecision(TIME_PREC) + "µs"
+  } else if (ms < 1000) {
+    return ms.toPrecision(TIME_PREC) + "ms"
+  } else {
+    return (ms / 1000).toPrecision(TIME_PREC) + "s"
+  }
+}
+
 /**
  *
  * @param f {Function}
@@ -225,12 +239,20 @@ export function benchmark(f, {
     }
   }
 
+  let res
+
   if (!diffArgs && overallArgCount === 0) {
-    return _benchmarkNoInput(f, iterations, inputs.length, exchangeLoops)
+    res = _benchmarkNoInput(f, iterations, inputs.length, exchangeLoops)
   } else if (!diffArgs && overallArgCount === 1) {
-    return _benchmarkSingleArg(f, iterations, inputs, exchangeLoops)
+    res = _benchmarkSingleArg(f, iterations, inputs, exchangeLoops)
+  } else {// TODO make others
+    res = _benchmarkGeneric(f, iterations, inputs, exchangeLoops)
   }
 
-  // TODO make others
-  return _benchmarkGeneric(f, iterations, inputs, exchangeLoops)
+  return {
+    ...res,
+    explain: () => `Benchmark ${res.name} completed ${res.totalInputs} inputs in ${showTime(res.total)}, average ${showTime(res.msPerInput)} per input`
+  }
 }
+
+Object.assign(window, { benchmark })

@@ -86,12 +86,24 @@ export function getMantissa (x) {
   return intView[0] + _getMantissaHighWord() * 4294967296
 }
 
+export function setFloatStore (x) {
+  floatStore[0] = x
+}
+
+export function getFloatStoreExponent () {
+  return ((intView[1] & 0x7ff00000) >> 20) - 1023
+}
+
+export function getFloatStoreMantissa () {
+  return intView[0] + _getMantissaHighWord() * 4294967296
+}
+
 export function getExponentAndMantissa (x) {
   floatStore[0] = x
 
   return [
-    ((intView[1] & 0x7ff00000) >> 20) - 1023,
-    intView[0] + _getMantissaHighWord() * 4294967296
+    getFloatStoreExponent(),
+    getFloatStoreMantissa()
   ]
 }
 
@@ -122,6 +134,11 @@ export function countFloatsBetween (x1, x2) {
   return (x2man - x1man) * 2 ** 53 + (x2exp - x1exp) * 2 ** 52
 }
 
+const pow2Lookup = new Float64Array(2098)
+for (let i = -1074; i <= 1023; ++i) {
+  pow2Lookup[i + 1074] = 2 ** i
+}
+
 /**
  * Calculates 2 ^ exp, using a customized method for integer exponents. An examination of V8's pow function didn't
  * reveal any special handling, and indeed my benchmark indicates this method is 3 times faster than pow for integer
@@ -136,25 +153,7 @@ export function pow2 (exp) {
 
   exp |= 0
 
-  if (exp < -1022) {
-    // Works because of JS's insane casting :)
-    const field = 1 << (exp + 1074)
-
-    if (exp > -1043) {
-      // denormal case 1
-      intView[0] = 0
-      intView[1] = field
-    } else {
-      // case 2
-      intView[0] = field
-      intView[1] = 0
-    }
-  } else {
-    intView[0] = 0
-    intView[1] = ((exp + 1023) | 0) << 20
-  }
-
-  return floatStore[0]
+  return pow2Lookup[exp + 1074]
 }
 
 // Counts the number of trailing zeros in a 32-bit integer n; similar to <i>Math.clz32</i>.
