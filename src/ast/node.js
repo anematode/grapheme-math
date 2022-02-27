@@ -4,7 +4,6 @@
  */
 
 import { resolveOperatorDefinition } from './builtin_operators.js'
-import {ConcreteType} from "./type.js"
 
 /**
  * Helper function (doesn't need to be fast)

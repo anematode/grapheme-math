@@ -29,7 +29,7 @@ The mathematical world is relatively well-behaved and is intended to be separate
 
 Suppose we have generated an AST `tree` for the expression `x^2+1` with an EvaluationContext `ctx`. The expression has no other information besides the operator names and their order of evaluation; *it has no mathematical type* and *does not know what function to call*. The only parts of the expression with a type are the nodes `1` and `2`, which each have type `int`.
 
-So, we call `tree.resolveTypes({ x: "real" })`, which informs the tree that the variable `x` should be considered a real number. The resolution goes depth-first, first looking at the call to operator `^`. There may be a host of **definitions** in `ctx` for this operator: `^(int, int) -> int`, `^(real, real) -> real`, or even `^(complex, int) -> complex`. If there is a definition `^(real, int) -> real`, then that definition is a perfect match and will be chosen. **No two definitions for an operator should have the same types.** But let's suppose that such a definition doesn't exist, and only the three aforementioned ones do.
+So, we call `tree.resolveTypes({ x: "real" })`, which informs the tree that the variable `x` should be considered a real number. The resolution goes depth-first, first looking at the call to operator `^`. There may be a host of **definitions** in `ctx` for this operator: `^(int, int) -> int`, `^(real, real) -> real`, or even `^(complex, int) -> complex`. If there is a definition `^(real, int) -> real`, then that definition is a perfect match and will be chosen. **No two definitions for an operator should have the same types.** But let's suppose a definition `^(real, int) -> real` doesn't exist, and only the three aforementioned ones do.
 
 ### Implicit casting
 
@@ -44,9 +44,70 @@ Should the cast be inserted as a new node taking in a single argument and return
 
 ## Entering the concrete
 
-We have now given the entire expression and each subexpression a type, an operator definition, and a casting array. But we still can't evaluate the function! We need to compile it into a concrete form, giving each subexpression a concrete type. There are several evaluation modes, with the most common being `normal`, using standard double-precision floating-point throughout. `int` is mapped to the *concrete* `int` (which is distinct). Something like `complex` is mapped to the concrete `Grapheme.Complex`.
+We have now given the entire expression and each subexpression a type, an operator definition, and a casting array. But we still can't evaluate the function! We need to compile it into a concrete form, giving each subexpression a concrete type. There are several evaluation modes, with the most common being `normal`, using standard double-precision floating-point throughout. The abstract `int` is mapped to the *concrete* `int`, which is distinct and has an actual representation: a standard JS number, restricted to `{ ±inf, NaN, -0 } U { representable integers }`. `complex` is mapped to the concrete `complex`, internally represented by something like `Grapheme.Complex`.
 
-In turn, each operator definition and cast must find a suitable **evaluator**, which is a function that actually does the legwork. For example, `^(real, real) -> real` will be the `Math.pow` function, while `^(int, int) -> int` will probably be some custom function that does fast integer exponentiation by repeated multiplication. Note that each of these evaluators is now taking in *concrete types*. For example, the operator `^(real, real) -> real` may have two evaluators, `^(real, real) -> real` and `^(fast_real_interval, fast_real_interval) -> fast_real_interval`. Some evaluators are trivial, like `int -> real`
+In turn, each operator definition and cast must find a suitable **evaluator**, which is a function that actually does the legwork. For example, `^(real, real) -> real` will be the `Math.pow` function, while `^(int, int) -> int` will probably be some custom function that does fast integer exponentiation by repeated multiplication. Note that each of these evaluators is now taking in *concrete types*. For example, the operator `^(real, real) -> real` may have two evaluators, `^(real, real) -> real` and `^(fast_real_interval, fast_real_interval) -> fast_real_interval`. Some evaluators are trivial, like the cast `real(int) -> real` (note that casts can be explicitly invoked as a function). Some may call a built-in function directly, like `sin(real) -> real` calling `Math.sin`. And most are specialized functions, like `gamma(complex) -> complex`.
+
+## Entering the callable: intermediate representation and optimization
+
+Functions, especially when compiled in normal mode, need to be as fast as possible. The resolution of evaluators at compile time is a significant step, but optimizations remain a bit tricky.
+
+An intermediate representation is basically a series of assignments, with a single special variable "result" used for the output, and a single "if-statement" primitive corresponding to certain boolean constructs like piecewise and short-circuiting operators. This "if" primitive is effectively a specialized ternary operator: It immediately evaluates a single condition, and based on that condition, evaluates some of the other two operands.
+
+It is possible that both operands be evaluated, none be evaluated. Consider the expression `piecewise(sqrt(x+5) < 1, x^2, sqrt(x))`. In normal mode, the condition operand is either true (when x is between -6 and -4), false (when x is greater than -4), or undefined (when x is less than -6). In the first case, `x^2` is evaluated and returned. In the second case, `sqrt(x)` is evaluated and returned, even if it is NaN. In the third case, the condition is undefined, so neither case is evaluated and NaN is returned. In the case of interval arithmetic the situation is even more complex; both operands must be evaluated if the condition is potentially true or false, and their union taken. An executive summary of the `if(cond, op1, op2)` primitive:
+
+| Condition (immediately evaluated) | Operand 1 | Operand 2 | notes |
+|-----------------------------------| --- | --- | --- |
+| true                              | evaluated | not evaluated | |
+| false                             | not evaluated | evaluated | |
+| undefined                         | not evaluated | not evaluated | |
+| uncertain                         | evaluated | evaluated | union taken |
+
+Of note, the underlying type of the condition is therefore dependent on the evaluation mode.
+
+Consider the aforementioned expression. We get an unoptimized structure of the following form (`<-` denotes assignment):
+
+```
+a: int <- 5                                                             (constant)
+b: real <- real(a)                                                      (cast)
+y: real <- add(x, 5)
+z: real <- sqrt(y)
+c: boolean <- NullableBoolean.Comparison.less(z, 1)                     (potentially nullable)
+
+result: real <- if (c) {                                                (if construct)
+  c: int <- 2
+  pow(x, 2)
+} else {
+  sqrt(x)
+}
+```
+
+This might roughly compile to the following optimized JS code:
+
+```
+function f(x) {
+    // optional typechecks elided
+    
+    var $y = x + 5;
+    var $z = Math.sqrt($y);
+    if ($z !== $z) { // null check
+       return NaN;
+    }
+    if ($z < 1) {
+       return Math.pow(x, 2);
+    }
+    
+    return Math.sqrt(x);
+}
+```
+
+The only other control flow construct really used is breaking out of labeled blocks, used effectively as a weird jump. Observe:
+
+We avoid most control flow constructs—only if statements and breaking out of blocks, the latter used for global constructs like errors and NaN propagation.
+
+Thus, an intermediate function representation 
+
+Recall that we have various concrete types and their evaluators. 
 
 ## Contexts
 
