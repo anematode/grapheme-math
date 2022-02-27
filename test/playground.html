@@ -6,12 +6,16 @@
 </head>
 <body>
 
-<script type="module" src="perf.js"></script>
+<script type="module" src="perf/perf.js"></script>
 
 <script>
+  // use global variables for convenience
     function play () {
-
+      s = "x^2"
+      n = parseString(s)
     }
+
+    window.onload = play
 </script>
 
 </body>
