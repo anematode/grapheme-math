@@ -48,7 +48,9 @@ We have now given the entire expression and each subexpression a type, an operat
 
 In turn, each operator definition and cast must find a suitable **evaluator**, which is a function that actually does the legwork. For example, `^(real, real) -> real` will be the `Math.pow` function, while `^(int, int) -> int` will probably be some custom function that does fast integer exponentiation by repeated multiplication. Note that each of these evaluators is now taking in *concrete types*. For example, the operator `^(real, real) -> real` may have two evaluators, `^(real, real) -> real` and `^(fast_real_interval, fast_real_interval) -> fast_real_interval`. Some evaluators are trivial, like the cast `real(int) -> real` (note that casts can be explicitly invoked as a function). Some may call a built-in function directly, like `sin(real) -> real` calling `Math.sin`. And most are specialized functions, like `gamma(complex) -> complex`.
 
-## Entering the callable: intermediate representation and optimization
+## Entering the callable
+
+### Intermediate representation
 
 Functions, especially when compiled in normal mode, need to be as fast as possible. The resolution of evaluators at compile time is a significant step, but optimizations remain a bit tricky.
 
@@ -101,13 +103,89 @@ function f(x) {
 }
 ```
 
-The only other control flow construct really used is breaking out of labeled blocks, used effectively as a weird jump. Observe:
+The only other control flow construct really used is breaking out of labeled blocks, used as an overriding jump for handling errors. If we want `f` to throw or set an error flag on *any* NaN calculation, we might do something like this:
 
-We avoid most control flow constructs—only if statements and breaking out of blocks, the latter used for global constructs like errors and NaN propagation.
+```
+var errCodes = Object.freeze({
+  0: { type: "domain", node: <OperatorNode>, message: "Argument outside of domain sqrt at position ... " },
+  1: { type: "overflow", node: <OperatorNode>, message: "Overflow of f64 in pow at position ... " },
+  2: { type: "domain", node: <OperatorNode>, message: "Argument outside of domain sqrt at position ... " }
+})
+var errCode = 0
 
-Thus, an intermediate function representation 
+function f(x) {
+    // optional typechecks elided
+    
+    body: {
+        var $y = x + 5; // cannot overflow
+        var $z = Math.sqrt($y);
+        if ($z !== $z) {
+          errCode = 0;
+          break body;
+        }
+        if ($z < 1) {
+           var $w = Math.pow(x, 2);
+           if ($w === Infinity) {
+             errCode = 1;
+             break body;
+           }
+           
+           return $w;
+        }
+        var $w = Math.sqrt(x);
+        if ($w !== $w) {
+           errCode = 2;
+           break body;
+        }
+        return $w;
+    }
+    
+    // Only reached in event of an error
+    var err = errCodes[errCode]
+    throw makeError(err)  // or return NaN, or however the error should be handled
+}
+```
 
-Recall that we have various concrete types and their evaluators. 
+NaN propagation analysis and program flow analysis are complicated. Thankfully, piecewise constructs are generally rare and thus this isn't a particularly important feature.
+
+In summary, we have an intermediate representation consisting of a series of assignments and a single if primitive for branching.
+
+### IR optimization
+
+Optimization is complex. Overall, optimizations can be divided as sound and unsound, and as indicated and not indicated.
+
+*Sound* optimizations do not observably change the behavior of the function. For example, optimizing `x*x+x*x` to `2*x*x` is a sound optimization. *Unsound* optimizations may change the behavior. For example, optimizing `pow(x,3)` to `x*x*x` is *not* a sound optimization, because the latter has slightly different behavior. Enabled unsound optimizations can be likened to using the `-ffast-math` flag in C compilers. They are important for things like evaluating polynomials; the precise semantics of `x^10+x^9+x^8+...+1` dictate that `Math.pow(x,10)`, `Math.pow(x,9)`, et cetera, all be evaluated, which is highly inefficient. Ideally we'd have something like this:
+
+```$a=x*x; $b=$a*x; $c=$b*x ...```
+
+This construct accumulates more numerical error, especially for x close to 1, but that simply doesn't matter for many applications—in which case the speed gains outweigh the precision concerns. It would be reasonable, however, in the case of high powers of x, to do some sort of preliminary check and estimation. In any case, this optimization is unsound.
+
+*Indicated* optimizations are those which depend on an explicit or derived condition. For example, if the user promises to never pass in an undefined value or negative value, it may allow for certain special optimizations. (Note that nonchecked inputs are expected to be *valid* no matter what; the entire function behavior is undefined if 0.5 is passed as an "integer" without typechecks.) *Unindicated* optimizations work on any  Similarly, the code may deduce that some intermediate variable is not 0 and compute `1/$z` without hesitation, even if NaN checks are enabled.
+
+In the future, optimizations involving the decomposition of compound types may be considered. In this concept, the components of types like complex (real part and complex part, both concrete type real) are stored locally and the contents of the functions inlined. That would massively speed up things like complex arithmetic.
+
+Control flow optimization is mostly beyond me. I'll think about it some time.
+
+### Compilation
+
+Some examples of (human-readable, but structurally faithful) compiled outputs were given above. Some optimizations are obvious, like replacing a call to some `add(real, real) -> real` with a single `+` operator—basically, inlining simple functions. There are additional nontrivial important optimizations to be had between the intermediate representation and the final JS output. Among the most important when dealing with compound types—any type that is not a JS primitive—are *pre-allocation* and the *"writes"* evaluator for compound types.
+
+Heap allocation is expensive, and JS engines generally cannot optimize small local allocations to take place on the stack. Thus, we pre-allocate compound types like `Grapheme.Complex`:
+
+```
+var $a = new Complex();
+var $b = new Complex(2, 1);
+var $returns = new Complex();
+
+function f(z) {
+  addReal(z, 5, $a);
+  multiplyComplex($a, $b, $returns);
+  
+  return $returns;
+}
+```
+
+In this case, `addReal` and `multiplyComplex` are "writes" evaluators which do not perform any heap allocation, but write their result to their third argument, which is a mutable `Grapheme.Complex`. Taken all together, calling `f` performs no heap allocation at all. Of course, for evaluators that return primitives like `gamma(real) -> real`, the underlying JS function should be a simple function that returns the result instead of writing it. For things like complex multiplication and addition of vectors in which the function contents are very short, this optimization can speed up the code 3x or more.
 
 ## Contexts
 
