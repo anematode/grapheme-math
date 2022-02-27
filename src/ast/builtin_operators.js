@@ -59,3 +59,9 @@ registerOperator(new OperatorDefinition({
   args: ["real", "real"],
   returns: "real"
 }))
+
+registerOperator(new OperatorDefinition({
+  name: '^',
+  args: ["real", "real"],
+  returns: "real"
+}))

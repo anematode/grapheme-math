@@ -13,6 +13,12 @@
     function play () {
       s = "x^2"
       n = parseString(s)
+
+      n.resolveTypes()
+    }
+
+    function m(s) {
+      return parseString(s).prettyPrint()
     }
 
     window.onload = play

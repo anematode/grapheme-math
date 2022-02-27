@@ -4,6 +4,7 @@
  */
 
 import { resolveOperatorDefinition } from './builtin_operators.js'
+import { toMathematicalType } from "./builtin_types.js"
 
 /**
  * Helper function (doesn't need to be fast)
@@ -24,9 +25,8 @@ function prettyPrintNode(node, name, keys, params) {
         value = "List{" + value.map(node => node.prettyPrint(params)).join(", ") + "}"
       if (key === "name") // surround with quotes
         value = `"${value}"`
-      if (key === "type") {
+      if (key === "type")
         value = value.toHashStr()
-      }
 
       out.push(`${key}=${value}`)
     }
@@ -43,12 +43,6 @@ export class ASTNode {
      * MathematicalType of the node (int, complex, etc.). Null if not resolved
      */
     this.type = params.type ?? null
-
-    /**
-     * EvaluationContext
-     * @type {*|null}
-     */
-    this.ctx = params.ctx ?? null
 
     /**
      * Other info about the node (for example, where it was in a parsed string)
@@ -111,10 +105,27 @@ export class ASTNode {
   resolveTypes (args) {
     // Convert all arg values to mathematical types
 
-    this._resolveTypes(args)
+    args ??= {}
+    this.applyAll(node => node._resolveTypes(args), false /* only groups */, true /* children first */)
   }
 
   _resolveTypes (args) {
+
+  }
+
+  /**
+   * Evaluate the function in place (without compilation), passing variable values as a dictionary. This is SLOW. Don't
+   * call it unless you're only going to evaluate the function a handful of times
+   * @param vars
+   * @param opts
+   */
+  evaluate (vars, opts={}) {
+    let mode = opts.mode ?? "normal"
+
+    this._evaluate(vars, mode, opts)
+  }
+
+  _evaluate (vars, mode, opts) {
 
   }
 }
@@ -158,7 +169,7 @@ export class ASTGroup extends ASTNode {
   }
 
   _resolveTypes (args) {
-    // Only called on a raw group
+    // Only called on a raw group, aka a parenthesized group
     let children = this.children
 
     for (let i = 0; i < children.length; ++i) {
@@ -166,6 +177,10 @@ export class ASTGroup extends ASTNode {
     }
 
     this.type = children[0].type
+  }
+
+  _evaluate (vars, mode, opts={}) {
+
   }
 }
 
@@ -208,13 +223,13 @@ export class VariableNode extends ASTNode {
   }
 
   _resolveTypes (args) {
-    let { vars } = args
+    let { vars, defaultType } = args
 
-    if (vars) {
-      let info = vars[this.name]
+    let info
+    if (vars)
+      info = vars[this.name]
 
-      this.type = info ?? "real"
-    }
+    this.type = toMathematicalType(info ?? (defaultType ?? "real"))
   }
 }
 
@@ -242,7 +257,7 @@ export class OperatorNode extends ASTGroup {
 
     /**
      * Array of casts needed
-     * @type {MathematicalCast[]}
+     * @type {null|MathematicalCast[]}
      */
     this.casts = null
   }

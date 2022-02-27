@@ -2,28 +2,58 @@ import { toMathematicalType } from './builtin_types.js'
 import { MathematicalType } from './type.js'
 import { castDistance } from './evaluator.js'
 
+/**
+ * Attempt conversion from array of types to corresponding mathematical types
+ * @param args {any}
+ * @returns MathematicalType[]
+ */
+function convertArgumentTypes(args) {
+  if (args == null) return []
+  if (!Array.isArray(args)) throw new TypeError("Expected argument type list to be an array")
+
+  let converted = args.map(toMathematicalType)
+
+  // Validate arguments
+  for (let i = 0; i < args.length; ++i) {
+    let arg = converted[i]
+    if (!arg) {
+      throw new Error(`Unknown argument type at index ${i} (attempted conversion from ${args[i]})`)
+    }
+  }
+
+  return converted
+}
+
 export class OperatorDefinition {
   constructor (params={}) {
+    /**
+     * Readable name of the operator that identifies it: e.g., "^", "/", "gamma"
+     * @type {string}
+     */
     this.name = params.name
 
     /**
      * Arguments
      * @type {MathematicalType[]}
      */
-    this.args = (params.args ?? []).map(toMathematicalType)
-    if (!this.args.every(arg => !!arg)) throw new Error("Unknown argument type")
+    this.args = convertArgumentTypes(params.args)
 
     /**
      * Return type (void type if nothing)
      * @type {MathematicalType}
      */
     this.returns = toMathematicalType(params.returns ?? "void")
-    if (!this.returns) throw new Error("Unknown return type " + params.returns)
+    if (!this.returns) {
+      throw new Error(`Unknown return type (attempted conversion from ${params.returns})`)
+    }
 
-    // List of potential concrete evaluators
+    /**
+     * List of concrete evaluators that may be searched through
+     */
     this.evaluators = params.evaluators ?? []
 
-    this.tags = {}
+    this.tags = { builtin: !!params.builtin }
+    if (params.tags) Object.assign(this.tags, params.tags)
   }
 
   argCount () {
@@ -122,16 +152,4 @@ export function getMathematicalCast (srcType, dstType) {
 
 export function canMathematicalCast (srcType, dstType) {
   return !!getMathematicalCast(srcType, dstType)
-}
-
-window.MC = BUILTIN_MATHEMATICAL_CASTS
-
-export function getMathematicalCasts () {
-  let casts = []
-
-  for (let castList of BUILTIN_MATHEMATICAL_CASTS.values()) {
-    casts.push(...castList.values())
-  }
-
-  return casts
 }
