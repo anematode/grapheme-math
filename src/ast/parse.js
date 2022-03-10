@@ -31,17 +31,17 @@ export class ParserError extends Error {
  * Helper function to throw an error at a specific index in a string.
  * @param string {String} The string to complain about
  * @param index {number} The index in the string where the error occurred
- * @param message {String} The error message
+ * @param message {String} The error message, to be combined with contextual information
+ * @param noIndex {boolean} If true, provide no index
  */
-export function raiseParserError (string, index = 0, message = "") {
+export function raiseParserError (string, index = 0, message = "", noIndex=false) {
   // Spaces to offset the caret to the correct place along the string
   const spaces = ' '.repeat(index)
 
   throw new ParserError(
-    message + ' at index ' + index + ':\n' + string + '\n' + spaces + '^'
+    'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^')
   )
 }
-
 
 /**
  * Check whether a string's parentheses are balanced
@@ -89,7 +89,7 @@ function checkParensBalanced (string) {
 
   if (stack.length !== 0) err = true
 
-  if (err) raiseParserError(string, i, 'Unbalanced parentheses/brackets')
+  if (err) raiseParserError(string, i, 'unbalanced parentheses/brackets')
 }
 
 // Exclude valid variables if needed later
@@ -197,7 +197,7 @@ function * tokenizer (string) {
         }
       }
 
-      raiseParserError(original_string, i, 'Unrecognized token')
+      raiseParserError(original_string, i, 'unrecognized token')
     } while (false)
 
     let len = match[0].length
@@ -207,6 +207,10 @@ function * tokenizer (string) {
 }
 
 function checkValid (string, tokens) {
+  if (tokens.length === 0) {
+    raiseParserError(string, 0, 'empty expression', true /* no index */)
+  }
+
   for (let i = 0; i < tokens.length - 1; ++i) {
     let token1 = tokens[i]
     let token2 = tokens[i + 1]
@@ -218,40 +222,40 @@ function checkValid (string, tokens) {
       (token2.type === 'operator' || token2.type === 'comma') &&
       (!token2IsUnary || i === tokens.length - 2)
     ) {
-      raiseParserError(string, token2.index, 'No consecutive operators/commas')
+      raiseParserError(string, token2.index, 'two consecutive operators')
     }
     if (token1.paren === '(' && token2.paren === ')')
-      raiseParserError(string, token2.index, 'No empty parentheses')
+      raiseParserError(string, token2.index, 'empty parentheses not associated with function call')
     if (token1.paren === '[' && token2.paren === ']')
-      raiseParserError(string, token2.index, 'No empty brackets')
+      raiseParserError(string, token2.index, 'empty brackets not associated with function call')
     if (token1.type === 'operator' && token2.paren === ')')
       raiseParserError(
         string,
         token2.index,
-        'No operator followed by closing parenthesis'
+        'operator followed by closing parenthesis'
       )
     if (token1.type === 'operator' && token2.paren === ']')
       raiseParserError(
         string,
         token2.index,
-        'No operator followed by closing bracket'
+        'operator followed by closing bracket'
       )
     if (token1.type === 'comma' && token2.paren === ')')
       raiseParserError(
         string,
         token2.index,
-        'No comma followed by closing parenthesis'
+        'comma followed by closing parenthesis'
       )
     if (token1.type === 'comma' && token2.paren === ']')
-      raiseParserError(string, token2.index, 'No comma followed by closing bracket')
+      raiseParserError(string, token2.index, 'comma followed by closing bracket')
     if (token1.paren === '(' && token2.type === 'comma')
-      raiseParserError(string, token2.index, 'No comma after starting parenthesis')
+      raiseParserError(string, token2.index, 'comma after open parenthesis')
     if (token1.paren === '[' && token2.type === 'comma')
-      raiseParserError(string, token2.index, 'No comma after starting bracket')
+      raiseParserError(string, token2.index, 'comma after starting bracket')
     if (token1.paren === '(' && token2.type === 'operator' && !token2IsUnary)
-      raiseParserError(string, token2.index, 'No operator after starting parenthesis')
+      raiseParserError(string, token2.index, 'operator after starting parenthesis')
     if (token1.paren === '[' && token2.type === 'operator' && !token2IsUnary)
-      raiseParserError(string, token2.index, 'No operator after starting bracket')
+      raiseParserError(string, token2.index, 'operator after starting bracket')
   }
 
   if (
@@ -259,11 +263,11 @@ function checkValid (string, tokens) {
     (tokens[0].type === 'operator' &&
       !(tokens[0].op === '-' || tokens[0].op === '+'))
   )
-    raiseParserError(string, 0, 'No starting comma/operator')
+    raiseParserError(string, 0, 'expression begins with comma or operator')
 
   const last_token = tokens[tokens.length - 1]
   if (last_token.type === 'comma' || last_token.type === 'operator')
-    raiseParserError(string, tokens.length - 1, 'No ending comma/operator')
+    raiseParserError(string, tokens.length - 1, 'expression ends with comma or operator')
 }
 
 /**
@@ -304,7 +308,7 @@ function isStringInteger (s) {
   if (e !== -1) { // get exponent
     exponent = parseInt(s.slice(e + 1))
 
-    if (Number.isNaN(exponent)) throw new Error("Unrecognized exponent " + s.slice(e + 1))
+    if (Number.isNaN(exponent)) throw new Error("unrecognized exponent " + s.slice(e + 1))
   } else {
     e = s.length
   }

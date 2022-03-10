@@ -8,4 +8,10 @@ describe("parseString", () => {
 
     ]
   })
+
+  it("Correctly throws on malformed expressions", () => {
+    const testCases = [
+      "x^", "",
+    ]
+  })
 })
