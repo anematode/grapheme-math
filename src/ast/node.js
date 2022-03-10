@@ -1,11 +1,35 @@
-/**
- * In this file we define the abstract syntax tree, including the base ASTNode and the specialized ConstantNode,
- * VariableNode, and OperatorNode.
- */
-
 import { resolveOperatorDefinition } from './builtin_operators.js'
 import { toMathematicalType } from "./builtin_types.js"
 import { toEvaluationMode } from "./eval_modes.js"
+
+/**
+ * To evaluate a given node whose operators and types have been identified, we provide the following:
+ *
+ * An evaluation mode, which may be a string;
+ * A scope, which is a key-value pair of variable values that will be casted to the corresponding mode type;
+ * An option value.
+ *
+ * Evaluating a constant node:
+ *   - Identify the correct concrete type
+ *   - Cast the value to the concrete type
+ *   - Return
+ *
+ * Evaluating an ASTGroup:
+ *   - Return the result of the first child node
+ *
+ * Evaluating an OperatorNode:
+ *   - Compute the values of all children
+ *   - Look up the correct concrete evaluator
+ *   - Look up the correct concrete casts
+ *   - Cast the values of all children to the correct types
+ *   - Call the concrete evaluator. extraArgs is passed as the last parameter if it is not empty.
+ *   - Return
+ *
+ * Evaluating a VariableNode:
+ *   - Identify the correct concrete type
+ *   - Cast the value in the provided scope to the concrete type
+ *   - Return
+ */
 
 /**
  * Helper function (doesn't need to be fast)
@@ -222,7 +246,7 @@ export class ConstantNode extends ASTNode {
   _evaluate (vars, mode, opts={}) {
     let type = mode.getConcreteType(this.type)
 
-    if (!type) throw new Error("Cannot find")
+    if (!type) throw new Error("Cannot find corresponding concrete type")
     return type.castPermissive(this.value)
   }
 }
@@ -330,15 +354,17 @@ export class OperatorNode extends ASTGroup {
     this.casts = casts
   }
 
-  _evaluate(vars, mode, opts={}) {
+  _evaluate (vars, mode, opts={}) {
     if (!this.operatorDefinition) throw new Error("Operator definition not resolved")
     if (!this.casts) throw new Error("Casts not resolved")
+
+    this.concreteTypes = this.operatorDefinition.args.map(a => mode.getConcreteType(a))
 
     let childrenValues = this.children.map(c => c._evaluate(vars, mode, opts))
     let castedValues = childrenValues.map((v, i) => this.casts[i].getEvaluator([
       mode.getConcreteType(this.children[i].type)
-    ], mode.getConcreteType(this.operatorDefinition.args[i])))
+    ], mode.getConcreteType([i])))
 
-    return this.operatorDefinition.getEvaluator(this)
+    let evaluator = this.operatorDefinition.getEvaluator(this)
   }
 }

@@ -8,7 +8,7 @@ describe("parseString", () => {
     const testCases = [
       ["x^2", `OperatorNode{name="^", children=List{VariableNode{name="x"}, ConstantNode{type=int, value=2}}}`],
       ["a+b+c", `OperatorNode{name="+", children=List{OperatorNode{name="+", children=List{VariableNode{name="a"}, VariableNode{name="b"}}}, VariableNode{name="c"}}}`], // left to right
-      
+
     ]
 
     expectMultipleCases(parseString, testCases, "parseString")
