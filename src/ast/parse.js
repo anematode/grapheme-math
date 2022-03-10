@@ -12,7 +12,7 @@ import {
 import { toMathematicalType } from './builtin_types.js'
 
 const operator_regex = /^[*\-\/+^]|^[<>]=?|^[=!]=|^and\s+|^or\s+/
-const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/
+const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/  // functions may only use (, [ is reserved for indexing
 const constant_regex = /^[0-9]*\.?[0-9]*e?[0-9]+/
 const variable_regex = /^[a-zA-Z_][a-zA-Z0-9_]*/
 const paren_regex = /^[()\[\]]/
@@ -30,16 +30,26 @@ export class ParserError extends Error {
 /**
  * Helper function to throw an error at a specific index in a string.
  * @param string {String} The string to complain about
- * @param index {number} The index in the string where the error occurred
+ * @param info {any} The token in the string where the error occurred, ideally with an index attribute
  * @param message {String} The error message, to be combined with contextual information
  * @param noIndex {boolean} If true, provide no index
  */
-export function raiseParserError (string, index = 0, message = "", noIndex=false) {
+export function raiseParserError (string, info, message = "", noIndex=false) {
   // Spaces to offset the caret to the correct place along the string
+  let token = info?.token ?? info ?? {}
+  let endToken = info?.endToken ?? token
+
+  let index = token.index
+  if (index == null) {
+    noIndex = true
+    index = 0
+  }
+
   const spaces = ' '.repeat(index)
+  let errorLen = (endToken.index ?? index) - index + 1
 
   throw new ParserError(
-    'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^')
+    'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen))
   )
 }
 
@@ -160,6 +170,8 @@ function * tokenizer (string) {
       match = string.match(function_regex)
 
       if (match) {
+        // First group is the function name, second group is the type of parenthesis (bracket or open)
+
         yield {
           type: 'function',
           name: match[1],
@@ -206,7 +218,7 @@ function * tokenizer (string) {
   }
 }
 
-function checkValid (string, tokens) {
+function checkValid (tokens, string) {
   if (tokens.length === 0) {
     raiseParserError(string, 0, 'empty expression', true /* no index */)
   }
@@ -222,40 +234,40 @@ function checkValid (string, tokens) {
       (token2.type === 'operator' || token2.type === 'comma') &&
       (!token2IsUnary || i === tokens.length - 2)
     ) {
-      raiseParserError(string, token2.index, 'two consecutive operators')
+      raiseParserError(string, token2, 'two consecutive operators')
     }
     if (token1.paren === '(' && token2.paren === ')')
-      raiseParserError(string, token2.index, 'empty parentheses not associated with function call')
+      raiseParserError(string, token2, 'empty parentheses not associated with function call')
     if (token1.paren === '[' && token2.paren === ']')
-      raiseParserError(string, token2.index, 'empty brackets not associated with function call')
+      raiseParserError(string, token2, 'empty brackets not associated with function call')
     if (token1.type === 'operator' && token2.paren === ')')
       raiseParserError(
         string,
-        token2.index,
+        token2,
         'operator followed by closing parenthesis'
       )
     if (token1.type === 'operator' && token2.paren === ']')
       raiseParserError(
         string,
-        token2.index,
+        token2,
         'operator followed by closing bracket'
       )
     if (token1.type === 'comma' && token2.paren === ')')
       raiseParserError(
         string,
-        token2.index,
+        token2,
         'comma followed by closing parenthesis'
       )
     if (token1.type === 'comma' && token2.paren === ']')
-      raiseParserError(string, token2.index, 'comma followed by closing bracket')
+      raiseParserError(string, token2, 'comma followed by closing bracket')
     if (token1.paren === '(' && token2.type === 'comma')
-      raiseParserError(string, token2.index, 'comma after open parenthesis')
+      raiseParserError(string, token2, 'comma after open parenthesis')
     if (token1.paren === '[' && token2.type === 'comma')
-      raiseParserError(string, token2.index, 'comma after starting bracket')
+      raiseParserError(string, token2, 'comma after starting bracket')
     if (token1.paren === '(' && token2.type === 'operator' && !token2IsUnary)
-      raiseParserError(string, token2.index, 'operator after starting parenthesis')
+      raiseParserError(string, token2, 'operator after starting parenthesis')
     if (token1.paren === '[' && token2.type === 'operator' && !token2IsUnary)
-      raiseParserError(string, token2.index, 'operator after starting bracket')
+      raiseParserError(string, token2, 'operator after starting bracket')
   }
 
   if (
@@ -272,22 +284,27 @@ function checkValid (string, tokens) {
 
 /**
  * Find a pair of parentheses in a list of tokens, namely the first one as indexed by the closing paren/bracket. For
- * example, in (x(y(z)(w))) it will find (z).
+ * example, in (x(y(z)(w))) it will find (z), returning [ paren1 index, paren2 index, paren1 token, paren2 token ]
  * @param children
- * @returns {number[]}
  */
 function findParenIndices (children) {
   let startIndex = -1
+  let startToken = null
 
   for (let i = 0; i < children.length; ++i) {
     let child = children[i]
     if (!child.paren) continue
 
-    if (child.paren === '(' || child.paren === '[') startIndex = i
+    if (child.paren === '(' || child.paren === '[') {
+      startIndex = i
+      startToken = child
+    }
 
     if ((child.paren === ')' || child.paren === ']') && startIndex !== -1)
-      return [startIndex, i]
+      return [startIndex, i, startToken, child]
   }
+
+  return null
 }
 
 /**
@@ -351,19 +368,23 @@ function isStringInteger (s) {
 function processConstantsAndVariables (tokens) {
   for (let i = 0; i < tokens.length; ++i) {
     let token = tokens[i]
+    let node
 
     switch (token.type) {
       case 'constant':
-        let node = new ConstantNode({ value: token.value })
+        node = new ConstantNode({ value: token.value })
         node.type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real')
-
-        tokens[i] = node
 
         break
       case 'variable':
-        tokens[i] = new VariableNode({ name: token.name })
+        node = new VariableNode({ name: token.name })
         break
+      default:
+        continue
     }
+
+    node.info.token = node.info.startToken = node.info.endToken = token
+    tokens[i] = node
   }
 }
 
@@ -380,14 +401,18 @@ function processParentheses (rootNode) {
       if (indices) {
         parensRemaining = true
 
+        let [ startIndex, endIndex, startToken, endToken ] = indices
+
         let newNode = new ASTGroup()
         let expr = node.children.splice(
-          indices[0],
-          indices[1] - indices[0] + 1,
+          startIndex,
+          endIndex - startIndex + 1,
           newNode
         )
 
         newNode.children = expr.slice(1, expr.length - 1)
+        newNode.info.token = newNode.info.startToken = startToken
+        newNode.info.endToken = endToken
       }
     }
   }, true)
@@ -406,8 +431,18 @@ function processFunctions (rootNode) {
 
         children[i] = newNode
 
+        let nextNode = children[i + 1]
+        if (!nextNode) {
+          throw new Error("Unknown error")
+        }
+
         // Take children from the node coming immediately after
-        newNode.children = children[i + 1].children
+        newNode.children = nextNode.children
+
+        newNode.info.token = newNode.info.startToken = token
+        newNode.info.endToken = nextNode.info.endToken
+        newNode.info.startExprToken = nextNode.info.startToken
+        newNode.info.isFunction = true
 
         // Remove the node immediately after
         children.splice(i + 1, 1)
@@ -557,6 +592,59 @@ function removeCommas (root) {
   }, true)
 }
 
+function verifyCommaSeparation (root, string) {
+  root.applyAll(node => {
+    // Every function with multiple elements in it should have commas separating each argument, with no leading or
+    // trailing commas.
+    let children = node.children
+    let isPlainGroup = (node instanceof ASTGroup) && !(node instanceof OperatorNode)
+
+    let isFunction = node.isFunctionNode()
+    if (!isFunction && !isPlainGroup) return
+
+    if (children.length === 0) return // fine. () is the empty tuple
+    if (children[0].type === 'comma') raiseParserError(string, children[0], "leading comma in expression")
+
+    // Must have the form "a,b,c"
+    let prevChild = null
+    for (let i = 0; i < children.length; ++i) {
+      let child = children[i]
+
+      if ((!prevChild || prevChild.type === "comma") && child.type === "comma") {
+        // child is a token
+        raiseParserError(string, child, "spurious comma")
+      }
+
+      if (prevChild && prevChild.type !== "comma" && child.type !== "comma") {
+        // child is a node
+        raiseParserError(string, child.info, "trailing expression")
+      }
+
+      prevChild = child
+    }
+
+    // TODO tuples
+    if (isPlainGroup) {
+      if (children.length > 1) raiseParserError(string, children[2].info, "tuples not yet implemented")
+    }
+
+  }, true)
+}
+
+/**
+ * Attach start and end tokens for each group
+ * @param root
+ */
+function attachTokens(root) {
+  root.applyAll(node => {
+    let info = node.info
+    if (!info.token) {
+      info.token = info.startToken = node.children[0].info.token
+      info.endToken = node.children[node.children.length - 1].info.token
+    }
+  }, true)
+}
+
 /**
  * Parse a given list of tokens, returning a single ASTNode. At this point, the tokens are a list of the form
  * { type: "function"|"variable"|"paren"|"operator"|"constant"|"comma", index: <index of the token in the original string>,
@@ -564,7 +652,7 @@ function removeCommas (root) {
  * @param tokens
  * @returns {ASTNode}
  */
-function parseTokens (tokens) {
+function parseTokens (tokens, string) {
   processConstantsAndVariables(tokens)
   let root = new ASTGroup()
 
@@ -572,6 +660,7 @@ function parseTokens (tokens) {
 
   processParentheses(root)
   processFunctions(root)
+
   processUnaryAndExponentiation(root)
 
   // PEMDAS
@@ -582,6 +671,9 @@ function parseTokens (tokens) {
   processOperators(root, comparisonOperators)
   processOperators(root, ['and', 'or'])
 
+  attachTokens(root)
+  verifyCommaSeparation(root, string)
+  // processTuples(root, string)
   removeCommas(root)
 
   return root
@@ -599,9 +691,9 @@ function parseString (string) {
     tokens.push(token)
   }
 
-  checkValid(string, tokens)
+  checkValid(tokens, string)
 
-  let node = parseTokens(tokens).children[0]
+  let node = parseTokens(tokens, string).children[0]
 
   return node
 }

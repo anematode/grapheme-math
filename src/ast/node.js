@@ -60,6 +60,14 @@ export class ASTNode {
     return false
   }
 
+  /**
+   * Is this node an operator node that is a function (and not an infix, prefix or postfix operator)
+   * @returns {boolean}
+   */
+  isFunctionNode () {
+    return false
+  }
+
   toString () {
     return `[object ${this.getNodeTypeAsString()}]`
   }
@@ -133,6 +141,12 @@ export class ASTNode {
 
 // Node with children. A plain ASTGroup is usually just a parenthesized thing
 export class ASTGroup extends ASTNode {
+  constructor (params={}) {
+    super(params)
+
+    this.info.isFunction = false
+  }
+
   /**
    * Apply a function to this node and all of its children, recursively.
    * @param func {Function} The callback function. We call it each time with (node, depth) as arguments
@@ -279,6 +293,10 @@ export class OperatorNode extends ASTGroup {
 
   getNodeType () {
     return 3
+  }
+
+  isFunctionNode() {
+    return !!this.info.isFunction
   }
 
   clone () {
