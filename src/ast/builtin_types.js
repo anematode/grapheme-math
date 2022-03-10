@@ -21,6 +21,7 @@ let concreteBoolean = new ConcreteType({
   // The typechecks are for usability, not strictness
   typecheck: NullableBoolean.isUsableNullableBoolean,
   typecheckVerbose: NullableBoolean.typecheckUsableNullableBoolean,
+  castPermissive: x => !!x
 })
 
 // Integers can be any number that's not a non-integral finite number (so they can be ±Infinity, NaN) but they can
@@ -31,7 +32,8 @@ let concreteInt = new ConcreteType({
   init: () => 0,
 
   typecheck: NullableInteger.isNullableInteger,
-  typecheckVerbose: NullableInteger.typecheckNullableInteger
+  typecheckVerbose: NullableInteger.typecheckNullableInteger,
+  castPermissive: x => Math.round(x)
 })
 
 // Real can be ANY floating-point number
@@ -42,6 +44,7 @@ let concreteReal = new ConcreteType({
 
   typecheck: b => typeof b === "number",
   typecheckVerbose: b => (typeof b !== "number") ? ("Expected JS number, found type " + (typeof b)) : "",
+  castPermissive: x => +x
 })
 
 let concreteComplex = new ConcreteType({
@@ -52,7 +55,8 @@ let concreteComplex = new ConcreteType({
   typecheck: b => b instanceof Complex,
   typecheckVerbose: b => (b instanceof Complex) ? "Expected complex number" : "",
   clone: c => new Complex(c.re, c.im),
-  copyTo: (src, dst) => { dst.re = src.re; dst.im = src.im; }
+  copyTo: (src, dst) => { dst.re = src.re; dst.im = src.im; },
+  castPermissive: Complex.fromObj
 })
 
 let concreteIntervalBoolean = new ConcreteType({
@@ -72,7 +76,8 @@ let concreteIntervalReal = new ConcreteType({
 
   typecheck: b => b instanceof FastRealInterval,
   clone: b => new FastRealInterval(b.min, b.max, b.info),
-  copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info }
+  copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info },
+  castPermissive: FastRealInterval.fromObj
 })
 
 let concreteIntervalInt = new ConcreteType({

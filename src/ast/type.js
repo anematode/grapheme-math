@@ -38,6 +38,10 @@ export class ConcreteType {
     // for non-primitives
     this.copyTo = params.copyTo ?? null
 
+    // FUNCTION which, when called with a single argument, attempts to construct the type and will never fail (will
+    // returned the undefined version instead)
+    this.castPermissive = params.castPermissive ?? null
+
     this.fillDefaults()
   }
 

@@ -2,6 +2,8 @@
 
 // List of evaluation modes.
 
+import {toConcreteType} from "./builtin_types.js"
+
 class EvaluationMode {
   constructor (name, params={}) {
     this.name = name
@@ -18,8 +20,16 @@ class EvaluationMode {
     this.fillTypeMap(params.typeMap)
   }
 
-  fillTypeMap () {
-    
+  fillTypeMap (m) {
+    for (let [ mathematical, concrete ] of Object.entries(m)) {
+      if (typeof mathematical !== "string") throw new TypeError("unimplemented")
+
+      this.typeMap.set(mathematical, toConcreteType(concrete))
+    }
+  }
+
+  getConcreteType (mType) {
+    return this.typeMap.get(mType.name) ?? null
   }
 }
 
@@ -27,12 +37,17 @@ let normal = new EvaluationMode("normal", {
   typeMap: {
     "int": "int",
     "real": "real",
+    "bool": "bool",
     "complex": "complex"
   }
 })
 
 let fastInterval = new EvaluationMode("fast_interval", {
-
+  typeMap: {
+    "int": "fast_int_interval",
+    "real": "fast_real_interval",
+    "bool": "fast_bool_interval"
+  }
 })
 
 let EvaluationModes = new Map()
@@ -44,4 +59,5 @@ export function toEvaluationMode(o) {
   let mode = EvaluationModes.get(o)
 
   if (!mode) throw new Error("Unrecognized evaluation mode " + o)
+  return mode
 }

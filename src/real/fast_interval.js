@@ -5,8 +5,8 @@ import { roundDown, roundUp } from '../fp/manip.js'
  */
 class FastRealInterval {
   constructor (min=0, max=min, info=0b111) {
-    this.min = min
-    this.max = max
+    this.min = +min
+    this.max = +max
     this.info = info | 0
   }
 
@@ -16,6 +16,30 @@ class FastRealInterval {
 
   defMax () {
     return this.info & 0b10
+  }
+
+  static fromObj (o) {
+    let min = 0, max = 0, info = 0b111, isStr = false
+    if (typeof o === "string") {
+      isStr = true
+      o = +o
+    }
+
+    if (typeof o === "number") {
+      if (Number.isNaN(o)) {
+        info = 0
+      } else {
+        min = max = o
+        if (isStr) { // safely include the number
+          min = roundDown(min)
+          max = roundUp(max)
+        }
+      }
+    } else {
+      throw "unimplemented"
+    }
+
+    return new FastRealInterval(min, max, info)
   }
 
   cont () {

@@ -87,6 +87,25 @@ export class OperatorDefinition {
     // ^(int, int) -> int
     return `${this.name}(${this.args.map(arg => arg.prettyPrint()).join(', ')}) -> ${this.returns.prettyPrint()}`
   }
+
+  getEvaluator (args, returns, { evaluatorType = "returns" } = {}) {
+    if (args.length !== this.args.length) return null
+
+    ev: for (const e of this.evaluators) {
+      for (let i = 0; i < this.args.length; ++i) {
+        if (args[i].toHashStr() !== this.args[i].toHashStr()) {
+          continue ev
+        }
+      }
+
+      if (e.returns !== returns) continue
+      if (e.type !== evaluatorType) continue
+
+      return e
+    }
+
+    return null
+  }
 }
 
 // A cast is just a special operator that converts one type to another

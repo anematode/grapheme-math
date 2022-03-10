@@ -15,10 +15,11 @@
       n = parseString(s)
 
       n.resolveTypes()
+      //console.log(n.evaluate({x : 3 }))
     }
 
     function m(s) {
-      return parseString(s).prettyPrint()
+      return s.prettyPrint()
     }
 
     window.onload = play

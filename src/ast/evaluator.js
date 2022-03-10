@@ -30,6 +30,7 @@
 // usually are used in different modes. For example, real -> fast_interval_real.
 
 import { toConcreteType } from './builtin_types.js'
+import {ConcreteType} from "./type.js"
 
 let unaryPrimitives = {
   '-': x => -x
@@ -187,7 +188,7 @@ export function getConcreteCast (srcType, dstType) {
 
   if (srcType.isSameType(dstType)) return "identity"
 
-  let srcCasts = BUILTIN_MATHEMATICAL_CASTS.get(srcType.toHashStr())
+  let srcCasts = BUILTIN_CONCRETE_CASTS.get(srcType.toHashStr())
   if (!srcCasts) return null
 
   return srcCasts.get(dstType.toHashStr()) ?? null

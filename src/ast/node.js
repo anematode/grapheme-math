@@ -5,6 +5,7 @@
 
 import { resolveOperatorDefinition } from './builtin_operators.js'
 import { toMathematicalType } from "./builtin_types.js"
+import { toEvaluationMode } from "./eval_modes.js"
 
 /**
  * Helper function (doesn't need to be fast)
@@ -102,11 +103,11 @@ export class ASTNode {
     return new ASTNode(this)
   }
 
-  resolveTypes (args) {
+  resolveTypes (opts) {
     // Convert all arg values to mathematical types
 
-    args ??= {}
-    this.applyAll(node => node._resolveTypes(args), false /* only groups */, true /* children first */)
+    opts ??= {}
+    this.applyAll(node => node._resolveTypes(opts), false /* only groups */, true /* children first */)
   }
 
   _resolveTypes (args) {
@@ -120,13 +121,13 @@ export class ASTNode {
    * @param opts
    */
   evaluate (vars, opts={}) {
-    let mode = opts.mode ?? "normal"
+    let mode = toEvaluationMode(opts.mode ?? "normal")
 
     this._evaluate(vars, mode, opts)
   }
 
   _evaluate (vars, mode, opts) {
-
+    throw new Error("ASTNode cannot be evaluated")
   }
 }
 
@@ -180,7 +181,7 @@ export class ASTGroup extends ASTNode {
   }
 
   _evaluate (vars, mode, opts={}) {
-
+    return this.children[0]._evaluate(vars, mode, opts)
   }
 }
 
@@ -202,6 +203,13 @@ export class ConstantNode extends ASTNode {
 
   _resolveTypes (args) {
 
+  }
+
+  _evaluate (vars, mode, opts={}) {
+    let type = mode.getConcreteType(this.type)
+
+    if (!type) throw new Error("Cannot find")
+    return type.castPermissive(this.value)
   }
 }
 
@@ -230,6 +238,13 @@ export class VariableNode extends ASTNode {
       info = vars[this.name]
 
     this.type = toMathematicalType(info ?? (defaultType ?? "real"))
+  }
+
+  _evaluate (vars, mode, opts={}) {
+    let v = vars[this.name]
+    if (!v) throw new Error("Cannot find")
+
+    return v
   }
 }
 
@@ -270,6 +285,10 @@ export class OperatorNode extends ASTGroup {
     return new OperatorNode(this)
   }
 
+  childArgTypes () {
+    return this.children.map(c => c.type)
+  }
+
   _resolveTypes (args) {
     let childArgTypes = this.children.map(c => c.type)
     for (let t of childArgTypes) {
@@ -291,5 +310,17 @@ export class OperatorNode extends ASTGroup {
     this.type = definition.returns
     this.operatorDefinition = definition
     this.casts = casts
+  }
+
+  _evaluate(vars, mode, opts={}) {
+    if (!this.operatorDefinition) throw new Error("Operator definition not resolved")
+    if (!this.casts) throw new Error("Casts not resolved")
+
+    let childrenValues = this.children.map(c => c._evaluate(vars, mode, opts))
+    let castedValues = childrenValues.map((v, i) => this.casts[i].getEvaluator([
+      mode.getConcreteType(this.children[i].type)
+    ], mode.getConcreteType(this.operatorDefinition.args[i])))
+
+    return this.operatorDefinition.getEvaluator(this)
   }
 }
