@@ -1,5 +1,6 @@
 import { OperatorDefinition } from "../operator_definition.js"
 import { castDistance, ConcreteEvaluator } from '../evaluator.js'
+import {gammaReal} from "../../real/normal.js"
 
 // For now we'll just have a mapping  name -> Array of possibilities
 const KNOWN_OPERATORS = new Map()
@@ -48,6 +49,14 @@ export function resolveOperatorDefinition (name, argTypes) {
   return [ bestDef, bestCasts ]
 }
 
+/**
+ * Basic arithmetic operations TODO: extended names, etc.
+ */
+
+/**
+ * Integer operations
+ */
+
 registerOperator(new OperatorDefinition({
   name: '+',
   args: ["int", "int"],
@@ -56,10 +65,54 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "int", "int" ],
       returns: "int",
-      func: (x, y) => x + y
+      primitive: "+"
     })
   ]
 }))
+
+registerOperator(new OperatorDefinition({
+  name: '*',
+  args: ["int", "int"],
+  returns: "int",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "int", "int" ],
+      returns: "int",
+      primitive: "*"
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: '-',
+  args: ["int", "int"],
+  returns: "int",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "int", "int" ],
+      returns: "int",
+      primitive: "-"
+    })
+  ]
+}))
+
+// Unary minus
+registerOperator(new OperatorDefinition({
+  name: '-',
+  args: ["int"],
+  returns: "int",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "int" ],
+      returns: "int",
+      primitive: "-"
+    })
+  ]
+}))
+
+/**
+ * Real operators
+ */
 
 registerOperator(new OperatorDefinition({
   name: '+',
@@ -69,7 +122,7 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "real", "real" ],
       returns: "real",
-      func: (x, y) => x + y
+      primitive: "+"
     })
   ]
 }))
@@ -82,7 +135,47 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "real", "real" ],
       returns: "real",
-      func: (x, y) => x + y
+      primitive: "*"
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: '/',
+  args: ["real", "real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real", "real" ],
+      returns: "real",
+      primitive: "/"
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: '-',
+  args: ["real", "real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real", "real" ],
+      returns: "real",
+      primitive: "-"
+    })
+  ]
+}))
+
+// Unary minus
+registerOperator(new OperatorDefinition({
+  name: '-',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "real",
+      primitive: "-"
     })
   ]
 }))
@@ -96,6 +189,23 @@ registerOperator(new OperatorDefinition({
       args: [ "real", "real" ],
       returns: "real",
       func: Math.pow
+    })
+  ]
+}))
+
+/**
+ * Special functions
+ */
+
+registerOperator(new OperatorDefinition({
+  name: 'gamma',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: ["real"],
+      returns: "real",
+      func: gammaReal
     })
   ]
 }))
