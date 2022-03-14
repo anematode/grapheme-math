@@ -1,10 +1,12 @@
 from mpmath import mp
 from math import comb
+import functools
 
 # p_k(g) = sqrt(2) / pi * sum (l = 0 to k) (C(2k+1, 2l+1))(l - 1/2)!(l+g+1/2)^(-l-1/2) exp(l + g + 1/2)
 
 mp.dps = 100
 
+@functools.cache
 def C(n, m):
     if n == 1 and m == 1:
          return mp.mpf(1)
@@ -51,6 +53,13 @@ def coeffs(g, k):
 
     return [ sum(mm[j][i] * pks[i] for i in range(k)) for j in range(k) ]
 
-g = 9
-k = 11
-print(coeffs(g,k))
+def mpf_to_dd(f):
+    rounded = float(f)
+    err = float(f - rounded)
+
+    return (str(rounded) + "," + str(err))
+
+g = 14
+k = 18
+
+print(','.join(list(map(mpf_to_dd, coeffs(g,k)))))
