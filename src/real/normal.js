@@ -3,6 +3,78 @@
 
 import {Constants} from "./constants.js"
 
+// Double double arithmetic (taken from https://github.com/taschini/pycrlibm/blob/master/crlibm/double-extended.h)
+
+export function addDD(resH, resL, xH, xL, yH, yL) {
+  let r = xH + yH
+  let t = r - xH
+  let e = (xH - (r - t)) + (yH - t) + xL + yL
+
+  resH = r + e
+  resL = e - (resH - r)
+
+  return [resH, resL]
+}
+
+export function subDD(resH, resL, xH, xL, yH, yL) {
+  let r = xH - yH
+  let t = r - xH
+  let e = (xH - (r - t)) - (yH + t) + xL - yL
+
+  resH = r + e
+  resL = e - (resH - r)
+
+  return [resH, resL]
+}
+
+export function mulDD(resH, resL, xH, xL, yH, yL) {
+  // fma emulation for xH * yH
+  let xHs = xH * 4294967297
+  let yHs = yH * 4294967297
+
+  // Corrected
+  let xC = (xH - xHs) + xHs
+  let yC = (yH - yHs) + yHs
+
+  let xE = xH - xC
+  let yE = yH - yC
+
+  let prod = xH * yH
+  let err = (xC * yC - prod) + xC * yE + yC * xE + xE * yE  // fancy correction factor, effectively a 2x2 multiplication
+
+  err += xH * yL + yH * xL
+
+  resH = prod + err
+  resL = err - (resH - prod)
+
+  return [resH, resL]
+}
+
+export function divDD(resH, resL, xH, xL, yH, yL) {
+  let cH = xH / yH
+
+  // fma emulation xH / yH  * yH
+  let cHs = cH * 4294967297
+  let yHs = yH * 4294967297
+
+  let cC = (cH - cHs) + cHs
+  let yC = (yH - yHs) + yHs
+
+  let cE = cH - cC
+  let yE = yH - yC
+
+  let mH = cH * yH
+  let mL = (cC * yC - mH) + cC * yE + yC * cE + cE * yE
+
+  let cL = xH - mH - mL + xL - cH * yL
+  cL /= yH
+
+  resH = cH + cL
+  resL = cL - (resH - cH)
+
+  return [resH, resL]
+}
+
 const gammaLookup = Object.freeze([
   NaN, 1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600, 6227020800, 87178291200, 1307674368000,
   20922789888000, 355687428096000, 6402373705728000, // end of precision
@@ -56,9 +128,13 @@ const lanczosCoefficients = [
 ]
 const coeffLength = 8
 
+
+
 /**
  * Gamma function, extension of the factorial function. Credit to Frederick Johannson; this uses the Lanczos
  * approximation (see https://en.wikipedia.org/wiki/Lanczos_approximation)
+ *
+ * Geometric mean of error: 11 ulp (particularly bad near poles, as one would expect)
  * @param x {number}
  * @returns {number}
  */
@@ -80,6 +156,9 @@ export function gammaReal(x) {
 
   if (x < 0.5) {
     // Reflection formula
+
+
+
     return Math.PI / (Math.sin(Math.PI * x) * gammaReal(1 - x))
   }
 
@@ -95,6 +174,12 @@ export function gammaReal(x) {
   let y = Constants.sqrt2Pi * Math.pow(t, x + 0.5) * Math.exp(-t) * s // yeah idk
 
   return y
+}
+
+export function gammaRealHighPrec(x) {
+  x = +x
+
+
 }
 
 /**
