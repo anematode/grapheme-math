@@ -358,8 +358,6 @@ export class OperatorNode extends ASTGroup {
     if (!this.operatorDefinition) throw new Error("Operator definition not resolved")
     if (!this.casts) throw new Error("Casts not resolved")
 
-    this.concreteTypes = this.operatorDefinition.args.map(a => mode.getConcreteType(a))
-
     let childrenValues = this.children.map(c => c._evaluate(vars, mode, opts))
     let castedValues = childrenValues.map((v, i) => this.casts[i].getEvaluator([
       mode.getConcreteType(this.children[i].type)

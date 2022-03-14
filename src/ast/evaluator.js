@@ -63,7 +63,7 @@ export class ConcreteEvaluator {
      * Whether this operation is an identity operation (at the type level)
      * @type {boolean}
      */
-    this.identity = params.identity
+    this.identity = !!params.identity
 
     /**
      * Either "new" or "write". "new" means the func returns a new instance of the object. "write" means the function
@@ -71,26 +71,27 @@ export class ConcreteEvaluator {
      * would put the result of the addition of the first two numbers into the second, overwriting whatever was there
      * @type {string}
      */
-    this.type = params.type ?? "new"
-    if (this.type !== "new" && this.type !== "write") throw new Error("Evaluator type must be either new or write, not " + this.type)
+    this.evalType = params.type ?? "new"
+    if (this.evalType !== "new" && this.evalType !== "write") {
+      throw new Error("Evaluator type must be either new or write, not " + this.evalType)
+    }
 
     this.primitive = params.primitive ?? ""
-
     this.func = params.func ?? null
 
     this.fillDefaults()
   }
 
   fillDefaults () {
-    if (this.returns.isPrimitive && this.type === "write") throw new Error("Cannot write to a primitive")
+    if (this.returns.isPrimitive && this.evalType === "write") throw new Error("Cannot write to a primitive")
 
     if (!this.func) {
       let func
 
       if (this.identity) {
-        if (this.type === "new") {
+        if (this.evalType === "new") {
           func = this.returns.clone
-        } else if (this.type === "write") {
+        } else if (this.evalType === "write") {
           func = this.returns.copyTo
         }
       } else if (this.primitive) {
@@ -102,7 +103,7 @@ export class ConcreteEvaluator {
           func = binaryPrimitives[this.primitive]
         }
 
-        this.type = "new"
+        this.evalType = "new"
       }
 
       if (!func) throw new Error("Unable to generate evaluation function")
@@ -131,6 +132,10 @@ export class ConcreteEvaluator {
     }
 
     return casts
+  }
+
+  callNew (args) {
+
   }
 }
 
@@ -206,11 +211,16 @@ export function getConcreteCasts () {
   return casts
 }
 
+/**
+ * Determine the number of non-identity casts in a list of casts, and -1 if there is an empty cast somewhere
+ * @param casts {MathematicalCast[]}
+ * @returns {number}
+ */
 export function castDistance (casts) {
   let count = 0
 
   for (let cast of casts) {
-    if (cast !== "identity")
+    if (!cast.isIdentity())
       count++
     else if (!cast) {
       count = -1

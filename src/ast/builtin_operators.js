@@ -1,5 +1,5 @@
 import { OperatorDefinition } from "./operator_definition.js"
-import { castDistance } from './evaluator.js'
+import {castDistance, ConcreteEvaluator} from './evaluator.js'
 
 // For now we'll just have a mapping  name -> Array of possibilities
 const KNOWN_OPERATORS = new Map()
@@ -51,17 +51,39 @@ export function resolveOperatorDefinition (name, argTypes) {
 registerOperator(new OperatorDefinition({
   name: '+',
   args: ["int", "int"],
-  returns: "int"
+  returns: "int",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "int", "int" ],
+      returns: "int",
+      func: (x, y) => x + y
+    })
+  ]
 }))
 
 registerOperator(new OperatorDefinition({
   name: '+',
   args: ["real", "real"],
-  returns: "real"
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real", "real" ],
+      returns: "real",
+      func: (x, y) => x + y
+    })
+  ]
 }))
 
 registerOperator(new OperatorDefinition({
   name: '^',
   args: ["real", "real"],
-  returns: "real"
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real", "real" ],
+      returns: "real",
+      func: Math.pow
+    })
+  ]
+
 }))

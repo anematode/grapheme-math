@@ -50,7 +50,7 @@ let fastInterval = new EvaluationMode("fast_interval", {
   }
 })
 
-let EvaluationModes = new Map()
+export const EvaluationModes = new Map()
 EvaluationModes.set("normal", normal)
 EvaluationModes.set("fast_interval", fastInterval)
 
