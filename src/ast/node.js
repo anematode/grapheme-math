@@ -39,6 +39,15 @@ export class EvaluationError extends Error {
   }
 }
 
+export class ResolutionError extends Error {
+  constructor (message) {
+    super(message)
+
+    this.name = 'ResolutionError'
+  }
+}
+
+
 /**
  * Helper function (doesn't need to be fast)
  * @param node {ASTNode}
@@ -152,10 +161,24 @@ export class ASTNode {
     // Convert all arg values to mathematical types
 
     opts ??= {}
+    if (opts.throwOnUnresolved === undefined) {
+      opts.throwOnUnresolved = true
+    }
+
     this.applyAll(node => node._resolveTypes(opts), false /* only groups */, true /* children first */)
+
+    return this.allResolved()
   }
 
-  _resolveTypes (args) {
+  /**
+   * Whether all operator definitions and types have been resolved for this expression
+   * @returns {boolean}
+   */
+  allResolved() {
+    return !!(this.type)
+  }
+
+  _resolveTypes (opts) {
 
   }
 
@@ -166,6 +189,8 @@ export class ASTNode {
    * @param opts
    */
   evaluate (vars, opts={}) {
+    if (!this.allResolved())
+      throw new EvaluationError("This node has not had its types fully resolved (call .resolveTypes())")
     let mode = toEvaluationMode(opts.mode ?? "normal") // throws on fail
 
     return this._evaluate(vars, mode, opts)
@@ -220,12 +245,12 @@ export class ASTGroup extends ASTNode {
     return new ASTGroup(this)
   }
 
-  _resolveTypes (args) {
+  _resolveTypes ( opts) {
     // Only called on a raw group, aka a parenthesized group
     let children = this.children
 
     for (let i = 0; i < children.length; ++i) {
-      children[i]._resolveTypes(args)
+      children[i]._resolveTypes(opts)
     }
 
     this.type = children[0].type
@@ -284,8 +309,8 @@ export class VariableNode extends ASTNode {
     return new VariableNode(this)
   }
 
-  _resolveTypes (args) {
-    let { vars, defaultType } = args
+  _resolveTypes (opts) {
+    let { vars, defaultType } = opts
 
     let info
     if (vars)
@@ -349,7 +374,7 @@ export class OperatorNode extends ASTGroup {
     return this.children.map(c => c.type)
   }
 
-  _resolveTypes (args) {
+  _resolveTypes (opts) {
     let childArgTypes = this.children.map(c => c.type)
 
     fail: {
@@ -374,6 +399,10 @@ export class OperatorNode extends ASTGroup {
     this.type = null
     this.operatorDefinition = null
     this.casts = null
+
+    if (opts.throwOnUnresolved) {
+      throw new ResolutionError(`Unable to resolve operator definition ${this.name}(${childArgTypes.map(t => t.toHashStr())})`)
+    }
   }
 
   _evaluate (vars, mode, opts={}) {

@@ -1,6 +1,7 @@
 import { OperatorDefinition } from "../operator_definition.js"
 import { castDistance, ConcreteEvaluator } from '../evaluator.js'
 import {gammaReal} from "../../real/normal.js"
+import {Complex} from "../../complex/normal.js"
 
 // For now we'll just have a mapping  name -> Array of possibilities
 const KNOWN_OPERATORS = new Map()
@@ -188,6 +189,173 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "real", "real" ],
       returns: "real",
+      func: Math.pow
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'pow',
+  args: ["real", "real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real", "real" ],
+      returns: "real",
+      func: Math.pow
+    })
+  ]
+}))
+
+/**
+ * Complex
+ */
+
+// Constructors
+registerOperator(new OperatorDefinition({
+  name: 'complex',
+  args: [ "real" ],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "complex",
+      evalType: "new",
+      func: x => new Complex(x, 0)
+    }),
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "complex",
+      evalType: "writes",
+      func: (x, dst) => {
+        dst.re = x
+        dst.im = 0
+      }
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'complex',
+  args: [ "real", "real" ],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real", "real" ],
+      returns: "complex",
+      evalType: "new",
+      func: (x, y) => new Complex(x, y)
+    }),
+    new ConcreteEvaluator({
+      args: [ "real", "real" ],
+      returns: "complex",
+      evalType: "writes",
+      func: (x, y, dst) => {
+        dst.re = x
+        dst.im = y
+      }
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: '+',
+  args: ["complex", "complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex", "complex" ],
+      returns: "complex",
+      evalType: "new",
+      func: (x, y) => {
+        return new Complex(x.re + y.re, x.im + y.im)
+      }
+    }),
+    new ConcreteEvaluator({
+      args: [ "complex", "complex" ],
+      returns: "complex",
+      evalType: "writes",
+      func: (x, y, dst) => {
+        dst.re = x.re + y.re
+        dst.im = x.im + y.im
+      }
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: '*',
+  args: ["complex", "complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex", "complex" ],
+      returns: "complex",
+      evalType: "new",
+      func: (x, y) => {
+        return new Complex(x.re * y.re - x.im * y.im, x.re * y.im + x.im * y.re)
+      }
+    }),
+    new ConcreteEvaluator({
+      args: [ "complex", "complex" ],
+      returns: "complex",
+      evalType: "writes",
+      func: (x, y, dst) => {
+        dst.re = x.re * y.re - x.im * y.im
+        dst.im = x.re * y.im + x.im * y.re
+      }
+    })
+  ]
+}))
+
+/*registerOperator(new OperatorDefinition({
+  name: '/',
+  args: ["complex", "complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex", "complex" ],
+      returns: "complex",
+      primitive: "/"
+    })
+  ]
+}))*/
+
+registerOperator(new OperatorDefinition({
+  name: '-',
+  args: ["complex", "complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex", "complex" ],
+      returns: "complex",
+      primitive: "-"
+    })
+  ]
+}))
+
+// Unary minus
+registerOperator(new OperatorDefinition({
+  name: '-',
+  args: ["complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex" ],
+      returns: "complex",
+      primitive: "-"
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: '^',
+  args: ["complex", "complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex", "complex" ],
+      returns: "complex",
       func: Math.pow
     })
   ]
