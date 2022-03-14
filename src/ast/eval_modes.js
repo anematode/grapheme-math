@@ -1,4 +1,4 @@
-import {toConcreteType} from "./builtin_types.js"
+import {toConcreteType} from "./builtin/builtin_types.js"
 
 class EvaluationMode {
   constructor (name, params={}) {

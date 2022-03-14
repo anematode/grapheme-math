@@ -1,6 +1,6 @@
-import { resolveOperatorDefinition } from './builtin_operators.js'
-import { toMathematicalType } from "./builtin_types.js"
-import { toEvaluationMode } from "./eval_modes.js"
+import {resolveOperatorDefinition} from './builtin/builtin_operators.js'
+import {toMathematicalType} from "./builtin/builtin_types.js"
+import {toEvaluationMode} from "./eval_modes.js"
 
 /**
  * To evaluate a given node whose operators and types have been identified, we provide the following:
@@ -38,7 +38,6 @@ export class EvaluationError extends Error {
     this.name = 'EvaluationError'
   }
 }
-
 
 /**
  * Helper function (doesn't need to be fast)
@@ -355,14 +354,14 @@ export class OperatorNode extends ASTGroup {
 
     fail: {
       for (let t of childArgTypes) {
-        if (t == null) {
+        if (t === null) {
           break fail
         }
       }
 
       let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes)
 
-      if (definition == null || !casts.every(cast => cast !== null)) {
+      if (definition === null || !casts.every(cast => cast !== null)) {
         break fail
       }
 
@@ -391,11 +390,9 @@ export class OperatorNode extends ASTGroup {
             + `and destination ${mode.getConcreteType(cast.dstType())}`)
       }
 
-      let castedValue = ccast.callNew([
+      return ccast.callNew([
         c._evaluate(vars, mode, opts) // compute child
       ])
-
-      return castedValue
     })
 
     let evaluator = this.operatorDefinition.getDefaultEvaluator(mode)

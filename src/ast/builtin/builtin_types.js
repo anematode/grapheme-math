@@ -3,12 +3,12 @@
 
 // CONCRETE TYPES
 
-import { ConcreteType, MathematicalType } from './type.js'
-import { NullableBoolean } from '../bool/normal.js'
-import { FastBooleanInterval } from '../bool/fast_interval.js'
-import { NullableInteger } from '../int/normal.js'
-import { FastRealInterval } from '../real/fast_interval.js'
-import { Complex } from '../complex/normal.js'
+import { ConcreteType, MathematicalType } from '../type.js'
+import { NullableBoolean } from '../../bool/normal.js'
+import { FastBooleanInterval } from '../../bool/fast_interval.js'
+import { NullableInteger } from '../../int/normal.js'
+import { FastRealInterval } from '../../real/fast_interval.js'
+import { Complex } from '../../complex/normal.js'
 
 // The boolean type is nullable. meaning it takes on a value of 0, 1, or NaN. -0, false, and true are also ACCEPTED as
 // values, but aren't used that way internally, since each is implicitly casted to the correct value in all numeric

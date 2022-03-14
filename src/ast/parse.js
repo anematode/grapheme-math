@@ -9,7 +9,7 @@ import {
   ASTGroup,
   ASTNode
 } from './node.js'
-import { toMathematicalType } from './builtin_types.js'
+import { toMathematicalType } from './builtin/builtin_types.js'
 
 const operator_regex = /^[*\-\/+^]|^[<>]=?|^[=!]=|^and\s+|^or\s+/
 const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/  // functions may only use (, [ is reserved for indexing
