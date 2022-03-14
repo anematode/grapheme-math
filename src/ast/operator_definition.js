@@ -53,7 +53,11 @@ export class OperatorDefinition {
      */
     this.evaluators = params.evaluators ?? []
 
-    this.tags = { builtin: !!params.builtin }
+    this.tags = {
+      builtin: !!params.builtin, // includes generated definitions, but not user-generated defs
+      constant: !!params.constant // whether function is totally constant (e.g., x => 1)
+    }
+
     if (params.tags) Object.assign(this.tags, params.tags)
 
     /**
@@ -189,7 +193,7 @@ export class MathematicalCast extends OperatorDefinition {
   }
 }
 
-export class IdentityCast extends MathematicalCast {
+export class IdentityMathematicalCast extends MathematicalCast {
   isIdentity() {
     return true
   }
@@ -197,7 +201,7 @@ export class IdentityCast extends MathematicalCast {
 
 /**
  * Identity casts generated on a per-type basis (somewhat of a formalism; in a compiled setting these will all be elided)
- * @type {Map<string, IdentityCast>}
+ * @type {Map<string, IdentityMathematicalCast>}
  */
 const CachedIdentityCasts = new Map()
 
@@ -233,7 +237,7 @@ function generateIdentityCast (srcType) {
   let c = CachedIdentityCasts.get(s)
 
   if (!c) {
-    CachedIdentityCasts.set(s, c = new IdentityCast({
+    CachedIdentityCasts.set(s, c = new IdentityMathematicalCast({
       src: srcType,
       dst: srcType,
       evaluators: generateIdentityEvaluators(srcType)

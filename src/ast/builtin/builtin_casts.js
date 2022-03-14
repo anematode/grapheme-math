@@ -18,11 +18,22 @@ let intToReal = [
 let realToComplex = [
   registerConcreteCast(new ConcreteCast({
     src: "real", dst: "complex",
-    type: "write", func: (src, dst) => { dst.re = src; dst.im = 0; }
+    evalType: "write", func: (src, dst) => { dst.re = src; dst.im = 0; }
   })),
   registerConcreteCast(new ConcreteCast({
     src: "real", dst: "complex",
-    type: "new", func: r => new Complex(r, 0)
+    evalType: "new", func: r => new Complex(r, 0)
+  }))
+]
+
+let intToComplex = [
+  registerConcreteCast(new ConcreteCast({
+    src: "int", dst: "complex",
+    evalType: "write", func: (src, dst) => { dst.re = src; dst.im = 0; }
+  })),
+  registerConcreteCast(new ConcreteCast({
+    src: "int", dst: "complex",
+    evalType: "new", func: r => new Complex(r, 0)
   }))
 ]
 
@@ -35,7 +46,8 @@ let realToComplex = [
 
   registerMathematicalCast(new MathematicalCast({
     src: "int",
-    dst: "complex"
+    dst: "complex",
+    evaluators: intToComplex
   }))
 
   registerMathematicalCast(new MathematicalCast({

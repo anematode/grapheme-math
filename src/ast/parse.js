@@ -636,7 +636,7 @@ function verifyCommaSeparation (root, string) {
  * Attach start and end tokens for each group
  * @param root
  */
-function attachTokens(root) {
+function attachInformation(root) {
   root.applyAll(node => {
     let info = node.info
     if (!info.token) {
@@ -679,13 +679,18 @@ function parseTokens (tokens, string) {
   processOperators(root, comparisonOperators)
   processOperators(root, ['and', 'or'])
 
-  // Adds "debugging tokens", aka where each node starts and ends, for more-descriptive errors
-  attachTokens(root)
+  // Adds "debugging tokens", aka where each node starts and ends, and the top node
+  attachInformation(root)
   verifyCommaSeparation(root, string)
   // processTuples(root, string)
   removeCommas(root)
 
-  return root
+  let c = root.children[0]
+  if (!c) throw new Error("Unknown error")
+
+  c.info.parsedFrom = string
+
+  return c
 }
 
 function parseString (string) {
@@ -702,9 +707,7 @@ function parseString (string) {
 
   checkValid(tokens, string)
 
-  let node = parseTokens(tokens, string).children[0]
-
-  return node
+  return parseTokens(tokens, string)
 }
 
 export { parseString, tokenizer }

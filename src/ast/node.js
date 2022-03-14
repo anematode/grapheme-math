@@ -1,6 +1,7 @@
 import {resolveOperatorDefinition} from './builtin/builtin_operators.js'
 import {toMathematicalType} from "./builtin/builtin_types.js"
 import {toEvaluationMode} from "./eval_modes.js"
+import {MathematicalConstants} from "./globals.js"
 
 /**
  * To evaluate a given node whose operators and types have been identified, we provide the following:
@@ -47,7 +48,6 @@ export class ResolutionError extends Error {
   }
 }
 
-
 /**
  * Helper function (doesn't need to be fast)
  * @param node {ASTNode}
@@ -91,6 +91,19 @@ export class ASTNode {
      * @type {{}}
      */
     this.info = params.info ?? {}
+
+    /**
+     * The node's operator. If a constant, this will be null and the value will be converted later. If an operator, this
+     * must not be null (or the definition is not known). If a variable, this will be called if this is not null.
+     * @type {null|OperatorDefinition}
+     */
+    this.operatorDefinition = null
+
+    /**
+     * Highest node in this tree
+     * @type {null|ASTNode}
+     */
+    this.topNode = null
   }
 
   applyAll (func, onlyGroups=false, childrenFirst=false, depth=0) {
@@ -167,7 +180,7 @@ export class ASTNode {
 
     this.applyAll(node => node._resolveTypes(opts), false /* only groups */, true /* children first */)
 
-    return this.allResolved()
+    return this
   }
 
   /**
@@ -312,15 +325,35 @@ export class VariableNode extends ASTNode {
   _resolveTypes (opts) {
     let { vars, defaultType } = opts
 
+    let name = this.name
+
     let info
     if (vars)
       info = vars[this.name]
+
+    if (!info && name in MathematicalConstants) { // pi, e, i
+      let constant = MathematicalConstants[name] // OperatorDefinition
+
+      info = constant.returns
+      this.operatorDefinition = constant
+    }
 
     this.type = toMathematicalType(info ?? (defaultType ?? "real"))
   }
 
   _evaluate (vars, mode, opts={}) {
+    if (this.operatorDefinition) { // pi, e, i
+      let evaluator = this.operatorDefinition.getDefaultEvaluator(mode)
+
+      if (evaluator === null) {
+        throw new EvaluationError(`No known definition for constant ${this.name} in mode ${mode.name}`)
+      }
+
+      return evaluator.callNew([])
+    }
+
     let v = vars[this.name]
+
     if (v === undefined) {
       throw new EvaluationError(`Variable ${this.name} is not defined in the current scope`)
     }
@@ -344,12 +377,6 @@ export class OperatorNode extends ASTGroup {
     // directly as an argment. Current use: comparison chain, where the arguments are the comparisons to be done and
     // extraArgs.comparisons is, say, [ '<', '<=' ]
     this.extraArgs = params.extraArgs ?? {}
-
-    /**
-     * Which operator is actually being used here
-     * @type {null|OperatorDefinition}
-     */
-    this.operatorDefinition = null
 
     /**
      * Array of casts needed
@@ -378,13 +405,9 @@ export class OperatorNode extends ASTGroup {
     let childArgTypes = this.children.map(c => c.type)
 
     fail: {
-      for (let t of childArgTypes) {
-        if (t === null) {
-          break fail
-        }
-      }
+      if (childArgTypes.some(t => t === null)) break fail
 
-      let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes)
+      let [ definition, casts ] = resolveOperatorDefinition(this.name, childArgTypes)
 
       if (definition === null || !casts.every(cast => cast !== null)) {
         break fail
@@ -393,6 +416,7 @@ export class OperatorNode extends ASTGroup {
       this.type = definition.returns
       this.operatorDefinition = definition
       this.casts = casts
+
       return
     }
 
@@ -415,8 +439,8 @@ export class OperatorNode extends ASTGroup {
       let ccast = cast.getDefaultEvaluator(mode)
       if (ccast === null) {
         throw new EvaluationError(
-          `No concrete cast (in mode ${mode.name}) between source ${mode.getConcreteType(cast.srcType())}`
-            + `and destination ${mode.getConcreteType(cast.dstType())}`)
+          `No concrete cast (in mode ${mode.name}) from source ${mode.getConcreteType(cast.srcType()).toHashStr()}`
+            + ` to destination ${mode.getConcreteType(cast.dstType()).toHashStr()}`)
       }
 
       return ccast.callNew([

@@ -71,7 +71,7 @@ export class ConcreteEvaluator {
      * would put the result of the addition of the first two numbers into the second, overwriting whatever was there
      * @type {string}
      */
-    this.evalType = params.type ?? "new"
+    this.evalType = params.evalType ?? "new"
     if (this.evalType !== "new" && this.evalType !== "write") {
       throw new Error("Evaluator type must be either new or write, not " + this.evalType)
     }
@@ -170,6 +170,21 @@ export class ConcreteCast extends ConcreteEvaluator {
 
   dstType () {
     return this.returns
+  }
+
+  /**
+   * Whether this cast is a logical identity cast (still differentiating between types that have the same
+   * underlying type, like real and int)
+   * @returns {boolean}
+   */
+  isIdentity () {
+    return false
+  }
+}
+
+export class IdentityConcreteCast extends ConcreteCast {
+  isIdentity () {
+    return true
   }
 }
 

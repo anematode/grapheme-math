@@ -226,7 +226,7 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "real" ],
       returns: "complex",
-      evalType: "writes",
+      evalType: "write",
       func: (x, dst) => {
         dst.re = x
         dst.im = 0
@@ -249,7 +249,7 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "real", "real" ],
       returns: "complex",
-      evalType: "writes",
+      evalType: "write",
       func: (x, y, dst) => {
         dst.re = x
         dst.im = y
@@ -274,7 +274,7 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "complex", "complex" ],
       returns: "complex",
-      evalType: "writes",
+      evalType: "write",
       func: (x, y, dst) => {
         dst.re = x.re + y.re
         dst.im = x.im + y.im
@@ -299,7 +299,7 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "complex", "complex" ],
       returns: "complex",
-      evalType: "writes",
+      evalType: "write",
       func: (x, y, dst) => {
         dst.re = x.re * y.re - x.im * y.im
         dst.im = x.re * y.im + x.im * y.re
@@ -308,7 +308,7 @@ registerOperator(new OperatorDefinition({
   ]
 }))
 
-/*registerOperator(new OperatorDefinition({
+registerOperator(new OperatorDefinition({
   name: '/',
   args: ["complex", "complex"],
   returns: "complex",
@@ -316,10 +316,11 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "complex", "complex" ],
       returns: "complex",
-      primitive: "/"
+      evalType: "write",
+      func: (z1, z2, dst) => dst.divide(z1, z2)
     })
   ]
-}))*/
+}))
 
 registerOperator(new OperatorDefinition({
   name: '-',
@@ -329,7 +330,8 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "complex", "complex" ],
       returns: "complex",
-      primitive: "-"
+      evalType: "write",
+      func: (z1, z2, dst) => dst.subtract(z1, z2)
     })
   ]
 }))
@@ -343,7 +345,8 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "complex" ],
       returns: "complex",
-      primitive: "-"
+      evalType: "write",
+      func: (z, dst) => { dst.re = -z.re; dst.im = -z.im }
     })
   ]
 }))
@@ -356,7 +359,8 @@ registerOperator(new OperatorDefinition({
     new ConcreteEvaluator({
       args: [ "complex", "complex" ],
       returns: "complex",
-      func: Math.pow
+      evalType: "write",
+      func: (c1, c2, dst) => dst.pow(c1, c2)
     })
   ]
 }))
@@ -374,6 +378,34 @@ registerOperator(new OperatorDefinition({
       args: ["real"],
       returns: "real",
       func: gammaReal
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'cos',
+  args: ["complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex" ],
+      returns: "complex",
+      evalType: "write",
+      func: (z, dst) => dst.cos(z)
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'sin',
+  args: ["complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex" ],
+      returns: "complex",
+      evalType: "write",
+      func: (z, dst) => dst.sin(z)
     })
   ]
 }))
