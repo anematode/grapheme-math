@@ -366,6 +366,36 @@ registerOperator(new OperatorDefinition({
 }))
 
 /**
+ * Real/imag components
+ */
+
+registerOperator(new OperatorDefinition({
+  name: 'Re',
+  args: ["complex"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: ["complex"],
+      returns: "real",
+      func: c => c.re
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'Im',
+  args: ["complex"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: ["complex"],
+      returns: "real",
+      func: c => c.im
+    })
+  ]
+}))
+
+/**
  * Special functions
  */
 
@@ -381,6 +411,21 @@ registerOperator(new OperatorDefinition({
     })
   ]
 }))
+
+registerOperator(new OperatorDefinition({
+  name: 'gamma',
+  args: ["complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: ["complex"],
+      returns: "complex",
+      evalType: "write",
+      func: (z, dst) => dst.gamma(z)
+    })
+  ]
+}))
+
 
 registerOperator(new OperatorDefinition({
   name: 'cos',
