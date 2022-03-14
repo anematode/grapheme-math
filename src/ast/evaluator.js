@@ -134,8 +134,19 @@ export class ConcreteEvaluator {
     return casts
   }
 
+  /**
+   * Call an evaluator as if it were new (creating a new value if it's a writes evaluator)
+   * @param args
+   */
   callNew (args) {
+    if (this.evalType === "new") {
+      return this.func(...args)
+    }
 
+    let writeTo = this.returns.init()
+    this.func(...args, writeTo)
+
+    return writeTo
   }
 }
 

@@ -169,7 +169,7 @@ export class ASTNode {
   evaluate (vars, opts={}) {
     let mode = toEvaluationMode(opts.mode ?? "normal") // throws on fail
 
-    this._evaluate(vars, mode, opts)
+    return this._evaluate(vars, mode, opts)
   }
 
   _evaluate (vars, mode, opts) {
@@ -261,8 +261,9 @@ export class ConstantNode extends ASTNode {
     let type = mode.getConcreteType(this.type)
 
     if (!type){
-      throw new Error("Cannot find corresponding concrete type")
+      throw new EvaluationError(`Cannot find concrete type in mode ${mode.name} for mathematical type ${this.type.toHashStr()}`)
     }
+
     return type.castPermissive(this.value) // basically never throws
   }
 }
@@ -382,16 +383,19 @@ export class OperatorNode extends ASTGroup {
 
     let casts = this.casts
     let childrenValues = this.children.map((c, i) => {
-        let cast = casts[i]
-        let ccast = cast.getDefaultEvaluator(mode)
-        if (ccast === null) {
-          throw new EvaluationError(
-            `No concrete cast (in mode ${mode}) between source ${mode.getConcreteType(cast.srcType())}`
-              + `and destination ${mode.getConcreteType(cast.dstType())}`)
-        }
+      let cast = casts[i]
+      let ccast = cast.getDefaultEvaluator(mode)
+      if (ccast === null) {
+        throw new EvaluationError(
+          `No concrete cast (in mode ${mode.name}) between source ${mode.getConcreteType(cast.srcType())}`
+            + `and destination ${mode.getConcreteType(cast.dstType())}`)
+      }
 
-        return ccast.callNew([ c._evaluate(vars, mode, opts) // compute child
+      let castedValue = ccast.callNew([
+        c._evaluate(vars, mode, opts) // compute child
       ])
+
+      return castedValue
     })
 
     let evaluator = this.operatorDefinition.getDefaultEvaluator(mode)
