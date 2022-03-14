@@ -29,6 +29,7 @@ export class ParserError extends Error {
 
 /**
  * Helper function to throw an error at a specific index in a string.
+ * TODO make signature uniform
  * @param string {String} The string to complain about
  * @param info {any} The token in the string where the error occurred, ideally with an index attribute
  * @param message {String} The error message, to be combined with contextual information
@@ -642,35 +643,43 @@ function attachTokens(root) {
       info.token = info.startToken = node.children[0].info.token
       info.endToken = node.children[node.children.length - 1].info.token
     }
-  }, true)
+  }, true, true /* children first */)
 }
 
 /**
- * Parse a given list of tokens, returning a single ASTNode. At this point, the tokens are a list of the form
- * { type: "function"|"variable"|"paren"|"operator"|"constant"|"comma", index: <index of the token in the original string>,
- *  op?: <operator>, name?: <name of variable>, paren?: <type of paren> }
- * @param tokens
+ * Parse a given list of tokens, returning a single ASTNode.
+ * Perf: parseString("x^2+y^2+e^-x^2+pow(3,gamma(2401 + complex(2,3)))" took 0.028 ms / iteration as of Mar 14, 2022.
+ * @param tokens {any[]}
+ * @param string {string} String where tokens ultimately came from (used for descriptive error messages)
  * @returns {ASTNode}
  */
 function parseTokens (tokens, string) {
-  processConstantsAndVariables(tokens)
-  let root = new ASTGroup()
+  // This is somewhat of a recursive descent parser because the grammar is nontrivial, but really isn't that
+  // crazy. At intermediate steps, the node is a tree of both processed nodes and unprocessed tokens—a bit odd, but it
+  // works.
 
+  // Placed here because all further nodes will be groups or OperatorNodes
+  processConstantsAndVariables(tokens)
+
+  // Everything is done recursively within this root node
+  let root = new ASTGroup()
   root.children = tokens
 
   processParentheses(root)
   processFunctions(root)
 
+  // Order of operations: unary -/+, ^ (all right to left, together); PEMDAS
   processUnaryAndExponentiation(root)
-
-  // PEMDAS
   processOperators(root, ['*', '/'])
   processOperators(root, ['-', '+'])
 
+  // Comparison chains are expressions of the form x <= y < z ..., which are combined into a single funky node called a
+  // "comparison_chain" with arguments x, y, z and extra arguments <=, <
   processComparisonChains(root)
   processOperators(root, comparisonOperators)
   processOperators(root, ['and', 'or'])
 
+  // Adds "debugging tokens", aka where each node starts and ends, for more-descriptive errors
   attachTokens(root)
   verifyCommaSeparation(root, string)
   // processTuples(root, string)

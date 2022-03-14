@@ -31,6 +31,15 @@ import { toEvaluationMode } from "./eval_modes.js"
  *   - Return
  */
 
+export class EvaluationError extends Error {
+  constructor (message) {
+    super(message)
+
+    this.name = 'EvaluationError'
+  }
+}
+
+
 /**
  * Helper function (doesn't need to be fast)
  * @param node {ASTNode}
@@ -135,6 +144,11 @@ export class ASTNode {
     return new ASTNode(this)
   }
 
+  /**
+   * Figure out the type of each node, given the type of each variable node within it.
+   * Perf: on "x^2+y^2+e^-x^2+pow(3,gamma(2401 + complex(2,3)))", took 0.002 ms / iteration as of Mar 14, 2022
+   * @param opts
+   */
   resolveTypes (opts) {
     // Convert all arg values to mathematical types
 
@@ -153,7 +167,7 @@ export class ASTNode {
    * @param opts
    */
   evaluate (vars, opts={}) {
-    let mode = toEvaluationMode(opts.mode ?? "normal")
+    let mode = toEvaluationMode(opts.mode ?? "normal") // throws on fail
 
     this._evaluate(vars, mode, opts)
   }
@@ -246,8 +260,10 @@ export class ConstantNode extends ASTNode {
   _evaluate (vars, mode, opts={}) {
     let type = mode.getConcreteType(this.type)
 
-    if (!type) throw new Error("Cannot find corresponding concrete type")
-    return type.castPermissive(this.value)
+    if (!type){
+      throw new Error("Cannot find corresponding concrete type")
+    }
+    return type.castPermissive(this.value) // basically never throws
   }
 }
 
@@ -280,7 +296,9 @@ export class VariableNode extends ASTNode {
 
   _evaluate (vars, mode, opts={}) {
     let v = vars[this.name]
-    if (!v) throw new Error("Cannot find")
+    if (v === undefined) {
+      throw new EvaluationError(`Variable ${this.name} is not defined in the current scope`)
+    }
 
     return v
   }
@@ -333,36 +351,50 @@ export class OperatorNode extends ASTGroup {
 
   _resolveTypes (args) {
     let childArgTypes = this.children.map(c => c.type)
-    for (let t of childArgTypes) {
-      if (!t) {
-        this.type = null // silently fail
-        return
+
+    fail: {
+      for (let t of childArgTypes) {
+        if (t == null) {
+          break fail
+        }
       }
-    }
 
-    let [ definition, casts ] = resolveOperatorDefinition(this.name, childArgTypes)
+      let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes)
 
-    if (!definition) {
-      this.type = null
-      this.operatorDefinition = null
-      this.casts = null
+      if (definition == null || !casts.every(cast => cast !== null)) {
+        break fail
+      }
+
+      this.type = definition.returns
+      this.operatorDefinition = definition
+      this.casts = casts
       return
     }
 
-    this.type = definition.returns
-    this.operatorDefinition = definition
-    this.casts = casts
+    this.type = null
+    this.operatorDefinition = null
+    this.casts = null
   }
 
   _evaluate (vars, mode, opts={}) {
-    if (!this.operatorDefinition) throw new Error("Operator definition not resolved")
-    if (!this.casts) throw new Error("Casts not resolved")
+    if (!this.operatorDefinition) throw new EvaluationError("Operator definition not resolved")
+    if (!this.casts) throw new EvaluationError("Casts not resolved")
 
-    let childrenValues = this.children.map(c => c._evaluate(vars, mode, opts))
-    let castedValues = childrenValues.map((v, i) => this.casts[i].getEvaluator([
-      mode.getConcreteType(this.children[i].type)
-    ], mode.getConcreteType([i])))
+    let casts = this.casts
+    let childrenValues = this.children.map((c, i) => {
+        let cast = casts[i]
+        let ccast = cast.getDefaultEvaluator(mode)
+        if (ccast === null) {
+          throw new EvaluationError(
+            `No concrete cast (in mode ${mode}) between source ${mode.getConcreteType(cast.srcType())}`
+              + `and destination ${mode.getConcreteType(cast.dstType())}`)
+        }
 
-    let evaluator = this.operatorDefinition.getEvaluator(this)
+        return ccast.callNew([ c._evaluate(vars, mode, opts) // compute child
+      ])
+    })
+
+    let evaluator = this.operatorDefinition.getDefaultEvaluator(mode)
+    return evaluator.callNew(childrenValues)
   }
 }

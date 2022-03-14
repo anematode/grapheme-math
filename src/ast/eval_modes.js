@@ -1,7 +1,3 @@
-
-
-// List of evaluation modes.
-
 import {toConcreteType} from "./builtin_types.js"
 
 class EvaluationMode {

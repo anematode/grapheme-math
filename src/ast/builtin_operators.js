@@ -40,7 +40,7 @@ export function resolveOperatorDefinition (name, argTypes) {
         bestDist = dist
       }
 
-      if (dist === 0)
+      if (dist === 0) // if no casting is necessary, that's clearly the best
         break
     }
   }
