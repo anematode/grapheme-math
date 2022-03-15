@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Playground</title>
+</head>
+<body>
+
+<script type="module" src="../test/perf/perf.js"></script>
+
+<script>
+  let c = document.createElement("canvas")
+  let dim = c.width = c.height = 1000
+  document.body.appendChild(c)
+
+  let ctx = c.getContext('2d')
+  let colors = new Uint8ClampedArray(dim * dim * 4)
+
+  // use global variables for convenience
+    function play () {
+      s = "e^(i*z)/(e^-z+e^z)"
+      n = parseString(s)
+
+      n.resolveTypes({ defaultType: "complex" })
+    }
+
+    function draw() {
+        for (let i = 0; i < dim; ++i) {
+          let a = (i / dim - 0.5) * 20
+          if (i % 50 === 0) console.log(i)
+          for (let j = 0; j < dim; ++j) {
+            let b = (0.5 - j / dim) * 20
+
+            z = new Complex(b, a)
+            v = n.evaluate({ z })
+
+            color = complexToRGB(v)
+
+            let o = 4 * (dim * i + j)
+            colors[o] = color[0]
+            colors[o+1] = color[1]
+            colors[o+2] = color[2]
+            colors[o+3] = 255
+          }
+        }
+
+        ctx.putImageData(new ImageData(colors, dim, dim), 0, 0)
+    }
+
+    function m(s) {
+      return s.prettyPrint()
+    }
+
+    window.onload = play
+</script>
+
+</body>
+</html>
