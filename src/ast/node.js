@@ -123,10 +123,10 @@ export class ASTNode {
   }
 
   toString () {
-    return `[object ${this.getNodeTypeAsString()}]`
+    return `[object ${this.nodeTypeAsString()}]`
   }
 
-  getNodeType () {
+  nodeType () {
     return 0
   }
 
@@ -134,8 +134,8 @@ export class ASTNode {
    * Get the node type as a string instead of an enum
    * @returns {string}
    */
-  getNodeTypeAsString () {
-    switch (this.getNodeType()) {
+  nodeTypeAsString () {
+    switch (this.nodeType()) {
       case 0: return "ASTNode"
       case 1: return "ConstantNode"
       case 2: return "VariableNode"
@@ -150,7 +150,7 @@ export class ASTNode {
    * For debug use only. Example: OperatorNode{type=int, name="+", children=List{ConstantNode{type=int, value="3"}, VariableNode{type=int, name="x"}}}
    */
   prettyPrint (params={}) {
-    return prettyPrintNode(this, this.getNodeTypeAsString(), KNOWN_KEYS, params)
+    return prettyPrintNode(this, this.nodeTypeAsString(), KNOWN_KEYS, params)
   }
 
   // Enum of node types
@@ -212,6 +212,32 @@ export class ASTNode {
   _evaluate (vars, mode, opts) {
     throw new Error("ASTNode cannot be evaluated")
   }
+
+  /**
+   * Returns a Map of variable names to information about those variables.
+   * @returns {Map<string, {type: MathematicalType, operatorDefinition: null|OperatorDefinition, count: number}>}
+   */
+  getVariableDependencies () {
+    let knownVars = new Map()
+
+    this.applyAll(node => {
+      if (node.nodeType() === ASTNode.TYPES.VariableNode) {
+        let name = node.name
+        let info = knownVars.get(name)
+
+        if (!info) {
+          info = {}
+          knownVars.set(name, info)
+        }
+
+        info.type = node.type
+        info.operatorDefinition = node.operatorDefinition
+        info.count = (info.count ?? 0) + 1
+      }
+    })
+
+    return knownVars
+  }
 }
 
 // Node with children. A plain ASTGroup is usually just a parenthesized thing
@@ -250,7 +276,7 @@ export class ASTGroup extends ASTNode {
     return true
   }
 
-  getNodeType () {
+  nodeType () {
     return 4
   }
 
@@ -282,7 +308,7 @@ export class ConstantNode extends ASTNode {
     this.value = params.value
   }
 
-  getNodeType () {
+  nodeType () {
     return 1
   }
 
@@ -314,7 +340,7 @@ export class VariableNode extends ASTNode {
       throw new Error("Variable name must be a string")
   }
 
-  getNodeType () {
+  nodeType () {
     return 2
   }
 
@@ -385,7 +411,7 @@ export class OperatorNode extends ASTGroup {
     this.casts = null
   }
 
-  getNodeType () {
+  nodeType () {
     return 3
   }
 
@@ -404,20 +430,17 @@ export class OperatorNode extends ASTGroup {
   _resolveTypes (opts) {
     let childArgTypes = this.children.map(c => c.type)
 
-    fail: {
-      if (childArgTypes.some(t => t === null)) break fail
+    if (!childArgTypes.some(t => t === null)) {
 
-      let [ definition, casts ] = resolveOperatorDefinition(this.name, childArgTypes)
+      let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes)
 
-      if (definition === null || !casts.every(cast => cast !== null)) {
-        break fail
+      if (definition !== null && casts.every(cast => cast !== null)) {
+        this.type = definition.returns
+        this.operatorDefinition = definition
+        this.casts = casts
+
+        return
       }
-
-      this.type = definition.returns
-      this.operatorDefinition = definition
-      this.casts = casts
-
-      return
     }
 
     this.type = null
