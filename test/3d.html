@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3D test</title>
+</head>
+
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+    }
+</style>
+<body>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r122/three.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.101.1/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+
+  const renderer = new THREE.WebGLRenderer();
+  document.body.appendChild( renderer.domElement );
+
+  let dim = 50
+
+  function getGraph () {
+    s = "cos(z)/(1+z^2)"
+    n = parseString(s)
+
+    n.resolveTypes({ defaultType: "complex" })
+
+    let samples = []
+    colors = []
+    let results = []
+
+    for (let i = 0; i < dim; ++i) {
+      let a = (i / dim - 0.5) * 10
+
+      if (i % 50 === 0) console.log(i)
+      for (let j = 0; j < dim; ++j) {
+        let b = (j / dim - 0.5) * 10
+
+        let z = new Complex(b, a)
+        let v = n.evaluate({ z })
+
+        let color = complexToRGB(v)
+
+        colors.push(color[0] / 255)
+        colors.push(color[1] / 255)
+        colors.push(color[2] / 255)
+
+        samples.push(z)
+        results.push(v)
+      }
+    }
+
+    // Merge rectangles
+    geometry = new THREE.Geometry()
+
+    function getColor(i) {
+      return new THREE.Color(colors[3 * i], colors[3 * i + 1], colors[3 * i + 2])
+    }
+
+    function addFace(i1,i2,i3) {
+      let face = new THREE.Face3(i1, i2, i3)
+
+      face.vertexColors[0] = getColor(i1)
+      face.vertexColors[1] = getColor(i2)
+      face.vertexColors[2] = getColor(i3)
+
+      geometry.faces.push(face)
+    }
+
+    for (let i = 0; i < samples.length; ++i) {
+      let s = samples[i]
+      let r = results[i]
+
+      geometry.vertices.push(new THREE.Vector3().set(s.re, Complex.abs(r), s.im))
+
+      if (i % dim !== dim - 1 && i < samples.length - dim - 1) {
+        addFace(i, i + dim + 1, i + 1)
+        addFace(i, i + dim, i + dim + 1)
+      }
+    }
+
+    geometry.computeFaceNormals()
+    const material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors, side: THREE.DoubleSide } );
+
+    scene.add(new THREE.Mesh(geometry, material))
+  }
+
+  const controls = new THREE.OrbitControls( camera, renderer.domElement );
+  camera.position.set( 0, 20, 100 );
+  controls.update();
+
+    function play() {
+      getGraph()
+
+      camera.position.z = 5;
+      const light = new THREE.AmbientLight( 0x404040 ); // soft white light
+      scene.add( light );
+      let sl = new THREE.SpotLight( 0xe0e0e0 )
+      sl.position.set(10, 20, 10)
+      scene.add( sl );
+      scene.background = new THREE.Color(0xe0e0e0)
+
+      function animate() {
+        requestAnimationFrame( animate );
+        controls.update();
+
+        renderer.render( scene, camera );
+      }
+
+      animate();
+    }
+
+    function resize() {
+      renderer.setSize( window.innerWidth, window.innerHeight );
+    }
+
+    new ResizeObserver(resize).observe(document.body)
+
+    window.onload = play
+</script>
+<script type="module" src="perf/perf.js"></script>
+
+</body>
+</html>

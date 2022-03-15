@@ -8,5 +8,8 @@
     "test": "mocha --require esm",
     "start": "http-server -a localhost -p 8000 --ext js"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "http-server": "^14.1.0"
+  }
 }
