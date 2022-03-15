@@ -86,7 +86,7 @@
     }
 
     geometry.computeFaceNormals()
-    const material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+    const material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors, side: THREE.DoubleSide } );
 
     scene.add(new THREE.Mesh(geometry, material))
   }
@@ -97,7 +97,7 @@
 
     function play() {
       getGraph()
-      
+
       camera.position.z = 5;
       const light = new THREE.AmbientLight( 0x404040 ); // soft white light
       scene.add( light );
