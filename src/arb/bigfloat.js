@@ -536,16 +536,18 @@ export function subtractMantissas (m1, m1Len, m2, m2Len, m2shift, t, tLen, prec,
   // approach allocates and calculates way more stuff than it needs to. Ideally, we allocate little or nothing and only
   // compute as much as necessary for the target mantissa to be rounded to prec bits.
 
-  // We already assume that mant1 and mant2 are both valid mantissas, and that mant1 > mant2. We need to find the
-  // location of the first word of the result mantissa.
+  // We already assume that mant1 and mant2 are both valid mantissas, and that m2shift >= 0.
 
   m1Len |= 0
   m2Len |= 0
   tLen |= 0
-  // m2shift may be large
-  m2shift = +m2shift
 
-  let m2end = m2Len + m2shift // it's okay if this overflows; that only happens if mant2 is way beyond mant1
+  const MAX_SHIFT = BIGFLOAT_MAX_MANTISSA_LEN + 20
+
+  // if m2shift is huge, just clamp it; no mantissa is long enough for it to matter
+  m2shift = ((m2shift > MAX_SHIFT) ? MAX_SHIFT : m2shift) | 0
+
+  let m2end = (m2Len + m2shift) | 0
   let exactEnd = m1Len > m2end ? m1Len : m2end // The end of exact computation, relative to the first word of mant1
   let exchanged = false // whether the mantissas have been exchanged
 
@@ -579,8 +581,6 @@ export function subtractMantissas (m1, m1Len, m2, m2Len, m2shift, t, tLen, prec,
   //                                            result begins later due to carry -->
   // after carry:[ 0x00000000, 0x00000000, 0x00000000, 0x3fffffff ]
   //                                                        ^ result begins here
-
-
 
   // In any case, once a positive word is discovered, we start storing computed words in the target mantissa. Once the
   // target mantissa is exhausted, we do the carry and count how many of the first n words are 0. If n > 0, we shift the
