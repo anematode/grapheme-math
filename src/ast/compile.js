@@ -31,10 +31,10 @@ function logVariableLocations(variableLocations, log) {
         log(() => `Variable ${varName} is static`)
         break
       case "scope":
-        log(() => `Variable ${varName} is to be found in the scope object, which has index ${variableLocations.get("scope").index}`)
+        log(() => `Variable ${varName} is to be found in the scope object`)
         break
       case "input":
-        log(() => `Variable ${varName} is to be found at index ${location.index}`)
+        log(() => `Variable ${varName} is to be found at index ${varInfo.index}`)
         break
     }
   }
@@ -170,6 +170,10 @@ class SpecialFragment {
     this.type = type
     this.opts = opts
   }
+
+  toText (env) {
+    throw new CompilationError("?")
+  }
 }
 
 // A code fragment to be assembled. A very crude representation of actual JS code; it doesn't have to be very
@@ -247,8 +251,6 @@ class CodeFragment {
       if (!this.internalDependencies.includes(list[i]))
         this.internalDependencies.push(list[i])
 
-
-    this.insertText(fragment.text)
     for (let i = 0; i < fragment.defines.length; ++i) {
       this.defines.push(fragment.defines[i])
     }
@@ -258,6 +260,10 @@ class CodeFragment {
     }
 
     return this
+  }
+
+  toText (env) {
+    return this.text.map(t => (typeof t === "string") ? t : t.toText(env)).join("\n")
   }
 }
 
@@ -279,8 +285,8 @@ function getAssignmentGraph () {
 function getScopeTypecheck (index) {
   let f = new CodeFragment()
 
-  f.insertText(`if (!(typeof scope === "object")) {`,
-    new SpecialFragment("error", { errorType: "type", message: `Scope (at index ${index}) must be an object` })
+  f.insertText(`if (typeof scope !== "object") {`,
+    new SpecialFragment("error", { errorType: "type", message: `Scope (at index ${index}) must be an object` }),
   `}`)
 
   return f
@@ -291,14 +297,13 @@ function getScopeTypecheck (index) {
  * @param inputFormat
  * @param variableLocations
  * @param usesScope
- * @param typecheck
- * @returns {CodeFragment}
+ * @param typechecks
  */
-function getVariableRetrieval (inputFormat, variableLocations, usesScope, typecheck) {
+function getVariableRetrieval (inputFormat, variableLocations, usesScope, typechecks) {
   let signature = inputFormat
   let fragment = new CodeFragment()
 
-  if (usesScope && typecheck) {
+  if (usesScope && typechecks) {
     // scope typecheck must precede all others
     let scopeIndex = variableLocations.get("scope").index
     fragment.insertFragment(getScopeTypecheck(scopeIndex))
@@ -308,20 +313,23 @@ function getVariableRetrieval (inputFormat, variableLocations, usesScope, typech
     let location = varInfo.location
     switch (location) {
       case "evaluate":
-        // Will be evaluated separately from the main function body (in the preamble)
-        fragment.insertFragment(new SpecialFragment("evaluate_variable", { info: varInfo, name: varName }))
-        break
       case "static":
-        log(() => `Variable ${varName} is static`)
+        // Will be evaluated or set separately from the main function body (in the preamble)
+        fragment.insertFragment(new SpecialFragment("static_variable", varInfo))
         break
       case "scope":
-        log(() => `Variable ${varName} is to be found in the scope object, which has index ${variableLocations.get("scope").index}`)
+        fragment.insertFragment(`let ${varInfo.mangledName} = scope.${varName};`)
         break
-      case "input":
-        log(() => `Variable ${varName} is to be found at index ${location.index}`)
+      case "input": // Will be set no matter what
         break
+      default:
+        throw new CompilationError("?")
     }
+
+    fragment.defines.push(varInfo.mangledName)
   }
+
+  return { signature, fragment }
 }
 // Write a function which checks whether a string is a valid JS variable name (used for detecting accidental stuff, not
 // sanitizing). $ is not allowed.
@@ -337,6 +345,35 @@ function checkVariableNames (variableLocations) {
   }
 }
 
+function resolveConcreteTypes (root, nodeInformation, mode) {
+  for (let [ node, info ] of nodeInformation.entries()) {
+    let concreteType = mode.getConcreteType(node.type)
+
+    if (!concreteType) {
+      throw new CompilationError(`Unable to find concrete type for mathematical type ${node.type} in mode ${mode.name}`)
+    }
+
+    info.concreteType = concreteType
+  }
+}
+
+function resolveConstants (root, nodeInformation, mode) {
+  let fragment = new CodeFragment()
+
+
+}
+
+function resolveEvaluators (root, nodeInformation, mode) {
+  for (let [ node, info ] of nodeInformation.entries()) {
+    let evaluator = null
+    if (node.operatorDefinition) {
+
+    }
+
+    info.evaluator = evaluator
+  }
+}
+
 function compileTarget (root, target, opts) {
   if (typeof target !== "object") {
     throw new CompilationError(`Target description must be a JS object, not ${typeof target}`)
@@ -344,7 +381,7 @@ function compileTarget (root, target, opts) {
 
   const doDebug = opts.debug ?? true
   let debugLog = []
-  let nodeInformation = opts.nodeInformation
+  let globalNodeInformation = opts.nodeInformation
 
   // For debugging purposes
   function log (msg) {
@@ -376,22 +413,32 @@ function compileTarget (root, target, opts) {
   // if not explicitly declared to be static
   let staticVariables = opts.staticVariables ?? []
   let usedVariables = opts.usedVariables
+  let typechecks = opts.typechecks ?? true
 
   let { variableLocations, usesScope } = getVariableLocations(staticVariables, usedVariables, inputFormat, log, doDebug)
   checkVariableNames(variableLocations)
 
   // The evaluation procedure is as follows:
   //  - Get all variables from their respective locations
-  //  - If enabled, typecheck variables
+  //  - If enabled, typecheck and convert variables
   //  - Compute each node in sequence, abstracted as a set of assignments
   //  - Return the result
 
-  // This returns the
-  let { signature, variableRetrieval } = getVariableRetrieval(inputFormat, variableLocations, usesScope)
+  let nodeInformation = createInformationMap(root)
+  resolveConcreteTypes(root, nodeInformation, mode)
+
+  // Some constants may need special processing, for example in an arbitrary-precision setting
+  let constantFragment = resolveConstants(root, nodeInformation, mode)
+  resolveEvaluators(root, nodeInformation, mode)
+
+  let { signature, fragment: variableRetrievalFragment } = getVariableRetrieval(inputFormat, variableLocations, usesScope, typechecks)
+
   let assignmentGraph = getAssignmentGraph()
 
   return {
     mode,
+    variableRetrievalFragment,
+    nodeInformation,
     debug: debugLog
   }
 }
