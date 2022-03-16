@@ -48,6 +48,20 @@ export class ResolutionError extends Error {
   }
 }
 
+const reservedVariableNames = [
+  // Properties of the default object
+  "constructor",
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "toLocaleString",
+  "toString",
+  "valueOf",
+
+  "scope",
+  "scope_map"
+]
+
 /**
  * Helper function (doesn't need to be fast)
  * @param node {ASTNode}
@@ -431,7 +445,6 @@ export class OperatorNode extends ASTGroup {
     let childArgTypes = this.children.map(c => c.type)
 
     if (!childArgTypes.some(t => t === null)) {
-
       let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes)
 
       if (definition !== null && casts.every(cast => cast !== null)) {

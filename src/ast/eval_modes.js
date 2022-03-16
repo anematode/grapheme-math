@@ -27,6 +27,10 @@ class EvaluationMode {
   getConcreteType (mType) {
     return this.typeMap.get(mType.name) ?? null
   }
+
+  toString () { // for convenience
+    return this.name
+  }
 }
 
 let normal = new EvaluationMode("normal", {
@@ -50,10 +54,17 @@ export const EvaluationModes = new Map()
 EvaluationModes.set("normal", normal)
 EvaluationModes.set("fast_interval", fastInterval)
 
-export function toEvaluationMode(o) {
+export function toEvaluationMode(o, throwOnError=true) {
   if (o instanceof EvaluationMode) return o
-  let mode = EvaluationModes.get(o)
+  let mode = EvaluationModes.get(o) ?? null
 
-  if (!mode) throw new Error("Unrecognized evaluation mode " + o)
+  if (!mode && throwOnError) {
+    if (typeof o === "string") {
+      throw new Error("Unrecognized evaluation mode " + o)
+    } else {
+      throw new Error("Evaluation mode must be a string ('normal') or EvaluationMode object")
+    }
+  }
+
   return mode
 }
