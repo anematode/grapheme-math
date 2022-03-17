@@ -5,19 +5,104 @@
     <title>Parse Tree</title>
 </head>
 
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.css" integrity="sha256-oihWe0KdtBd8G96a/F7odmMuPQowZ9lsl1LZT7m51GM=" crossorigin="anonymous" />
+
 <style>
 
+    #error {
+        font-family: monospace;
+        font-size: 20px;
+        white-space: pre;
+    }
+
+    .node-name, .node-title, .node-contact {
+        font-family: sans-serif;
+        padding: 0;
+        margin: 0;
+    }
+
+    #eqn {
+        width: 500px;
+        height: auto;
+    }
 </style>
+
 <body>
 
+<label for="eqn">Equation</label>
+<textarea id="eqn" oninput="play()" contenteditable="true">e^-z^2+gamma(z)+complex(z, 1)</textarea>
+<div id="tree"></div>
+
 <script type="module" src="../test/perf/perf.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.3.0/d3.min.js" integrity="sha512-NMhzM2RHzbCRO0s5VPaRC+2bW6nmNXimzC9p5sp2x19M+zzuSJ2T50dEQ7hpHkNjnX1mt8nQg1NNthwRZgsoIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.js" integrity="sha512-ZSJDugGpeglzpLA0qvkBeo//Jy0FAmLe6f8ozjaonLBbnu6jmT59iYU3ZHj66rzMl4pJQ2XTegRwN216o/gXeg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.2.7/raphael.js" crossorigin="anonymous"></script>
 
 <script>
+  let tree, node
+
+  function astNodeToJSON (root) {
+    let children = root.children?.map(astNodeToJSON) ?? []
+
+    let info = `${root.nodeTypeAsString()}`
+    let info2
+    switch (root.nodeTypeAsString()) {
+      case "OperatorNode":
+        info2 = `Op: ${root.name ?? "unknown"}`
+        break
+      case "ConstantNode":
+        info2 = `Value: ${root.value}`
+        break
+      case "VariableNode":
+        info2 = `Name: ${root.name}`
+        break
+      case "ASTGroup":
+        break
+    }
+
+    let info3 = `Type: ${root.type?.toHashStr() ?? "unknown"}`
+
+    return {
+      text: {
+        name: info,
+        title: info2,
+        contact: info3
+      },
+      children: children
+    }
+  }
+
+  function drawTree (structure) {
+    tree = new Treant({
+      chart: {
+        container: "#tree",
+        connectors: {
+          type: 'step'
+        },
+        node: {
+          HTMLclass: 'nodeExample1'
+        }
+      },
+      nodeStructure: structure
+    })
+  }
+
+  function drawAST () {
+    drawTree(astNodeToJSON(node))
+  }
 
   function play() {
+    try {
+      node = parseString(document.getElementById("eqn").value)
+      node.resolveTypes({}, {defaultType: "real"})
 
+      drawAST()
+    } catch (e) {
+      document.getElementById("tree").innerHTML = `<p id="error">${e.toString().replaceAll(" ", "&nbsp;")}</p>`
     }
+  }
+
+  window.onload = play
 </script>
 
 </body>

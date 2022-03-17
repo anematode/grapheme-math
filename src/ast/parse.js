@@ -210,7 +210,7 @@ function * tokenizer (string) {
         }
       }
 
-      raiseParserError(original_string, i, 'unrecognized token')
+      raiseParserError(original_string, { index: i }, 'unrecognized token')
     } while (false)
 
     let len = match[0].length
@@ -276,11 +276,11 @@ function checkValid (tokens, string) {
     (tokens[0].type === 'operator' &&
       !(tokens[0].op === '-' || tokens[0].op === '+'))
   )
-    raiseParserError(string, 0, 'expression begins with comma or operator')
+    raiseParserError(string, { index: 0 }, 'expression begins with comma or operator')
 
   const last_token = tokens[tokens.length - 1]
   if (last_token.type === 'comma' || last_token.type === 'operator')
-    raiseParserError(string, tokens.length - 1, 'expression ends with comma or operator')
+    raiseParserError(string, last_token, 'expression ends with comma or operator')
 }
 
 /**
