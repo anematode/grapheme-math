@@ -220,3 +220,7 @@ Takes on one of `0`, `1`, `NaN`, with `0` meaning "false", `1` meaning true, and
 #### int
 
 Integer between `-2 ** 53 = -9007199254740992` and `2 ** 53 - 1 = 9007199254740991`
+
+### Images
+
+Theory: https://imgur.com/a/U0UjIeu

@@ -9,8 +9,161 @@ export class CompilationError extends Error {
   }
 }
 
-class ExpressionAnalysis {
+class AssignmentGraphNode {
+  constructor (parentGraph) {
+    this.parentGraph = parentGraph
 
+    this.mathematicalType = null
+    this.concreteType = null
+
+    this.operatorDefinition = null
+    this.evaluator = null
+    this.nodeType = "constant"
+
+    this.children = []
+    this.associatedASTNode = null
+  }
+
+  /**
+   * Apply a function to this node and all of its children, recursively.
+   * @param func {Function} The callback function. We call it each time with (node, depth) as arguments
+   * @param onlyGroups {boolean} Only call the callback on groups
+   * @param childrenFirst {boolean} Whether to call the callback function for each child first, or for the parent first.
+   * @returns {ASTNode}
+   */
+  applyAll (func, childrenFirst = false) {
+    if (!childrenFirst) func(this)
+
+    let children = this.children
+    for (let i = 0; i < children.length; ++i) {
+      let child = children[i]
+      child.applyAll(func, childrenFirst)
+    }
+
+    if (childrenFirst) func(this)
+
+    return this
+  }
+
+  /**
+   * Get children's mathematical types as an array
+   * @returns {MathematicalType[]}
+   */
+  getChildMathematicalTypes () {
+    return this.children.map(c => c.mathematicalType)
+  }
+
+  /**
+   * Get children's concrete types as an array
+   * @returns {ConcreteType[]}
+   */
+  getChildConcreteTypes () {
+    return this.children.map(c => c.concreteType)
+  }
+
+  buildChildrenFromASTNode (depth=0) {
+    if (depth > 500) // prevent infinite loop
+      throw new CompilationError(`Maximum node depth exceeded`)
+
+    let children = this.children = []
+    let associatedASTNode = this.associatedASTNode
+
+    if (!associatedASTNode) {
+      throw new CompilationError("?")
+    }
+
+    // Construct assignment nodes
+    let astChildren = associatedASTNode.children
+
+    if (astChildren)
+    for (let i = 0; i < astChildren.length; ++i) {
+      let astChild = astChildren[i]
+      let astCast = associatedASTNode.casts[i]
+
+      let fail = 0
+
+      // Descend down plain groups (which should only have one child each)
+      while (astChild.nodeType() === ASTNode.TYPES.ASTGroup) {
+        astChild = astChild.children[0]
+
+        if (!astChild)
+          throw new CompilationError(`ASTGroup contains no child??`)
+        if (fail++ > 500) // prevent infinite loop
+          throw new CompilationError(`Maximum node depth exceeded`)
+      }
+
+
+      // Reached a non-trivial node
+      let child = new AssignmentGraphNode(this.parentGraph)
+      let attachTo = this
+
+      if (!astCast.isIdentity()) {
+        attachTo = new AssignmentGraphNode(this.parentGraph)
+
+        attachTo.associatedASTNode = astChild
+        attachTo.mathematicalType = astCast.type
+        attachTo.nodeType = "operator"
+
+        children[i] = attachTo
+      }
+
+      let astType
+      switch (astType = astChild.nodeTypeAsString()) {
+        case "ConstantNode":
+          child.nodeType = "constant"
+          break
+        case "VariableNode":
+          child.nodeType = "variable"
+          break
+        case "OperatorNode":
+          child.nodeType = "operator"
+          child.operatorDefinition = astChild.operatorDefinition
+          break
+        case "ASTGroup":
+          // Only reached when it's a casting group
+          break
+        default:
+          throw new CompilationError(`Unknown ASTChild type ${astType}`)
+      }
+
+      child.associatedASTNode = astChild
+      child.mathematicalType = astChild.type
+
+      attachTo.children.push(child)
+    }
+
+    for (let i = 0; i < children.length; ++i) {
+      children[i].buildChildrenFromASTNode(depth+1)
+    }
+  }
+}
+
+/**
+ * Contains entirely assignment graph nodes. Assignments are not necessarily JS assignments per se,
+ * but they occupy a much, much lower level of graph than the original AST. All casts are converted into assignments, so
+ * that each assignment takes a concrete type to the same concrete type. Each assignment graph node is associated with
+ * its original AST node.
+ *
+ * At first, each assignment is an OperatorDefinition or constant. Identity casts are elided immediately for efficiency.
+ * Then concrete types and concrete evaluators are established. Finally, code fragments are generated and assembled into
+ * a final closure, to be invoked.
+ */
+class AssignmentGraph {
+  constructor () {
+    this.root = null
+  }
+}
+
+function generateAssignmentGraph(astRoot) {
+  let g = new AssignmentGraph()
+  let root = new AssignmentGraphNode(g)
+
+  root.associatedASTNode = astRoot
+  root.buildChildrenFromASTNode()
+
+  g.root = root
+
+  return g
 }
 
 function analyzeNode (root, infoMap) {
@@ -162,111 +315,6 @@ function checkInputFormat(inputFormat) {
   return inputFormat
 }
 
-/**
- * Fragments used for special handling, like errors and such
- */
-class SpecialFragment {
-  constructor (type, opts) {
-    this.type = type
-    this.opts = opts
-  }
-
-  toText (env) {
-    throw new CompilationError("?")
-  }
-}
-
-// A code fragment to be assembled. A very crude representation of actual JS code; it doesn't have to be very
-// sophisticated, because it's usually used very late in the compilation process
-class CodeFragment {
-  constructor () {
-    /**
-     * Map between variables used within the code fragment and external objects they represent. For example, $1 might
-     * be Math.sin or some other evaluator function.
-     * @type {Map<string, any>}
-     */
-    this.externalDependencies = new Map()
-
-    /**
-     * Dependencies on predefined variables
-     * @type {string[]}
-     */
-    this.internalDependencies = []
-
-    /**
-     * The text of the fragment as a array to be joined
-     * @type {Array<string|SpecialFragment>}
-     */
-    this.text = []
-
-    /**
-     * Variables defined after this fragment finishes
-     * @type {string[]}
-     */
-    this.defines = []
-
-    /**
-     * Stuff to be run in the preamble (should be a separate code fragment)
-     * @type {null|CodeFragment}
-     */
-    this.preambleFragment = null
-  }
-
-  addExternalDep (obj) {
-    let id = genVariableName()
-    this.externalDependencies.set(id, obj)
-
-    return id
-  }
-
-  addInternalDep (name) {
-    // A variable with this name must be defined before this code executes for it to work
-    this.internalDependencies.push(name)
-  }
-
-  insertText (...text) {
-    this.text.push(...text)
-  }
-
-  getPreamble () {
-    let f = this.preambleFragment
-
-    return f ?? (this.preambleFragment = new CodeFragment())
-  }
-
-  insertFragment (fragment) {
-    if (!fragment) return
-
-    let map = fragment.externalDependencies
-    this.insertText(...fragment.text)
-
-    // Merge map and external dependencies
-    for (let [ key, value ] of map.entries()) {
-      this.externalDependencies.set(key, value)
-    }
-
-    let list = fragment.internalDependencies
-    // Merge list and internal dependencies
-    for (let i = 0; i < list.length; ++i)
-      if (!this.internalDependencies.includes(list[i]))
-        this.internalDependencies.push(list[i])
-
-    for (let i = 0; i < fragment.defines.length; ++i) {
-      this.defines.push(fragment.defines[i])
-    }
-
-    if (fragment.preambleFragment) {
-      this.getPreamble().insertFragment(fragment.preambleFragment)
-    }
-
-    return this
-  }
-
-  toText (env) {
-    return this.text.map(t => (typeof t === "string") ? t : t.toText(env)).join("\n")
-  }
-}
-
 let id = 0
 
 /**
@@ -276,22 +324,6 @@ let id = 0
 function genVariableName () {
   return "$" + (++id)
 }
-
-
-function getAssignmentGraph () {
-
-}
-
-function getScopeTypecheck (index) {
-  let f = new CodeFragment()
-
-  f.insertText(`if (typeof scope !== "object") {`,
-    new SpecialFragment("error", { errorType: "type", message: `Scope (at index ${index}) must be an object` }),
-  `}`)
-
-  return f
-}
-
 /**
  *
  * @param inputFormat
@@ -364,14 +396,20 @@ function resolveConstants (root, nodeInformation, mode) {
 }
 
 function resolveEvaluators (root, nodeInformation, mode) {
-  for (let [ node, info ] of nodeInformation.entries()) {
+  // Bottom up; extra
+  root.applyAll(node => {
+    let info = nodeInformation.get(node)
     let evaluator = null
-    if (node.operatorDefinition) {
+    let cast = null, def
 
+    if (def = node.operatorDefinition) {
+      evaluator = def.getBestEvaluator({
+
+      })
     }
 
     info.evaluator = evaluator
-  }
+  }, false, true /* children first */)
 }
 
 function compileTarget (root, target, opts) {
@@ -402,6 +440,7 @@ function compileTarget (root, target, opts) {
   try {
     mode = toEvaluationMode(target.mode)
   } catch (e) {
+    // Re-raise error
     throw new CompilationError(e.message)
   }
 
@@ -424,20 +463,34 @@ function compileTarget (root, target, opts) {
   //  - Compute each node in sequence, abstracted as a set of assignments
   //  - Return the result
 
-  let nodeInformation = createInformationMap(root)
-  resolveConcreteTypes(root, nodeInformation, mode)
-
-  // Some constants may need special processing, for example in an arbitrary-precision setting
-  let constantFragment = resolveConstants(root, nodeInformation, mode)
-  resolveEvaluators(root, nodeInformation, mode)
-
-  let { signature, fragment: variableRetrievalFragment } = getVariableRetrieval(inputFormat, variableLocations, usesScope, typechecks)
-
-  let assignmentGraph = getAssignmentGraph()
+  let assnGraph = generateAssignmentGraph(root)
 
   return {
     mode,
-    variableRetrievalFragment,
+    assnGraph,
+    debug: debugLog
+  }
+
+  let nodeInformation = createInformationMap(root)
+  resolveConcreteTypes(root, nodeInformation, mode)  // TODO: prefer the simplest possible type regardless of mode
+
+  // Some constants may need special processing, for example in an arbitrary-precision setting
+  let constantFragment = resolveConstants(root, nodeInformation, mode)
+
+  // Resolves evaluators and concrete casts. Most nodes, and every non-leaf node, will have an evaluator and a set of
+  // concrete casts (possibly identity casts)
+  resolveEvaluators(root, nodeInformation, mode)
+
+  // At this point, everything is (pretty much) an evaluator, besides variables. Constants are to be computed via
+  // calling concreteType.castPermissive on their value. Writes evaluators are preferred over new evaluators. Casts
+  // are also evaluators.
+
+  //let { signature, fragment: variableRetrievalFragment } = getVariableRetrieval(inputFormat, variableLocations, usesScope, typechecks)
+
+  //let assignmentGraph = getAssignmentGraph()
+
+  return {
+    mode,
     nodeInformation,
     debug: debugLog
   }

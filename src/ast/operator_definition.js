@@ -117,6 +117,15 @@ export class OperatorDefinition {
   }
 
   /**
+   *
+   * @param returns
+   * @param args
+   */
+  getBestEvaluator ({ returns, args }) {
+
+  }
+
+  /**
    * Check whether this operator can be called with the given mathematical types.
    * @param args {MathematicalType[]}
    * @returns {number} -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it

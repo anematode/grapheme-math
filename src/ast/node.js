@@ -172,7 +172,8 @@ export class ASTNode {
     ASTNode: 0,
     ConstantNode: 1,
     VariableNode: 2,
-    OperatorNode: 3
+    OperatorNode: 3,
+    ASTGroup: 4
   })
 
   clone () {
@@ -182,15 +183,18 @@ export class ASTNode {
   /**
    * Figure out the type of each node, given the type of each variable node within it.
    * Perf: on "x^2+y^2+e^-x^2+pow(3,gamma(2401 + complex(2,3)))", took 0.002 ms / iteration as of Mar 14, 2022
+   * @param vars {{}} Mapping from variable names to their types
    * @param opts
    */
-  resolveTypes (opts) {
+  resolveTypes (vars, opts) {
     // Convert all arg values to mathematical types
 
     opts ??= {}
-    if (opts.throwOnUnresolved === undefined) {
+    if (opts.throwOnUnresolved === undefined)
       opts.throwOnUnresolved = true
-    }
+
+    if (!opts.vars)
+      opts.vars = vars
 
     this.applyAll(node => node._resolveTypes(opts), false /* only groups */, true /* children first */)
 
