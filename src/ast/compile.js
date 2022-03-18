@@ -61,7 +61,7 @@ class AssignmentGraphNode {
     return this.children.map(c => c.concreteType)
   }
 
-  buildChildrenFromASTNode (depth=0) {
+  buildChildrenFromASTNode (depth, variableLocations) {
     if (depth > 500) // prevent infinite loop
       throw new CompilationError(`Maximum node depth exceeded`)
 
@@ -120,7 +120,6 @@ class AssignmentGraphNode {
           child.operatorDefinition = astChild.operatorDefinition
           break
         case "ASTGroup":
-          // Only reached when it's a casting group
           break
         default:
           throw new CompilationError(`Unknown ASTChild type ${astType}`)
@@ -133,7 +132,7 @@ class AssignmentGraphNode {
     }
 
     for (let i = 0; i < children.length; ++i) {
-      children[i].buildChildrenFromASTNode(depth+1)
+      children[i].buildChildrenFromASTNode(depth+1, variableLocations)
     }
   }
 }
@@ -154,15 +153,25 @@ class AssignmentGraph {
   }
 }
 
-function generateAssignmentGraph(astRoot) {
+function generateAssignmentGraph(astRoot, variableLocations, opts) {
   let g = new AssignmentGraph()
   let root = new AssignmentGraphNode(g)
 
+  let variables = g.variables = new Map()   // varInfo -> AssignmentGraphNode
+
+  for (let [ varName, varInfo ] of maps) {
+    let assnNode = new AssignmentGraphNode(g)
+    assnNode.nodeType = "variable"
+    assnNode.
+    variables.set(varName, )
+  }
+
+
   root.associatedASTNode = astRoot
-  root.buildChildrenFromASTNode()
+  root.buildChildrenFromASTNode(0, variableLocations)
 
   g.root = root
-
+  let maps = new Map()
   return g
 }
 
@@ -463,7 +472,9 @@ function compileTarget (root, target, opts) {
   //  - Compute each node in sequence, abstracted as a set of assignments
   //  - Return the result
 
-  let assnGraph = generateAssignmentGraph(root)
+  let assnGraph = generateAssignmentGraph(root, variableLocations, usesScope, opts)  // Elides identity casts and single-element ASTGroups
+
+
 
   return {
     mode,
