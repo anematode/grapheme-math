@@ -9,6 +9,14 @@ export class CompilationError extends Error {
   }
 }
 
+/**
+ * An assignment graph is not exactly a graph... but whatever. It is a series of assignments, potentially with branches
+ * (not yet implemented).
+ *
+ * Each element in the list of assignments defines exactly one variable. For example { type: "assignment", name: "$2",
+ * operatorDefinition: OperatorDefinition, mathematicalType: MathematicalType, args: ["x", "$1"] } is an assignment
+ */
+
 class AssignmentGraphNode {
   constructor (parentGraph) {
     this.parentGraph = parentGraph
@@ -27,9 +35,7 @@ class AssignmentGraphNode {
   /**
    * Apply a function to this node and all of its children, recursively.
    * @param func {Function} The callback function. We call it each time with (node, depth) as arguments
-   * @param onlyGroups {boolean} Only call the callback on groups
    * @param childrenFirst {boolean} Whether to call the callback function for each child first, or for the parent first.
-   * @returns {ASTNode}
    */
   applyAll (func, childrenFirst = false) {
     if (!childrenFirst) func(this)
@@ -61,7 +67,7 @@ class AssignmentGraphNode {
     return this.children.map(c => c.concreteType)
   }
 
-  buildChildrenFromASTNode (depth, variableLocations) {
+  buildChildrenFromASTNode (depth) {
     if (depth > 500) // prevent infinite loop
       throw new CompilationError(`Maximum node depth exceeded`)
 
@@ -153,7 +159,7 @@ class AssignmentGraph {
   }
 }
 
-function generateAssignmentGraph(astRoot, variableLocations, opts) {
+function generateAssignmentGraph(astRoot, opts) {
   let g = new AssignmentGraph()
   let root = new AssignmentGraphNode(g)
 
@@ -166,13 +172,6 @@ function generateAssignmentGraph(astRoot, variableLocations, opts) {
     variables.set(varName, )
   }
 
-
-  root.associatedASTNode = astRoot
-  root.buildChildrenFromASTNode(0, variableLocations)
-
-  g.root = root
-  let maps = new Map()
-  return g
 }
 
 function analyzeNode (root, infoMap) {
