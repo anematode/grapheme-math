@@ -11,14 +11,6 @@ import {
 } from './node.js'
 import { toMathematicalType } from './builtin/builtin_types.js'
 
-const operator_regex = /^[*\-\/+^]|^[<>]=?|^[=!]=|^and\s+|^or\s+/
-const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/  // functions may only use (, [ is reserved for indexing
-const constant_regex = /^[0-9]*\.?[0-9]*e?[0-9]+/
-const variable_regex = /^[a-zA-Z_][a-zA-Z0-9_]*/
-const paren_regex = /^[()\[\]]/
-const comma_regex = /^,/
-const string_regex = /^"(?:[^"\\]|\\.)*"/
-
 export class ParserError extends Error {
   constructor (message) {
     super(message)
@@ -27,68 +19,155 @@ export class ParserError extends Error {
   }
 }
 
+type BaseToken = {
+  index: number
+}
+
+type ParenToken = BaseToken & {
+  type: "paren"
+  paren: '(' | ')' | '[' | ']'
+}
+
+type ConstantToken = BaseToken & {
+  type: "constant"
+  value: string
+}
+
+type OperatorToken = BaseToken & {
+  type: "operator"
+  op: string
+}
+
+type FunctionToken = BaseToken & {
+  type: "function"
+  name: string
+}
+
+type CommaToken = BaseToken & {
+  type: "comma"
+}
+
+type VariableToken = BaseToken & {
+  type: "variable"
+  name: string
+}
+
+type StringToken = BaseToken & {
+  type: "string"
+  contents: string
+}
+
+type Token = ParenToken | ConstantToken | OperatorToken | FunctionToken | CommaToken | VariableToken | StringToken
+
+type ASTNodeInfo = any
+type UnprocessedASTNodeType = "generic" | "constant" | "variable" | "operator" | "group"
+type UnprocessedChildren = Array<UnprocessedASTNode|Token>
+
+class UnprocessedASTNode {
+  type: UnprocessedASTNodeType
+  info?: ASTNodeInfo
+  children: UnprocessedChildren
+
+  constructor (type: UnprocessedASTNodeType, info: ASTNodeInfo, children: UnprocessedChildren) {
+    this.type = type
+    this.info = info
+    this.children = children
+  }
+
+  applyAll (f: (UnprocessedASTNode) => void, childrenFirst=false) {
+    let children = this.children
+    if (!childrenFirst) f(this)
+    for (let i = 0; i < children.length; ++i) {
+      let child = children[i]
+      if (child instanceof UnprocessedASTNode) {
+        f(child)
+
+        child.applyAll(f, childrenFirst)
+      }
+    }
+    if (childrenFirst) f(this)
+  }
+}
+
+type ParserErrorInfo = null | {
+  index: number
+} | {
+  token: Token
+  endToken?: Token
+}
+
+const operator_regex = /^[*\-\/+^]|^[<>]=?|^[=!]=|^and\s+|^or\s+/
+const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/  // functions may only use (, [ is reserved for indexing
+const constant_regex = /^[0-9]*\.?[0-9]*e?[0-9]+/
+const variable_regex = /^[a-zA-Z_][a-zA-Z0-9_]*/
+const paren_regex = /^[()\[\]]/
+const comma_regex = /^,/
+const string_regex = /^"(?:[^"\\]|\\.)*"/
+
 /**
  * Helper function to throw an error at a specific index in a string.
  * TODO make signature uniform
- * @param string {String} The string to complain about
- * @param info {any} The token in the string where the error occurred, ideally with an index attribute
- * @param message {String} The error message, to be combined with contextual information
- * @param noIndex {boolean} If true, provide no index
+ * @param string Erroneous parsed string
+ * @param info The token in the string where the error occurred, ideally with an index attribute
+ * @param message The raw error message, to be combined with contextual information
+ * @param noIndex If true, provide no index
  */
-export function raiseParserError (string, info, message = "", noIndex=false) {
-  // Spaces to offset the caret to the correct place along the string
-  let token = info?.token ?? info ?? {}
-  let endToken = info?.endToken ?? token
+export function raiseParserError (string: string, info: ParserErrorInfo, message: string = "", noIndex: boolean =false) {
+  let index = -1, token = null, endToken = null
+  if (info !== null) {
+    if ('index' in info) {
+      index = info.index
+    } else {
+      token = info.token
+      endToken ??= info.endToken
 
-  let index = token.index
-  if (index == null) {
-    noIndex = true
-    index = 0
+      index = token.index
+    }
   }
 
-  const spaces = ' '.repeat(index)
-  let errorLen = (endToken.index ?? index) - index + 1
+  if (!noIndex) // can't use an index if we have no index information
+    noIndex = index === -1
+
+  let spaces = ' '.repeat(index)
+  let errorLen = (endToken?.index ?? index) - index + 1
 
   throw new ParserError(
     'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen))
   )
 }
 
-/**
- * Check whether a string's parentheses are balanced
- * @param string
- */
-function checkParensBalanced (string) {
-  // Stack of parentheses
-  const stack = []
+function checkParensBalanced (s: string) {
+  // TODO: Handle strings (tokens)
+
+  const parenStack: Array<string> = []
 
   let i = 0
   let err = false
 
-  outer: for (; i < string.length; ++i) {
-    const chr = string[i]
+  outer: for (; i < s.length; ++i) {
+    let chr = s[i]
 
     switch (chr) {
       case '(':
       case '[':
-        stack.push(chr)
+        parenStack.push(chr)
         break
       case ')':
       case ']':
-        if (stack.length === 0) {
+        if (parenStack.length === 0) {
           err = true
           break outer
         }
 
         if (chr === ')') {
-          let pop = stack.pop()
+          let pop = parenStack.pop()
 
           if (pop !== '(') {
             err = true
             break outer
           }
         } else {
-          let pop = stack.pop()
+          let pop = parenStack.pop()
 
           if (pop !== '[') {
             err = true
@@ -98,9 +177,9 @@ function checkParensBalanced (string) {
     }
   }
 
-  if (stack.length !== 0) err = true
+  if (parenStack.length !== 0) err = true
 
-  if (err) raiseParserError(string, i, 'unbalanced parentheses/brackets')
+  if (err) raiseParserError(s, { index: i }, 'unbalanced parentheses/brackets')
 }
 
 // Exclude valid variables if needed later
@@ -108,106 +187,117 @@ export function isValidVariableName (str) {
   return true
 }
 
-function * tokenizer (string) {
-  string = string.trimEnd()
+const trimRight = ('trimRight' in String.prototype) ? (s: string): string => (s as any).trimRight() : (s: string) => {
+  return s.replace(/\s+$/, '')
+}
 
+function getTokens (s: string): Array<Token> {
   let i = 0
-  let prev_len = string.length
+  let original_string = s
 
-  let original_string = string
+  s = trimRight(s)
+  let prev_len = s.length
 
-  while (string) {
-    string = string.trim()
+  let tokens: Array<Token> = []
 
-    i += prev_len - string.length
-    prev_len = string.length
+  while (s) {
+    s = s.trim() // repeatedly trim off whitespace and grab the next token TODO: optimize to simply iterate
+
+    i += prev_len - s.length
+    prev_len = s.length
 
     let match
 
     do {
-      match = string.match(paren_regex)
+      match = s.match(paren_regex)
 
       if (match) {
-        yield {
+        tokens.push({
           type: 'paren',
           paren: match[0],
           index: i
-        }
+        })
+
         break
       }
 
-      match = string.match(constant_regex)
+      match = s.match(constant_regex)
 
       if (match) {
-        yield {
+        tokens.push({
           type: 'constant',
           value: match[0],
           index: i
-        }
+        })
+
         break
       }
 
-      match = string.match(operator_regex)
+      match = s.match(operator_regex)
 
       if (match) {
-        yield {
+        tokens.push({
           type: 'operator',
           op: match[0].replace(/\s+/g, ''),
           index: i
-        }
+        })
+
         break
       }
 
-      match = string.match(comma_regex)
+      match = s.match(comma_regex)
 
       if (match) {
-        yield {
+        tokens.push({
           type: 'comma',
           index: i
-        }
+        })
+
         break
       }
 
-      match = string.match(function_regex)
+      match = s.match(function_regex)
 
       if (match) {
         // First group is the function name, second group is the type of parenthesis (bracket or open)
 
-        yield {
+        tokens.push({
           type: 'function',
           name: match[1],
           index: i
-        }
+        })
 
-        yield {
+        tokens.push({
           type: 'paren',
           paren: '(',
           index: i + match[1].length
-        }
+        })
 
         break
       }
 
-      match = string.match(variable_regex)
+      match = s.match(variable_regex)
 
       if (match) {
-        yield {
+        tokens.push({
           type: 'variable',
           name: match[0],
           index: i
-        }
+        })
 
         break
       }
 
-      match = string.match(string_regex)
+      match = s.match(string_regex)
 
       if (match) {
-        yield {
+        tokens.push({
           type: 'string',
           contents: match[0].slice(1, -1),
           index: i
-        }
+        })
+
+        // fall through
       }
 
       raiseParserError(original_string, { index: i }, 'unrecognized token')
@@ -215,13 +305,15 @@ function * tokenizer (string) {
 
     let len = match[0].length
 
-    string = string.slice(len)
+    s = s.slice(len) // rm token
   }
+
+  return tokens
 }
 
 function checkValid (tokens, string) {
   if (tokens.length === 0) {
-    raiseParserError(string, 0, 'empty expression', true /* no index */)
+    raiseParserError(string, { index: 0 }, 'empty expression', true)
   }
 
   for (let i = 0; i < tokens.length - 1; ++i) {
@@ -286,15 +378,14 @@ function checkValid (tokens, string) {
 /**
  * Find a pair of parentheses in a list of tokens, namely the first one as indexed by the closing paren/bracket. For
  * example, in (x(y(z)(w))) it will find (z), returning [ paren1 index, paren2 index, paren1 token, paren2 token ]
- * @param children
  */
-function findParenIndices (children) {
+function findParenIndices (children: Array<Token>): [ number, number, Token, Token ] | null {
   let startIndex = -1
-  let startToken = null
+  let startToken: Token | null = null
 
   for (let i = 0; i < children.length; ++i) {
     let child = children[i]
-    if (!child.paren) continue
+    if (!('paren' in child)) continue
 
     if (child.paren === '(' || child.paren === '[') {
       startIndex = i
@@ -302,18 +393,17 @@ function findParenIndices (children) {
     }
 
     if ((child.paren === ')' || child.paren === ']') && startIndex !== -1)
-      return [startIndex, i, startToken, child]
+      return [ startIndex, i, startToken, child ]
   }
 
   return null
 }
 
 /**
- * Given a string like "1.5", "3e10", etc., determine whether it is an integer. Assumes the string is well-formed.
- * @param s {string}
- * @return {boolean}
+ * Given a string like "1.5", "3e10", etc., determine whether it is an integer without evaluating it. Assumes the string
+ * is well-formed.
  */
-function isStringInteger (s) {
+function isStringInteger (s: string): boolean {
   if (s[0] === '-') s = s.slice(1) // trim leading '-'
 
   let exponent = 0, mIntTrailingZeros = Infinity, mFracLen = 0
@@ -364,35 +454,36 @@ function isStringInteger (s) {
 
 /**
  * Convert constants and variables to their ASTNode counterparts
- * @param tokens {Array}
  */
-function processConstantsAndVariables (tokens) {
+function processConstantsAndVariables (tokens: Array<Token|ASTNode>) {
   for (let i = 0; i < tokens.length; ++i) {
     let token = tokens[i]
     let node
 
-    switch (token.type) {
-      case 'constant':
-        node = new ConstantNode({ value: token.value })
-        node.type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real')
+    if ('type' in token) {
+      switch (token.type) {
+        case 'constant':
+          node = new ConstantNode({value: token.value})
+          node.type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real')
 
-        break
-      case 'variable':
-        node = new VariableNode({ name: token.name })
-        break
-      default:
-        continue
+          break
+        case 'variable':
+          node = new VariableNode({name: token.name})
+          break
+        default:
+          continue
+      }
+
+      node.info.token = node.info.startToken = node.info.endToken = token
+      tokens[i] = node
     }
-
-    node.info.token = node.info.startToken = node.info.endToken = token
-    tokens[i] = node
   }
 }
 
 // To process parentheses, we find pairs of them and combine them into ASTNodes containing the nodes and
 // tokens between them. We already know the parentheses are balanced, which is a huge help here. We basically go
 // through each node recursively and convert all paren pairs to a node, then recurse into those new nodes
-function processParentheses (rootNode) {
+function processParentheses (rootNode: ASTNode) {
   rootNode.applyAll(node => {
     let parensRemaining = true
     while (parensRemaining) {
@@ -420,7 +511,7 @@ function processParentheses (rootNode) {
 }
 
 // Turn function tokens followed by ASTNodes into OperatorNodes
-function processFunctions (rootNode) {
+function processFunctions (rootNode: ASTNode) {
   rootNode.applyAll(node => {
     let children = node.children
 
@@ -454,7 +545,7 @@ function processFunctions (rootNode) {
 
 // Given a node and an index i of a binary operator, combine the nodes immediately to the left and right of the node
 // into a single binary operator
-function combineBinaryOperator (node, i) {
+function combineBinaryOperator (node: ASTNode, i: number) {
   const children = node.children
   let newNode = new OperatorNode({ name: children[i].op })
 
@@ -464,7 +555,7 @@ function combineBinaryOperator (node, i) {
 }
 
 // Process the highest precedence operators. Note that e^x^2 = (e^x)^2 and e^-x^2 = e^(-x^2).
-function processUnaryAndExponentiation (root) {
+function processUnaryAndExponentiation (root: ASTNode) {
   root.applyAll(node => {
     let children = node.children
 
@@ -497,7 +588,7 @@ function processUnaryAndExponentiation (root) {
 }
 
 // Combine binary operators, going from left to right, with equal precedence for all
-function processOperators (root, operators) {
+function processOperators (root: ASTNode, operators: Array<string>) {
   root.applyAll(node => {
     let children = node.children
 
@@ -520,7 +611,7 @@ const comparisonOperators = ['<', '<=', '==', '!=', '>=', '>']
 // "comparison_chain" operators, which have the form comparison_chain(0, 1 (enum comparison), x, 0 (enum comparison), 2). Gross, but
 // it's hard to cleanly represent these comparison chains otherwise. You *could* represent them using boolean operations,
 // but that duplicates the internal nodes which is inefficient
-function processComparisonChains (root) {
+function processComparisonChains (root: ASTNode) {
   root.applyAll(node => {
     // TODO: process backwards
     const children = node.children
@@ -583,7 +674,7 @@ function processComparisonChains (root) {
 }
 
 // Remove residual commas from the node
-function removeCommas (root) {
+function removeCommas (root: ASTNode) {
   root.applyAll(node => {
     let children = node.children
     let i = children.length
@@ -593,7 +684,7 @@ function removeCommas (root) {
   }, true)
 }
 
-function verifyCommaSeparation (root, string) {
+function verifyCommaSeparation (root: ASTNode, string: string) {
   root.applyAll(node => {
     // Every function with multiple elements in it should have commas separating each argument, with no leading or
     // trailing commas.
@@ -636,7 +727,7 @@ function verifyCommaSeparation (root, string) {
  * Attach start and end tokens for each group
  * @param root
  */
-function attachInformation(root) {
+function attachInformation (root: ASTNode) {
   root.applyAll(node => {
     let info = node.info
     if (!info.token) {
@@ -653,7 +744,7 @@ function attachInformation(root) {
  * @param string {string} String where tokens ultimately came from (used for descriptive error messages)
  * @returns {ASTNode}
  */
-function parseTokens (tokens, string) {
+function parseTokens (tokens: Array<Token>, string: string): ASTNode {
   // This is somewhat of a recursive descent parser because the grammar is nontrivial, but really isn't that
   // crazy. At intermediate steps, the node is a tree of both processed nodes and unprocessed tokens—a bit odd, but it
   // works.
@@ -693,21 +784,27 @@ function parseTokens (tokens, string) {
   return c
 }
 
-function parseString (string) {
+function convertToASTNode(n: UnprocessedASTNode): ASTNode {
+  let root = null
+
+
+
+  return root
+}
+
+function parseString (string: string): ASTNode {
   if (typeof string !== "string") {
     throw new ParserError("parseString expects a string")
   }
 
   checkParensBalanced(string)
 
-  let tokens = []
-  for (let token of tokenizer(string)) {
-    tokens.push(token)
-  }
-
+  let tokens = getTokens(string)
   checkValid(tokens, string)
 
-  return parseTokens(tokens, string)
+  let parsed: UnprocessedASTNode = parseTokens(tokens, string)
+
+  return convertToASTNode(parsed)
 }
 
-export { parseString, tokenizer }
+export { parseString, getTokens }

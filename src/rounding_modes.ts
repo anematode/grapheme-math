@@ -72,7 +72,7 @@ export function roundingModeToString (mode: number): string {
 /**
  * Whether a given object is a recognized rounding mode
  * @param n Any object
- * @returns If it is a valid rounding mode
+ * @returns Whether it is a valid rounding mode
  */
 export function isRoundingMode (n: any): boolean {
   if (typeof n !== "number") return false
@@ -82,8 +82,10 @@ export function isRoundingMode (n: any): boolean {
 
 /**
  * Flip a rounding mode (up to down, toward inf to toward zero)
+ * @param n Rounding mode
+ * @returns Flipped rounding mode
  */
-export function flipRoundingMode (n) {
+export function flipRoundingMode (n: number): number {
   return (n & 16) ? (n ^ 1) : n
 }
 
