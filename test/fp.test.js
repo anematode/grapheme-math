@@ -1,5 +1,5 @@
 import {describe, test} from "mocha"
-import {isDenormal, pow2, roundDown, roundUp} from "../src/fp/manip.js"
+import {isDenormal, pow2, roundDown, roundUp} from "../build/fp/manip.js"
 import {expectAllEquals, expectEquivalentBehavior, expectMultipleCases} from "./test.js"
 
 describe('roundUp', () => {

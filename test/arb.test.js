@@ -1,5 +1,5 @@
-import {BigFloat, prettyPrintMantissa, validateMantissa} from "../src/arb/bigfloat.js"
-import {ROUNDING_MODE, roundingModeToString} from "../src/rounding_modes.js"
+import {BigFloat, prettyPrintMantissa, validateMantissa} from "../build/arb/bigfloat.js"
+import {ROUNDING_MODE, roundingModeToString} from "../build/rounding_modes.js"
 import {
   cartesianProduct,
   difficultMantissas,
@@ -7,10 +7,10 @@ import {
   ROUNDING_MODES, STRICT_ROUNDING_MODES,
   TYPICAL_NUMBERS, typicalMantissas
 } from "./test_common.js"
-import { roundMantissaToPrecision,addMantissas, neededWordsForPrecision } from "../src/arb/bigfloat.js"
+import { roundMantissaToPrecision,addMantissas, neededWordsForPrecision } from "../build/arb/bigfloat.js"
 import {expectMultipleCases} from "./test.js"
 import {deepEquals} from "../grapheme_shared.js"
-import { addMantissas as referenceAddMantissas } from "../src/arb/reference.js";
+import { addMantissas as referenceAddMantissas } from "../build/arb/reference.js";
 
 const BF = BigFloat
 const RM = ROUNDING_MODE

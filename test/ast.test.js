@@ -1,4 +1,4 @@
-import {parseString, ParserError} from "../src/ast/parse.js"
+import {parseString, ParserError} from "../build/ast/parse.js"
 import { expect } from "chai"
 import {expectMultipleCases} from "./test.js"
 

@@ -1,4 +1,4 @@
-export * from './fp/manip.js'
+export * from './fp/manip'
 export * from './arb/bigfloat.js'
 export * from './ast/parse.js'
 export * from './ast/compile.js'

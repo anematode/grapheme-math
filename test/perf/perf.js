@@ -1,5 +1,17 @@
-import * as GMath from "../../src/main.js"
-Object.assign(window, GMath)
+(async () => {
+  try {
+    let GMath = await import("../../build/index.js")
+    Object.assign(window, GMath)
+  } catch (e) {
+    console.log("Not local; importing from build")
+    let GMath = await import("../../build/main.js")
+    Object.assign(window, GMath)
+  }
+
+  if (typeof window.play === "function") {
+    setTimeout(window.play, 0)
+  }
+})()
 
 let overwriteLog = true
 

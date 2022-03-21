@@ -1,15 +1,6 @@
 import {isRoundingMode, ROUNDING_MODE} from "../rounding_modes.js"
 import {leftZeroPad} from "../../grapheme_shared.js"
-import {
-  flrLog2,
-  getExponentAndMantissa,
-  getFloatStoreExponent,
-  getFloatStoreMantissa,
-  isDenormal,
-  pow2,
-  setFloatStore
-} from "../fp/manip.js"
-import {canMantissaBeRounded, leftShiftMantissa} from "./old.js"
+import { flrLog2, getFloatStoreExponent, getFloatStoreMantissa, isDenormal, pow2, setFloatStore } from "../fp/manip.js"
 
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
 // the float. m = m_1 / 2^30 + m_2 / 2^60 + ... . The precision is the number of bits kept track of in the words. Since
