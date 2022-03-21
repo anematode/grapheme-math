@@ -1,4 +1,4 @@
-export const ROUNDING_MODE = Object.freeze({
+export const ROUNDING_MODE = {
   WHATEVER: 0, // do whatever's fastest (including no rounding at all), guaranteeing a result with error <= 1 ulp
   NEAREST: 0b10, // nearest neighbor, ties to even
   TIES_EVEN: 0b10,
@@ -8,8 +8,13 @@ export const ROUNDING_MODE = Object.freeze({
   UP: 0b10000,
   DOWN: 0b10001,
   TOWARD_INF: 0b110000, // toward the extremes
-  TOWARD_ZERO: 0b110001, // toward zero
-})
+  TOWARD_ZERO: 0b110001 // toward zero
+} as const
+
+Object.freeze(ROUNDING_MODE)
+
+// Unused
+type RoundingMode = typeof ROUNDING_MODE[keyof typeof ROUNDING_MODE]
 
 // Bitfield:
 // bit 0: 0 -> whatever or going up in some way, 1 -> going down in some way
@@ -35,7 +40,11 @@ export const ROUNDING_MODE = Object.freeze({
 // Check if (ties)
 // if (rm & 2)
 
-export function roundingModeToString (mode) {
+/**
+ * Convert a numeric rounding mode to a string
+ * @param mode Any number; throws on invalid
+ */
+export function roundingModeToString (mode: number): string {
   switch (mode) {
     case ROUNDING_MODE.WHATEVER:
       return 'WHATEVER'
@@ -56,20 +65,25 @@ export function roundingModeToString (mode) {
     case ROUNDING_MODE.TOWARD_ZERO:
       return 'TOWARD_ZERO'
   }
+
+  throw new TypeError(`Invalid rounding mode`)
 }
 
 /**
- * Whether a given number is a recognized rounding mode
- * @param n {number}
- * @returns {boolean}
+ * Whether a given object is a recognized rounding mode
+ * @param n Any object
+ * @returns If it is a valid rounding mode
  */
-export function isRoundingMode (n) {
+export function isRoundingMode (n: any): boolean {
   if (typeof n !== "number") return false
 
   return (n === 0 || n === 0b10 || n === 0b110 || n === 0b10010 || n === 0b10011 || n === 0b10000 || n === 0b10001 || n === 0b110000 || n === 0b110001)
 }
 
-// Flip on sign
+/**
+ * Flip a rounding mode (up to down, toward inf to toward zero)
+ */
 export function flipRoundingMode (n) {
-  if (n & 16) return n ^ 1
+  return (n & 16) ? (n ^ 1) : n
 }
+
