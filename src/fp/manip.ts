@@ -13,10 +13,10 @@ const MAGIC_ROUND_C = 1.1113332476497816e-16 // just above machine epsilon / 2
  * Returns the next floating point number after x. For example, roundUp(0) returns Number.MIN_VALUE.
  * inf -> inf, -inf -> -min negative value, nan -> nan, -0, 0 -> min positive denormal, max negative denormal -> 0. This
  * function is pretty darn fast and if it's inlined, is probably 2-4 ns / call.
- * @param x {number} Any floating-point number
- * @returns {number} The next representable floating-point number, handling special cases
+ * @param x Any floating-point number
+ * @returns The next representable floating-point number, handling special cases
  */
-export function roundUp (x) {
+export function roundUp (x: number): number {
   if (x >= -POSITIVE_NORMAL_MIN && x < POSITIVE_NORMAL_MIN) {
     // denormal numbers
     return x + POSITIVE_DENORMAL_MIN
@@ -30,10 +30,10 @@ export function roundUp (x) {
 
 /**
  * Returns the previous floating point number before x. Equivalent to -roundUp(-x)
- * @param x {number} Any floating-point number
- * @returns {number} The previous representable floating-point number, handling special cases
+ * @param x Any floating-point number
+ * @returns The previous representable floating-point number, handling special cases
  */
-export function roundDown (x) {
+export function roundDown (x: number): number {
   if (x > -POSITIVE_NORMAL_MIN && x <= POSITIVE_NORMAL_MIN) {
     return x - POSITIVE_DENORMAL_MIN
   } else if (x === Infinity) {
@@ -45,60 +45,44 @@ export function roundDown (x) {
 
 /**
  * Return whether a number is denormal; see {@link https://en.wikipedia.org/wiki/Denormal_number|Wikipedia} for a
- * technical explanation of what this means. ±0 are not considered denormal numbers. Denormal numbers are sometimes
- * known as subnormal numbers.
- * @param x {number} Any floating-point number
- * @returns {boolean} Whether the number is a denormal number
+ * technical explanation of what that means. ±0 are not considered denormal.
+ * @param x Any floating-point number
+ * @returns Whether the number is a denormal number
  */
-export function isDenormal (x) {
+export function isDenormal (x: number): boolean {
   // Note that NaN will return false, since NaN < anything is false.
   return x !== 0 && x < POSITIVE_NORMAL_MIN && x > NEGATIVE_NORMAL_MAX
 }
 
 /**
- * Get the non-biased exponent of a floating-point number x. Equivalent mathematically to floor(log2(abs(x))) for
- * finite values, but more accurate as the precision of log2 is not technically guaranteed. My tests on Chrome suggest
- * that it is actually twice as fast as floor(log2(...)), which is surprising; the culprit is likely the log2 function,
- * which must calculate to full precision before being floored.
- * @param x {number} Any floating-point number
- * @returns {number} The non-biased exponent of that number's floating-point representation
+ * Get the non-biased exponent of a floating-point number x. Equivalent *mathematically* to floor(log2(abs(x))) for
+ * finite values--but only if you're using infinite precision.
+ * @param x Any floating-point number
+ * @returns The non-biased exponent of that number's floating-point representation
  */
-export function getExponent (x) {
+export function getExponent (x: number): number {
   floatStore[0] = x
 
   // Mask the biased exponent, retrieve it and convert it to non-biased
   return ((intView[1] & 0x7ff00000) >> 20) - 1023
 }
 
-// Internal function
-function _getMantissaHighWord () {
-  return intView[1] & 0x000fffff
+/**
+ * Get the mantissa of a floating-point number as an integer in [0, 2^53).
+ * @param x Any floating-point number
+ * @returns An integer in [0, 2^53)
+ */
+export function getMantissa (x: number): number {
+  floatStore[0] = x
+
+  return intView[0] + _getMantissaHighWord() * 4294967296
 }
 
 /**
- * Get the mantissa of a floating-point number as an integer in [0, 2^52).
- * @param x {number} Any floating-point number
- * @returns {number} An integer in [0, 2^52) containing the mantissa of that number
+ * Get the exponent and mantissa of a number
+ * @param x
  */
-export function getMantissa (x) {
-  floatStore[0] = x
-
-  return intView[0] + _getMantissaHighWord() * 4294967296
-}
-
-export function setFloatStore (x) {
-  floatStore[0] = x
-}
-
-export function getFloatStoreExponent () {
-  return ((intView[1] & 0x7ff00000) >> 20) - 1023
-}
-
-export function getFloatStoreMantissa () {
-  return intView[0] + _getMantissaHighWord() * 4294967296
-}
-
-export function getExponentAndMantissa (x) {
+export function getExponentAndMantissa (x: number): [ number, number ] {
   floatStore[0] = x
 
   return [
@@ -107,15 +91,42 @@ export function getExponentAndMantissa (x) {
   ]
 }
 
+function _getMantissaHighWord () {
+  return intView[1] & 0x000fffff
+}
+
+
 /**
- * Testing function counting the approximate number of floats between x1 and x2, including x1 but excluding x2. NaN if
+ * Set the internal float store value to be manipulated
+ * @param x Any floating-point number
+ */
+export function setFloatStore (x: number) {
+  floatStore[0] = x
+}
+
+/**
+ * Get the stored exponent after calling setFloatStore
+ */
+export function getFloatStoreExponent (): number {
+  return ((intView[1] & 0x7ff00000) >> 20) - 1023
+}
+
+/**
+ * Get the stored mantissa after calling setFloatStore
+ */
+export function getFloatStoreMantissa (): number {
+  return intView[0] + _getMantissaHighWord() * 4294967296
+}
+
+/**
+ * Testing function counting the *approximate* number of floats between x1 and x2, including x1 but excluding x2. NaN if
  * either is undefined. It is approximate because the answer may sometimes exceed Number.MAX_SAFE_INTEGER, but it is
  * exact if the answer is less than Number.MAX_SAFE_INTEGER.
- * @param x1 {number} The lesser number
- * @param x2 {number} The greater number
- * @returns {number} The number of floats in the interval [x1, x2)
+ * @param x1 The lesser number
+ * @param x2 The greater number
+ * @returns The number of floats in the interval [x1, x2)
  */
-export function countFloatsBetween (x1, x2) {
+export function countFloatsBetween (x1: number, x2: number): number {
   if (Number.isNaN(x1) || Number.isNaN(x2)) {
     return NaN
   }
@@ -135,18 +146,20 @@ export function countFloatsBetween (x1, x2) {
 }
 
 const pow2Lookup = new Float64Array(2098)
+let e = Number.MIN_VALUE
 for (let i = -1074; i <= 1023; ++i) {
-  pow2Lookup[i + 1074] = 2 ** i
+  pow2Lookup[i + 1074] = e
+  e *= 2
 }
 
 /**
- * Calculates 2 ^ exp, using a customized method for integer exponents. An examination of V8's pow function didn't
+ * Calculates 2 ^ exp, using a customized method for integer exponents. An examination of fdlibm's pow function didn't
  * reveal any special handling, and indeed my benchmark indicates this method is 3 times faster than pow for integer
  * exponents. Note that bit shifts can't really be used except for a restricted range of exponents.
- * @param exp {number} Exponent; intended for use with integers, but technically works with any floating-point number.
- * @returns {number} Returns 2 ^ exp, and is guaranteed to be exact for integer exponents.
+ * @param exp Exponent; intended for use with integers, but permits any floating-point number.
+ * @returns Returns 2 ^ exp, and is guaranteed to be exact for integer exponents.
  */
-export function pow2 (exp) {
+export function pow2 (exp: number): number {
   if (!Number.isInteger(exp)) return Math.pow(2, exp)
   if (exp > 1023) return Infinity
   if (exp < -1074) return 0
@@ -157,7 +170,7 @@ export function pow2 (exp) {
 }
 
 // Counts the number of trailing zeros in a 32-bit integer n; similar to <i>Math.clz32</i>.
-function countTrailingZeros (n) {
+function countTrailingZeros (n: number): number {
   let bits = 0
 
   if (n !== 0) {
@@ -192,7 +205,7 @@ function countTrailingZeros (n) {
   return bits
 }
 
-function _mantissaCtz () {
+function _mantissaCtz (): number {
   const bits = countTrailingZeros(intView[0])
 
   if (bits === 32) {
@@ -209,13 +222,13 @@ function _mantissaCtz () {
  * @param d {number} A floating-point number
  * @returns {number} The number of trailing zeros in that number's mantissa
  */
-export function mantissaCtz (d) {
+export function mantissaCtz (d: number): number {
   floatStore[0] = d
 
   return _mantissaCtz()
 }
 
-function _mantissaClz () {
+function _mantissaClz (): number {
   const bits = Math.clz32(_getMantissaHighWord()) - 12 // subtract the exponent zeroed part
 
   return bits !== 20 ? bits : bits + Math.clz32(intView[0])
@@ -223,10 +236,10 @@ function _mantissaClz () {
 
 /**
  * Counts the number of leading zeros in the mantissa of a floating-point number, between 0 and 52.
- * @param d {number} A floating-point number
- * @returns {number} The number of leading zeros in that number's mantissa
+ * @param d A floating-point number
+ * @returns The number of leading zeros in that number's mantissa
  */
-export function mantissaClz (d) {
+export function mantissaClz (d: number): number {
   floatStore[0] = d
 
   return _mantissaClz()
@@ -236,10 +249,10 @@ export function mantissaClz (d) {
  * Converts a floating-point number into a fraction in [0.5, 1) or (-1, -0.5], except special cases, and an exponent,
  * such that fraction * 2 ^ exponent gives the original floating point number. If x is ±0, ±Infinity or NaN, [x, 0] is
  * returned to maintain this guarantee.
- * @param x {number} Any floating-point number
- * @returns {number[]} [fraction, exponent]
+ * @param x Any floating-point number
+ * @returns [fraction, exponent]
  */
-export function frExp (x) {
+export function frExp (x: number): [ number, number ] {
   if (x === 0 || !Number.isFinite(x)) return [x, 0]
 
   // +1 so that the fraction is between 0.5 and 1 instead of 1 and 2
@@ -258,18 +271,19 @@ export function frExp (x) {
  * Converts a floating-point number into a numerator, denominator and exponent such that it is equal to n/d * 2^e. n and
  * d are guaranteed to be less than or equal to 2^53 and greater than or equal to 0 (unless the number is ±0, Infinity,
  * or NaN, at which point [x, 1, 0] is returned). See Grapheme Theory for details. n/d is between 0.5 and 1.
- * @param x {number} Any floating-point number
- * @returns {number[]} [numerator, denominator, exponent]
+ *
+ * TODO: optimize
+ * @param x Any floating-point number
+ * @returns [numerator, denominator, exponent]
  */
-export function rationalExp (x) {
-  const [frac, denExponent, exp] = rationalExpInternal(x)
-
+export function rationalExp (x: number): [ number, number, number ] {
+  let [frac, denExponent, exp] = rationalExpInternal(x)
   let den = pow2(denExponent)
 
   return [frac * den, den, exp]
 }
 
-function rationalExpInternal (x) {
+function rationalExpInternal (x: number): [ number, number, number ] {
   if (x < 0) {
     const [num, den, exp] = rationalExpInternal(-x)
 
@@ -291,28 +305,33 @@ function rationalExpInternal (x) {
 /**
  * Converts a floating-point number into an integer and exponent [i, e], so that i * 2^e gives the original number. i
  * will be within the bounds of Number.MAX_SAFE_INTEGER.
- * @param x
+ * @param x Any floating-point number
  */
-export function integerExp (x) {
+export function integerExp (x: number): [ number, number ] {
   const [frac, denExponent, exp] = rationalExpInternal(x)
 
   return [frac * pow2(denExponent), exp - denExponent]
 }
 
 /**
- * Compute an ACCURATE floor log 2 function. floor(log2(268435455.99999994)), for example, returns 28 when it should
- * mathematically return 27.
- * @param x
+ * Compute an accurate floor log 2 function. Note that Math.log2 is not good enough here;
+ * floor(log2(268435455.99999994)), for example, returns 28 when the mathematical value is 27.
+ * @param x Any floating-point number
  */
-export function flrLog2 (x) {
+export function flrLog2 (x: number): number {
   let exp = getExponent(x) + 1
 
-  if (exp === -1022) exp -= _mantissaClz()
+  if (exp === -1022) exp -= _mantissaClz() // denormal
 
   return exp - 1
 }
 
-export function ulp (x) {
+/**
+ * Compute the unit in the last place for a given floating-point number. Returns NaN if the number is infinite and the
+ * smallest positive denormal if it is equal to 0.
+ * @param x Any floating-point number
+ */
+export function ulp (x: number): number {
   if (!Number.isFinite(x)) return Infinity
   if (x === 0) return Number.MIN_VALUE
 
