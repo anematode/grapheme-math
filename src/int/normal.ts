@@ -10,19 +10,19 @@ const builtinIsFinite = Number.isFinite
 
 /**
  * Check if a parameter is a valid nullable integer (must be an integer number or NaN, ±Infinity)
- * @param {*} i
- * @returns {boolean} Whether the given parameter is a valid nullable integer
+ * @param i Anything
+ * @returns Whether the given parameter is a valid nullable integer
  */
-function isNullableInteger (i) {
+function isNullableInteger (i: any): boolean {
   return builtinIsInteger(i) || (typeof i === "number" && !builtinIsFinite(i))
 }
 
 /**
  * Return a descriptive error message if a number is not a valid nullable integer; otherwise, return the empty string
- * @param {*} i
- * @returns {string}
+ * @param i Anything
+ * @returns Error message if the parameter is an invalid nullable integer; otherwise, an empty message
  */
-function typecheckNullableInteger (i) {
+function typecheckNullableInteger (i: any): string {
   let isInteger = builtinIsInteger(i)
   if (isInteger) return ""
 

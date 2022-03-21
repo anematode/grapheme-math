@@ -2,8 +2,13 @@ import { roundDown, roundUp } from '../fp/manip.js'
 
 /**
  * A real interval with only min, max, defMin (bit 0), defMax (bit 1), contMin (bit 2), contMax (bit 3)
+ * TODO: types, functions
  */
 class FastRealInterval {
+  min: number;
+  max: number;
+  info: number;
+
   constructor (min=0, max=min, info=0b111) {
     this.min = +min
     this.max = +max
