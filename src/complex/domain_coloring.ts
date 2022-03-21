@@ -1,6 +1,8 @@
 import {Complex} from "./normal.js"
 
-function hslToRGB(h, s, l) {
+type RGB = [ number, number, number ]
+
+function hslToRGB(h: number, s: number, l: number): RGB {
     let r, g, b;
 
     if (s === 0) {
@@ -25,7 +27,7 @@ function hslToRGB(h, s, l) {
     return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
-export function complexToRGB (c) {
+export function complexToRGB (c: Complex): RGB {
   let h = (Complex.arg(c) + 2 * Math.PI / 3) / (2 * Math.PI)
   let s = 1
   let l = 2 / Math.PI * Math.atan(Complex.abs(c))
