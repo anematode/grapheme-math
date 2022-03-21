@@ -17,47 +17,48 @@
  * floating-point, enabling greater optimization. Furthermore, NaN is implicitly converted to false in a boolean
  * expression, so user code that doesn't handle undefinedness will treat undefined results as false--which is
  * usually what is intended.
+ *
+ * TODO: Optimize. Math.sign is a slow builtin
  */
 
 // All these functions assume their inputs are in (-0, +0, 1, false, true, NaN). They return results in the range (0, 1, NaN)
 // and propagate NaNs as appropriate
 const Functions = Object.freeze({
-  not: a => 1 - a,
+  not: (a: number) => 1 - a,
 
-  and: (a, b) => a * b,
-  or: (a, b) => Math.sign(a + b),
-  eq: (a, b) => 1 - Math.abs(a - b),
-  notEq: (a, b) => Math.abs(a - b)
+  and: (a: number, b: number) => a * b,
+  or: (a: number, b: number) => Math.sign(a + b),
+  eq: (a: number, b: number) => 1 - Math.abs(a - b),
+  notEq: (a: number, b: number) => Math.abs(a - b)
 })
 
 // Compare numerical values, taking into account NaNs and returning nullable booleans. Infinities are treated
 // differently than normal; -inf < inf is true and -inf > inf is false, but inf < inf is NaN, for example.
 const Comparisons = Object.freeze({
-  less: (a, b) => 1 - Math.sign(Math.sign(a - b) + 1), // 1 if a < b, 0 if a >= b, NaN otherwise
-  lessEq: (a, b) => 0 - Math.sign(Math.sign(a - b) - 1), // 1 if a <= b, 0 if a > b, NaN otherwise
-  greater: (a, b) => 1 - Math.sign(Math.sign(b - a) - 1),
-  greaterEq: (a, b) => 0 - Math.sign(Math.sign(b - a) - 1),
-  eq: (a, b) => 1 - Math.sign(Math.abs(a - b)),
-  notEq: (a, b) => Math.sign(Math.abs(a - b))
+  less: (a: number, b: number) => 1 - Math.sign(Math.sign(a - b) + 1), // 1 if a < b, 0 if a >= b, NaN otherwise
+  lessEq: (a: number, b: number) => 0 - Math.sign(Math.sign(a - b) - 1), // 1 if a <= b, 0 if a > b, NaN otherwise
+  greater: (a: number, b: number) => 1 - Math.sign(Math.sign(b - a) - 1),
+  greaterEq: (a: number, b: number) => 0 - Math.sign(Math.sign(b - a) - 1),
+  eq: (a: number, b: number) => 1 - Math.sign(Math.abs(a - b)),
+  notEq: (a: number, b: number) => Math.sign(Math.abs(a - b))
 })
 
 // Test for values
 const Test = Object.freeze({
-  true: a => a === 1,
-  false: a => a === 0,
-  defined: a => a === a,
-  undefined: a => a !== a
+  true: (a: number) => a === 1,
+  false: (a: number) => a === 0,
+  defined: (a: number) => a === a,
+  undefined: (a: number) => a !== a
 })
 
 /**
- * Convert any object to a nullable boolean via the following conversion:
- * undefined, null, NaN -> NaN;
- * -0, 0, 0n, "", false, document.all (:P) -> 0,
- * everything else -> 1
- * @param {*} b
- * @returns {number} The nullable boolean
+ * Convert any object to a nullable boolean. Anything falsy, except NaN, is converted to 0. NaN is converted to NaN, and
+ * everything else is converted to 1.
+ *
+ * @param b Any object
+ * @returns The nullable boolean
  */
-function toNullableBoolean (b) {
+function toNullableBoolean (b: any): number {
   if (b == null || b !== b)
     return NaN
 
@@ -65,37 +66,37 @@ function toNullableBoolean (b) {
 }
 
 /**
- * Returns true if b can be USED as a nullable boolean (i.e., it is one of -0, 0, false, true, or NaN) because of
- * implicit conversions
- * @param {*} b
- * @returns {boolean} Whether b can be used AS a nullable boolean
+ * Returns true if b can be used as if it were a nullable boolean (i.e., it is one of -0, 0, false, true, or NaN)
+ * because of implicit conversions
+ * @param b Any object
+ * @returns Whether b can be used a a nullable boolean
  */
-function isUsableNullableBoolean (b) {
+function isUsableNullableBoolean (b: any): boolean {
   return b === 0 || b !== b || typeof b === "boolean"
 }
 
 /**
- * Returns true if b is STRICTLY a nullable boolean (i.e., it is one of 0, 1, or NaN)
- * @param {*} b
- * @returns {boolean} Whether b IS a nullable boolean
+ * Returns true if b is strictly a nullable boolean (i.e., it is one of 0, 1, or NaN)
+ * @param b Any object
+ * @returns Whether b is a nullable boolean
  */
-function isNullableBoolean (b) {
+function isNullableBoolean (b: any): boolean {
   return b === 1 || b !== b || Object.is(b, 0)
 }
 
 /**
  * Returns a descriptive nonempty string if b is not a usable nullable boolean
- * @param {*} b
- * @returns {string}
+ * @param b Any object
+ * @returns Error string if argument is not a usable nullable boolean; empty otherwise
  */
-function typecheckUsableNullableBoolean (b) {
+function typecheckUsableNullableBoolean (b: any): string {
   if (typeof b === "boolean") return ""
   if (typeof b === "number") {
     if (b === 0 || b === 1 || b !== b) return ""
-    return `Expected nullable boolean (0, 1, NaN, false, or true), got number ${b}`
+    return `Expected nullable boolean (±0, 1, NaN, false, or true), got number ${b}`
   }
 
-  return `Expected nullable boolean (0, 1, NaN, false, or true), got type ${typeof b}`
+  return `Expected nullable boolean (±0, 1, NaN, false, or true), got type ${typeof b}`
 }
 
 const NullableBoolean = Object.freeze({
