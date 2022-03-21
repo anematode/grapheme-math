@@ -42,26 +42,25 @@ const lookupLen = 172
 
 // g = 7
 
-export const lanczosCoefficients = [
+export const lanczosCoefficients = Object.freeze([
   676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6 ,1.5056327351493116e-7
-]
-
+])
 
 /**
  * Gamma function, extension of the factorial function. Credit to Frederick Johannson; this uses the Lanczos
- * approximation (see https://en.wikipedia.org/wiki/Lanczos_approximation)
+ * approximation (see https://en.wikipedia.org/wiki/Lanczos_approximation).
+ *
+ * NaN -> NaN, Infinity -> Infinity, -Infinity -> NaN
  *
  * Geometric mean of error: 11 ulp (particularly bad near poles, as one would expect)
- * @param x {number}
- * @returns {number}
+ * @param x Any floating-point number
+ * @returns Approximation to gamma(x)
  */
-export function gammaReal(x) {
+export function gammaReal (x: number): number {
   x = +x
 
-  if (!Number.isFinite(x)) {
-    // NaN -> NaN, Infinity -> Infinity, -Infinity -> NaN since the limit doesn't exist
+  if (!Number.isFinite(x))
     return Infinity + x
-  }
 
   if (Number.isInteger(x)) {
     // Use lookup table for extra precision
@@ -85,16 +84,16 @@ export function gammaReal(x) {
   }
 
   let t = x + 7.5  // 8 - 0.5
-  let y = 2.5066282746310007 /* sqrt(2 pi) */ * Math.pow(t, x + 0.5) * Math.exp(-t) * s // yeah idk
 
-  return y
+   // yeah idk
+  return 2.5066282746310007 * Math.pow(t, x + 0.5) * Math.exp(-t) * s
 }
 
 /**
- * Factorial function, accepting non-integer arguments
- * @param x {number}
- * @returns {number}
+ * Factorial function, accepting non-integer arguments.
+ * @param x Any floating-point number
+ * @returns Approximation to x!
  */
-export function factorial(x) {
+export function factorialReal (x: number): number {
   return gammaReal(x - 1)
 }
