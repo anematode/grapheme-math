@@ -10,6 +10,7 @@ import {
   ASTNode
 } from './node.js'
 import { toMathematicalType } from './builtin/builtin_types.js'
+import {MathematicalType} from "./type";
 
 export class ParserError extends Error {
   constructor (message) {
@@ -59,30 +60,53 @@ type StringToken = BaseToken & {
 
 type Token = ParenToken | ConstantToken | OperatorToken | FunctionToken | CommaToken | VariableToken | StringToken
 
-type ASTNodeInfo = any
-type UnprocessedASTNodeType = "generic" | "constant" | "variable" | "operator" | "group"
-type UnprocessedChildren = Array<UnprocessedASTNode|Token>
+type ASTNodeInfo = {
+  token?: Token
+  startToken?: Token
+  endToken?: Token
 
+  // Operators
+  isFunction?: boolean
+  // Functions
+  startExprToken?: Token
+
+  // Constants
+  value?: string
+  // Variables, operators, functions
+  name?: string
+  // Comparison chains
+  comparisons?: Array<string>
+  // For root nodes: which string this was generated from, if any
+  parsedFrom?: string
+}
+type UnprocessedASTNodeType = "generic" | "constant" | "variable" | "operator" | "group"
+type UnprocessedChild = UnprocessedASTNode | Token
+type UnprocessedChildren = Array<UnprocessedChild>
+
+// ASTNode that might still have tokens in it
 class UnprocessedASTNode {
-  type: UnprocessedASTNodeType
+  type: MathematicalType
+  nodeType: UnprocessedASTNodeType
   info?: ASTNodeInfo
   children: UnprocessedChildren
 
-  constructor (type: UnprocessedASTNodeType, info: ASTNodeInfo, children: UnprocessedChildren) {
+  constructor (nodeType: UnprocessedASTNodeType, type: MathematicalType, info: ASTNodeInfo, children: UnprocessedChildren) {
     this.type = type
+    this.nodeType = nodeType
     this.info = info
     this.children = children
   }
 
-  applyAll (f: (UnprocessedASTNode) => void, childrenFirst=false) {
+  applyAll (f: (UnprocessedChild) => void, childrenFirst=false) {
     let children = this.children
+
     if (!childrenFirst) f(this)
     for (let i = 0; i < children.length; ++i) {
       let child = children[i]
       if (child instanceof UnprocessedASTNode) {
-        f(child)
-
         child.applyAll(f, childrenFirst)
+      } else {
+        f(child)
       }
     }
     if (childrenFirst) f(this)
@@ -112,7 +136,7 @@ const string_regex = /^"(?:[^"\\]|\\.)*"/
  * @param message The raw error message, to be combined with contextual information
  * @param noIndex If true, provide no index
  */
-export function raiseParserError (string: string, info: ParserErrorInfo, message: string = "", noIndex: boolean =false) {
+function raiseParserError (string: string, info: ParserErrorInfo, message: string = "", noIndex: boolean =false): never {
   let index = -1, token = null, endToken = null
   if (info !== null) {
     if ('index' in info) {
@@ -134,6 +158,10 @@ export function raiseParserError (string: string, info: ParserErrorInfo, message
   throw new ParserError(
     'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen))
   )
+}
+
+function raiseUnknownParserError (): never {
+  throw new ParserError("?") // hi
 }
 
 function checkParensBalanced (s: string) {
@@ -379,7 +407,7 @@ function checkValid (tokens, string) {
  * Find a pair of parentheses in a list of tokens, namely the first one as indexed by the closing paren/bracket. For
  * example, in (x(y(z)(w))) it will find (z), returning [ paren1 index, paren2 index, paren1 token, paren2 token ]
  */
-function findParenIndices (children: Array<Token>): [ number, number, Token, Token ] | null {
+function findParenIndices (children: Array<UnprocessedChild>): [ number, number, Token, Token ] | null {
   let startIndex = -1
   let startToken: Token | null = null
 
@@ -463,18 +491,17 @@ function processConstantsAndVariables (tokens: Array<Token|ASTNode>) {
     if ('type' in token) {
       switch (token.type) {
         case 'constant':
-          node = new ConstantNode({value: token.value})
-          node.type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real')
+          let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real')
+          node = new UnprocessedASTNode("constant", type, { value: token.value, token, startToken: token, endToken: token }, [])
 
           break
         case 'variable':
-          node = new VariableNode({name: token.name})
+          node = new UnprocessedASTNode("variable", null, { name: token.name, token, startToken: token, endToken: token }, [])
           break
         default:
           continue
       }
 
-      node.info.token = node.info.startToken = node.info.endToken = token
       tokens[i] = node
     }
   }
@@ -483,9 +510,12 @@ function processConstantsAndVariables (tokens: Array<Token|ASTNode>) {
 // To process parentheses, we find pairs of them and combine them into ASTNodes containing the nodes and
 // tokens between them. We already know the parentheses are balanced, which is a huge help here. We basically go
 // through each node recursively and convert all paren pairs to a node, then recurse into those new nodes
-function processParentheses (rootNode: ASTNode) {
+function processParentheses (rootNode: UnprocessedASTNode) {
   rootNode.applyAll(node => {
+    if (!(node instanceof UnprocessedASTNode)) return
+
     let parensRemaining = true
+
     while (parensRemaining) {
       parensRemaining = false
       let indices = findParenIndices(node.children)
@@ -495,7 +525,9 @@ function processParentheses (rootNode: ASTNode) {
 
         let [ startIndex, endIndex, startToken, endToken ] = indices
 
-        let newNode = new ASTGroup()
+        let newNode = new UnprocessedASTNode("group", null,
+            {}, [])
+
         let expr = node.children.splice(
           startIndex,
           endIndex - startIndex + 1,
@@ -503,39 +535,33 @@ function processParentheses (rootNode: ASTNode) {
         )
 
         newNode.children = expr.slice(1, expr.length - 1)
-        newNode.info.token = newNode.info.startToken = startToken
-        newNode.info.endToken = endToken
       }
     }
   }, true)
 }
 
 // Turn function tokens followed by ASTNodes into OperatorNodes
-function processFunctions (rootNode: ASTNode) {
+function processFunctions (rootNode: UnprocessedASTNode) {
   rootNode.applyAll(node => {
+    if (!(node instanceof UnprocessedASTNode)) return
+
     let children = node.children
 
     for (let i = 0; i < children.length; ++i) {
       let token = children[i]
 
       if (token.type === 'function') {
-        let newNode = new OperatorNode({ name: token.name })
-
-        children[i] = newNode
-
         let nextNode = children[i + 1]
-        if (!nextNode) {
-          throw new Error("Unknown error")
+        if (!nextNode || !(nextNode instanceof UnprocessedASTNode)) {
+          raiseUnknownParserError()
         }
+
+        let newNode = new UnprocessedASTNode("operator", null /* unknown type */,
+            { name: token.name, isFunction: true }, nextNode.children)
+        children[i] = newNode
 
         // Take children from the node coming immediately after
         newNode.children = nextNode.children
-
-        newNode.info.token = newNode.info.startToken = token
-        newNode.info.endToken = nextNode.info.endToken
-        newNode.info.startExprToken = nextNode.info.startToken
-        newNode.info.isFunction = true
-
         // Remove the node immediately after
         children.splice(i + 1, 1)
       }
@@ -545,39 +571,47 @@ function processFunctions (rootNode: ASTNode) {
 
 // Given a node and an index i of a binary operator, combine the nodes immediately to the left and right of the node
 // into a single binary operator
-function combineBinaryOperator (node: ASTNode, i: number) {
+function combineBinaryOperator (node: UnprocessedASTNode, i: number) {
   const children = node.children
-  let newNode = new OperatorNode({ name: children[i].op })
+  let child = children[i]
 
-  newNode.children = [children[i - 1], children[i + 1]]
+  if (child instanceof UnprocessedASTNode || !('op' in child)) {
+    raiseUnknownParserError()
+  }
+
+  let prevChild = children[i - 1]
+  let nextChild = children[i + 1]
+
+  if (!(prevChild instanceof UnprocessedASTNode) || !(nextChild instanceof UnprocessedASTNode)) {
+    raiseUnknownParserError()
+  }
+
+  let newNode = new UnprocessedASTNode("operator", null,
+      { name: child.op }, [ prevChild, nextChild ])
 
   children.splice(i - 1, 3, newNode)
 }
 
 // Process the highest precedence operators. Note that e^x^2 = (e^x)^2 and e^-x^2 = e^(-x^2).
-function processUnaryAndExponentiation (root: ASTNode) {
+function processUnaryAndExponentiation (root: UnprocessedASTNode) {
   root.applyAll(node => {
+    if (!(node instanceof UnprocessedASTNode)) return
+
     let children = node.children
 
     // We iterate backwards
     for (let i = children.length - 1; i >= 0; --i) {
       let child = children[i]
-      if (child instanceof ASTNode || !child.op) continue
+      if (child instanceof UnprocessedASTNode || !('op' in child)) continue
 
-      if (child.op === '-') {
+      if (child.op === '-' || child.op === '+') {
         // If the preceding token is an unprocessed non-operator token, or node, then it's a binary expression
         if (i !== 0 && children[i - 1].type !== 'operator') continue
 
-        let newNode = new OperatorNode({ name: '-' })
-        newNode.children = [children[i + 1]]
+        let newNode = new UnprocessedASTNode("operator", null,
+            { name: child.op, token: null, startToken: null, endToken: null }, [ children[i + 1] ])
 
         children.splice(i, 2, newNode)
-      } else if (child.op === '+') {
-        // See above
-        if (i !== 0 && children[i - 1].type !== 'operator') continue
-
-        // Unary + is considered a no-op
-        children.splice(i, 1)
       } else if (child.op === '^') {
         combineBinaryOperator(node, i)
 
@@ -588,13 +622,14 @@ function processUnaryAndExponentiation (root: ASTNode) {
 }
 
 // Combine binary operators, going from left to right, with equal precedence for all
-function processOperators (root: ASTNode, operators: Array<string>) {
+function processOperators (root: UnprocessedASTNode, operators: Array<string>) {
   root.applyAll(node => {
+    if (!(node instanceof UnprocessedASTNode)) return
     let children = node.children
 
     for (let i = 0; i < children.length; ++i) {
       let child = children[i]
-      if (child instanceof ASTNode || !child.op) continue
+      if (child instanceof UnprocessedASTNode || !('op' in child)) continue
 
       if (operators.includes(child.op)) {
         combineBinaryOperator(node, i)
@@ -611,16 +646,17 @@ const comparisonOperators = ['<', '<=', '==', '!=', '>=', '>']
 // "comparison_chain" operators, which have the form comparison_chain(0, 1 (enum comparison), x, 0 (enum comparison), 2). Gross, but
 // it's hard to cleanly represent these comparison chains otherwise. You *could* represent them using boolean operations,
 // but that duplicates the internal nodes which is inefficient
-function processComparisonChains (root: ASTNode) {
+function processComparisonChains (root: UnprocessedASTNode) {
   root.applyAll(node => {
-    // TODO: process backwards
+    // TODO: process backwards for efficiency
+    if (!(node instanceof UnprocessedASTNode)) return
     const children = node.children
 
     for (let i = 0; i < children.length; ++i) {
       let child = children[i]
-      if (child instanceof ASTNode || !child.op) continue
+      if (child instanceof ASTNode || !('op' in child)) continue
 
-      if (comparisonOperators.includes(children[i].op)) {
+      if (comparisonOperators.includes(child.op)) {
         let comparisonChainFound = false
 
         // Found a comparison operator token; we now check for whether the tokens +2, +4, etc. ahead of it are also
@@ -630,9 +666,9 @@ function processComparisonChains (root: ASTNode) {
         let j = i + 2
         for (; j < children.length; j += 2) {
           let nextChild = children[j]
-          if (nextChild instanceof ASTNode || !nextChild.op) continue
+          if (nextChild instanceof UnprocessedASTNode || !('op' in nextChild)) continue
 
-          if (comparisonOperators.includes(children[j].op)) {
+          if (comparisonOperators.includes(nextChild.op)) {
             comparisonChainFound = true
           } else {
             break
@@ -643,13 +679,14 @@ function processComparisonChains (root: ASTNode) {
           // The nodes i, i+2, i+4, ..., j-4, j-2 are all comparison nodes. Thus, all nodes in the range i-1 ... j-1
           // should be included in the comparison chain
 
-          let comparisonChain = new OperatorNode({ name: 'comparison_chain' })
+          let comparisonChain = new UnprocessedASTNode("operator", null,
+              { name: 'comparison_chain' }, [])
 
           // Looks something like [ ASTNode, '<', ASTNode, '<=', ASTNode ]
           let removedChildren = children.splice(
-            i - 1,
-            j - i + 1,
-            comparisonChain // inserts the comparison chain as replacement
+              i - 1,
+              j - i + 1,
+              comparisonChain // inserts the comparison chain as replacement
           )
 
           // [ ASTNode, ASTNode, ASTNode ]
@@ -657,14 +694,17 @@ function processComparisonChains (root: ASTNode) {
 
           let comparisons = [] // [ '<', '<=' ]
           for (let i = 1; i < removedChildren.length - 2; i += 2) {
-            comparisons.push(removedChildren[i].op)
+            let child = removedChildren[i]
+            if (!('op' in child)) raiseUnknownParserError()
+
+            comparisons.push(child.op)
           }
 
           for (let i = 0; i < removedChildren.length; i += 2) {
             cchainChildren.push(removedChildren[i])
           }
 
-          comparisonChain.extraArgs.comparisons = comparisons
+          comparisonChain.info.comparisons = comparisons
 
           return
         }
@@ -674,27 +714,35 @@ function processComparisonChains (root: ASTNode) {
 }
 
 // Remove residual commas from the node
-function removeCommas (root: ASTNode) {
+function removeCommas (root: UnprocessedASTNode) {
   root.applyAll(node => {
+    if (!(node instanceof UnprocessedASTNode)) return
     let children = node.children
     let i = children.length
+
     while (i--) {
       if (children[i].type === 'comma') children.splice(i, 1)
     }
   }, true)
 }
 
-function verifyCommaSeparation (root: ASTNode, string: string) {
+function verifyCommaSeparation (root: UnprocessedASTNode, string: string) {
   root.applyAll(node => {
     // Every function with multiple elements in it should have commas separating each argument, with no leading or
     // trailing commas.
+    if (!(node instanceof UnprocessedASTNode)) return
+
     let children = node.children
     let isPlainGroup = (node instanceof ASTGroup) && !(node instanceof OperatorNode)
 
-    let isFunction = node.isFunctionNode()
+    let isFunction = !!node.info.isFunction
     if (!isFunction && !isPlainGroup) return
 
-    if (children.length === 0) return // fine. () is the empty tuple
+    if (children.length === 0) {
+      // will eventually be fine. () is the empty tuple
+      raiseParserError(string, { index: node.info?.token.index ?? -1 }, "empty parentheses")
+      return
+    }
     if (children[0].type === 'comma') raiseParserError(string, children[0], "leading comma in expression")
 
     // Must have the form "a,b,c"
@@ -708,8 +756,12 @@ function verifyCommaSeparation (root: ASTNode, string: string) {
       }
 
       if (prevChild && prevChild.type !== "comma" && child.type !== "comma") {
-        // child is a node
-        raiseParserError(string, child.info, "trailing expression")
+        // child must be a node
+        if (child instanceof UnprocessedASTNode) {
+          raiseParserError(string, {index: child.info.token.index ?? -1}, "trailing expression")
+        }
+
+        raiseUnknownParserError()
       }
 
       prevChild = child
@@ -717,7 +769,7 @@ function verifyCommaSeparation (root: ASTNode, string: string) {
 
     // TODO tuples
     if (isPlainGroup) {
-      if (children.length > 1) raiseParserError(string, children[2].info, "tuples not yet implemented")
+      if (children.length > 1) raiseParserError(string, { index: -1 }, "tuples not yet implemented")
     }
 
   }, true)
@@ -727,24 +779,32 @@ function verifyCommaSeparation (root: ASTNode, string: string) {
  * Attach start and end tokens for each group
  * @param root
  */
-function attachInformation (root: ASTNode) {
+function attachInformation (root: UnprocessedASTNode) {
   root.applyAll(node => {
+    if (!(node instanceof UnprocessedASTNode)) return
     let info = node.info
+
     if (!info.token) {
-      info.token = info.startToken = node.children[0].info.token
-      info.endToken = node.children[node.children.length - 1].info.token
+      let firstChild = node.children[0]
+      let lastChild = node.children[node.children.length - 1]
+
+      if (!(firstChild instanceof UnprocessedASTNode) || !(lastChild instanceof UnprocessedASTNode)) {
+        raiseUnknownParserError()
+      }
+
+      info.token = info.startToken = firstChild.info.token
+      info.endToken = lastChild.info.token
     }
-  }, true, true /* children first */)
+  }, true /* children first */)
 }
 
 /**
  * Parse a given list of tokens, returning a single ASTNode.
  * Perf: parseString("x^2+y^2+e^-x^2+pow(3,gamma(2401 + complex(2,3)))" took 0.028 ms / iteration as of Mar 14, 2022.
- * @param tokens {any[]}
- * @param string {string} String where tokens ultimately came from (used for descriptive error messages)
- * @returns {ASTNode}
+ * @param tokens
+ * @param string String where tokens ultimately came from (used for descriptive error messages)
  */
-function parseTokens (tokens: Array<Token>, string: string): ASTNode {
+function parseTokens (tokens: Array<Token>, string: string): UnprocessedASTNode {
   // This is somewhat of a recursive descent parser because the grammar is nontrivial, but really isn't that
   // crazy. At intermediate steps, the node is a tree of both processed nodes and unprocessed tokens—a bit odd, but it
   // works.
@@ -753,8 +813,7 @@ function parseTokens (tokens: Array<Token>, string: string): ASTNode {
   processConstantsAndVariables(tokens)
 
   // Everything is done recursively within this root node
-  let root = new ASTGroup()
-  root.children = tokens
+  let root = new UnprocessedASTNode("group", null, {}, tokens)
 
   processParentheses(root)
   processFunctions(root)
@@ -777,19 +836,57 @@ function parseTokens (tokens: Array<Token>, string: string): ASTNode {
   removeCommas(root)
 
   let c = root.children[0]
-  if (!c) throw new Error("Unknown error")
+  if (!c) raiseUnknownParserError()
 
-  c.info.parsedFrom = string
+  if (c instanceof UnprocessedASTNode) {
+    c.info.parsedFrom = string
 
-  return c
+    return c
+  }
+
+  raiseUnknownParserError()
 }
 
-function convertToASTNode(n: UnprocessedASTNode): ASTNode {
-  let root = null
+function convertToASTNode(string: string, n: UnprocessedASTNode): ASTNode {
+  let nn = null, isGroup = false
 
+  switch (n.nodeType) {
+    case "constant":
+      nn = new ConstantNode(n.info)
+      break
+    case "group":
+      nn = new ASTGroup(n.info)
+      isGroup = true
+      break
+    case "operator":
+      nn = new OperatorNode(n.info)
+      isGroup = true
+      break
+    case "variable":
+      nn = new VariableNode(n.info)
+      break
+    case "generic":
+    default:
+      raiseUnknownParserError()
+  }
 
+  if (isGroup) {
+    let children: Array<ASTNode> = []
 
-  return root
+    for (let i = 0; i < n.children.length; ++i) {
+      let child = n.children[i]
+
+      if (!(child instanceof UnprocessedASTNode)) {
+        raiseParserError(string, child /* token */, "unprocessed token")
+      } else {
+        children.push(convertToASTNode(string, child))
+      }
+    }
+
+    nn.children = children
+  }
+
+  return nn
 }
 
 function parseString (string: string): ASTNode {
@@ -804,7 +901,7 @@ function parseString (string: string): ASTNode {
 
   let parsed: UnprocessedASTNode = parseTokens(tokens, string)
 
-  return convertToASTNode(parsed)
+  return convertToASTNode(string, parsed)
 }
 
 export { parseString, getTokens }
