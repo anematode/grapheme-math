@@ -10,8 +10,8 @@ const MAGIC_ROUND_C = 1.1113332476497816e-16; // just above machine epsilon / 2
  * Returns the next floating point number after x. For example, roundUp(0) returns Number.MIN_VALUE.
  * inf -> inf, -inf -> -min negative value, nan -> nan, -0, 0 -> min positive denormal, max negative denormal -> 0. This
  * function is pretty darn fast and if it's inlined, is probably 2-4 ns / call.
- * @param x {number} Any floating-point number
- * @returns {number} The next representable floating-point number, handling special cases
+ * @param x Any floating-point number
+ * @returns The next representable floating-point number, handling special cases
  */
 function roundUp(x) {
     if (x >= -POSITIVE_NORMAL_MIN && x < POSITIVE_NORMAL_MIN) {
@@ -26,8 +26,8 @@ function roundUp(x) {
 }
 /**
  * Returns the previous floating point number before x. Equivalent to -roundUp(-x)
- * @param x {number} Any floating-point number
- * @returns {number} The previous representable floating-point number, handling special cases
+ * @param x Any floating-point number
+ * @returns The previous representable floating-point number, handling special cases
  */
 function roundDown(x) {
     if (x > -POSITIVE_NORMAL_MIN && x <= POSITIVE_NORMAL_MIN) {
@@ -40,50 +40,38 @@ function roundDown(x) {
 }
 /**
  * Return whether a number is denormal; see {@link https://en.wikipedia.org/wiki/Denormal_number|Wikipedia} for a
- * technical explanation of what this means. ±0 are not considered denormal numbers. Denormal numbers are sometimes
- * known as subnormal numbers.
- * @param x {number} Any floating-point number
- * @returns {boolean} Whether the number is a denormal number
+ * technical explanation of what that means. ±0 are not considered denormal.
+ * @param x Any floating-point number
+ * @returns Whether the number is a denormal number
  */
 function isDenormal(x) {
     // Note that NaN will return false, since NaN < anything is false.
     return x !== 0 && x < POSITIVE_NORMAL_MIN && x > NEGATIVE_NORMAL_MAX;
 }
 /**
- * Get the non-biased exponent of a floating-point number x. Equivalent mathematically to floor(log2(abs(x))) for
- * finite values, but more accurate as the precision of log2 is not technically guaranteed. My tests on Chrome suggest
- * that it is actually twice as fast as floor(log2(...)), which is surprising; the culprit is likely the log2 function,
- * which must calculate to full precision before being floored.
- * @param x {number} Any floating-point number
- * @returns {number} The non-biased exponent of that number's floating-point representation
+ * Get the non-biased exponent of a floating-point number x. Equivalent *mathematically* to floor(log2(abs(x))) for
+ * finite values--but only if you're using infinite precision.
+ * @param x Any floating-point number
+ * @returns The non-biased exponent of that number's floating-point representation
  */
 function getExponent(x) {
     floatStore[0] = x;
     // Mask the biased exponent, retrieve it and convert it to non-biased
     return ((intView[1] & 0x7ff00000) >> 20) - 1023;
 }
-// Internal function
-function _getMantissaHighWord() {
-    return intView[1] & 0x000fffff;
-}
 /**
- * Get the mantissa of a floating-point number as an integer in [0, 2^52).
- * @param x {number} Any floating-point number
- * @returns {number} An integer in [0, 2^52) containing the mantissa of that number
+ * Get the mantissa of a floating-point number as an integer in [0, 2^53).
+ * @param x Any floating-point number
+ * @returns An integer in [0, 2^53)
  */
 function getMantissa(x) {
     floatStore[0] = x;
     return intView[0] + _getMantissaHighWord() * 4294967296;
 }
-function setFloatStore(x) {
-    floatStore[0] = x;
-}
-function getFloatStoreExponent() {
-    return ((intView[1] & 0x7ff00000) >> 20) - 1023;
-}
-function getFloatStoreMantissa() {
-    return intView[0] + _getMantissaHighWord() * 4294967296;
-}
+/**
+ * Get the exponent and mantissa of a number
+ * @param x
+ */
 function getExponentAndMantissa(x) {
     floatStore[0] = x;
     return [
@@ -91,13 +79,35 @@ function getExponentAndMantissa(x) {
         getFloatStoreMantissa()
     ];
 }
+function _getMantissaHighWord() {
+    return intView[1] & 0x000fffff;
+}
 /**
- * Testing function counting the approximate number of floats between x1 and x2, including x1 but excluding x2. NaN if
+ * Set the internal float store value to be manipulated
+ * @param x Any floating-point number
+ */
+function setFloatStore(x) {
+    floatStore[0] = x;
+}
+/**
+ * Get the stored exponent after calling setFloatStore
+ */
+function getFloatStoreExponent() {
+    return ((intView[1] & 0x7ff00000) >> 20) - 1023;
+}
+/**
+ * Get the stored mantissa after calling setFloatStore
+ */
+function getFloatStoreMantissa() {
+    return intView[0] + _getMantissaHighWord() * 4294967296;
+}
+/**
+ * Testing function counting the *approximate* number of floats between x1 and x2, including x1 but excluding x2. NaN if
  * either is undefined. It is approximate because the answer may sometimes exceed Number.MAX_SAFE_INTEGER, but it is
  * exact if the answer is less than Number.MAX_SAFE_INTEGER.
- * @param x1 {number} The lesser number
- * @param x2 {number} The greater number
- * @returns {number} The number of floats in the interval [x1, x2)
+ * @param x1 The lesser number
+ * @param x2 The greater number
+ * @returns The number of floats in the interval [x1, x2)
  */
 function countFloatsBetween(x1, x2) {
     if (Number.isNaN(x1) || Number.isNaN(x2)) {
@@ -112,18 +122,20 @@ function countFloatsBetween(x1, x2) {
     }
     const [x1man, x1exp] = frExp(x1);
     const [x2man, x2exp] = frExp(x2);
-    return (x2man - x1man) * Math.pow(2, 53) + (x2exp - x1exp) * Math.pow(2, 52);
+    return (x2man - x1man) * 2 ** 53 + (x2exp - x1exp) * 2 ** 52;
 }
 const pow2Lookup = new Float64Array(2098);
+let e = Number.MIN_VALUE;
 for (let i = -1074; i <= 1023; ++i) {
-    pow2Lookup[i + 1074] = Math.pow(2, i);
+    pow2Lookup[i + 1074] = e;
+    e *= 2;
 }
 /**
- * Calculates 2 ^ exp, using a customized method for integer exponents. An examination of V8's pow function didn't
+ * Calculates 2 ^ exp, using a customized method for integer exponents. An examination of fdlibm's pow function didn't
  * reveal any special handling, and indeed my benchmark indicates this method is 3 times faster than pow for integer
  * exponents. Note that bit shifts can't really be used except for a restricted range of exponents.
- * @param exp {number} Exponent; intended for use with integers, but technically works with any floating-point number.
- * @returns {number} Returns 2 ^ exp, and is guaranteed to be exact for integer exponents.
+ * @param exp Exponent; intended for use with integers, but permits any floating-point number.
+ * @returns Returns 2 ^ exp, and is guaranteed to be exact for integer exponents.
  */
 function pow2(exp) {
     if (!Number.isInteger(exp))
@@ -187,8 +199,8 @@ function _mantissaClz() {
 }
 /**
  * Counts the number of leading zeros in the mantissa of a floating-point number, between 0 and 52.
- * @param d {number} A floating-point number
- * @returns {number} The number of leading zeros in that number's mantissa
+ * @param d A floating-point number
+ * @returns The number of leading zeros in that number's mantissa
  */
 function mantissaClz(d) {
     floatStore[0] = d;
@@ -198,8 +210,8 @@ function mantissaClz(d) {
  * Converts a floating-point number into a fraction in [0.5, 1) or (-1, -0.5], except special cases, and an exponent,
  * such that fraction * 2 ^ exponent gives the original floating point number. If x is ±0, ±Infinity or NaN, [x, 0] is
  * returned to maintain this guarantee.
- * @param x {number} Any floating-point number
- * @returns {number[]} [fraction, exponent]
+ * @param x Any floating-point number
+ * @returns [fraction, exponent]
  */
 function frExp(x) {
     if (x === 0 || !Number.isFinite(x))
@@ -217,11 +229,13 @@ function frExp(x) {
  * Converts a floating-point number into a numerator, denominator and exponent such that it is equal to n/d * 2^e. n and
  * d are guaranteed to be less than or equal to 2^53 and greater than or equal to 0 (unless the number is ±0, Infinity,
  * or NaN, at which point [x, 1, 0] is returned). See Grapheme Theory for details. n/d is between 0.5 and 1.
- * @param x {number} Any floating-point number
- * @returns {number[]} [numerator, denominator, exponent]
+ *
+ * TODO: optimize
+ * @param x Any floating-point number
+ * @returns [numerator, denominator, exponent]
  */
 function rationalExp(x) {
-    const [frac, denExponent, exp] = rationalExpInternal(x);
+    let [frac, denExponent, exp] = rationalExpInternal(x);
     let den = pow2(denExponent);
     return [frac * den, den, exp];
 }
@@ -242,23 +256,28 @@ function rationalExpInternal(x) {
 /**
  * Converts a floating-point number into an integer and exponent [i, e], so that i * 2^e gives the original number. i
  * will be within the bounds of Number.MAX_SAFE_INTEGER.
- * @param x
+ * @param x Any floating-point number
  */
 function integerExp(x) {
     const [frac, denExponent, exp] = rationalExpInternal(x);
     return [frac * pow2(denExponent), exp - denExponent];
 }
 /**
- * Compute an ACCURATE floor log 2 function. floor(log2(268435455.99999994)), for example, returns 28 when it should
- * mathematically return 27.
- * @param x
+ * Compute an accurate floor log 2 function. Note that Math.log2 is not good enough here;
+ * floor(log2(268435455.99999994)), for example, returns 28 when the mathematical value is 27.
+ * @param x Any floating-point number
  */
 function flrLog2(x) {
     let exp = getExponent(x) + 1;
     if (exp === -1022)
-        exp -= _mantissaClz();
+        exp -= _mantissaClz(); // denormal
     return exp - 1;
 }
+/**
+ * Compute the unit in the last place for a given floating-point number. Returns NaN if the number is infinite and the
+ * smallest positive denormal if it is equal to 0.
+ * @param x Any floating-point number
+ */
 function ulp(x) {
     if (!Number.isFinite(x))
         return Infinity;
@@ -270,7 +289,7 @@ function ulp(x) {
     return pow2(exp - 52);
 }
 
-const ROUNDING_MODE = Object.freeze({
+const ROUNDING_MODE = {
     WHATEVER: 0,
     NEAREST: 0b10,
     TIES_EVEN: 0b10,
@@ -280,64 +299,18 @@ const ROUNDING_MODE = Object.freeze({
     UP: 0b10000,
     DOWN: 0b10001,
     TOWARD_INF: 0b110000,
-    TOWARD_ZERO: 0b110001, // toward zero
-});
-// Bitfield:
-// bit 0: 0 -> whatever or going up in some way, 1 -> going down in some way
-// bit 1: 0 -> not ties, 1 -> ties
-// bit 2: distinguish ties even, ties odd
-// bit 3: unused
-// bit 4: has different behavior when flipped in sign (should use ^= 1)
-// bit 5: is toward inf or toward zero
-// Simple checking for behavior in mantissa functions
-// if (!rm) { /* whatever */ }
-// else if (rm & 2) { /* ties */ }
-// else if (!(rm & 1)) { /* inf or up */ }
-// else { /* zero or down */ }
-// Flipping rounding modes when necessary
-// if (rm & 16 && flip) { /* up or down, ties away or ties zero, toward inf or toward zero */ rm ^= 1 }
-// Check if (up or down)
-// if (rm & 16 && rm < 0b10010)
-// Check if (toward inf or toward zero)
-// if (rm & 32)
-// Check if (ties)
-// if (rm & 2)
-function roundingModeToString(mode) {
-    switch (mode) {
-        case ROUNDING_MODE.WHATEVER:
-            return 'WHATEVER';
-        case ROUNDING_MODE.NEAREST:
-            return 'TIES_EVEN';
-        case ROUNDING_MODE.TIES_ODD:
-            return 'TIES_ODD';
-        case ROUNDING_MODE.TIES_AWAY:
-            return 'TIES_AWAY';
-        case ROUNDING_MODE.TIES_ZERO:
-            return 'TIES_ZERO';
-        case ROUNDING_MODE.UP:
-            return 'UP';
-        case ROUNDING_MODE.DOWN:
-            return 'DOWN';
-        case ROUNDING_MODE.TOWARD_INF:
-            return 'TOWARD_INF';
-        case ROUNDING_MODE.TOWARD_ZERO:
-            return 'TOWARD_ZERO';
-    }
-}
+    TOWARD_ZERO: 0b110001 // toward zero
+};
+Object.freeze(ROUNDING_MODE);
 /**
- * Whether a given number is a recognized rounding mode
- * @param n {number}
- * @returns {boolean}
+ * Whether a given object is a recognized rounding mode
+ * @param n Any object
+ * @returns Whether it is a valid rounding mode
  */
 function isRoundingMode(n) {
     if (typeof n !== "number")
         return false;
     return (n === 0 || n === 0b10 || n === 0b110 || n === 0b10010 || n === 0b10011 || n === 0b10000 || n === 0b10001 || n === 0b110000 || n === 0b110001);
-}
-// Flip on sign
-function flipRoundingMode(n) {
-    if (n & 16)
-        return n ^ 1;
 }
 
 // File shared between all modules of Grapheme
@@ -346,6 +319,25 @@ function leftZeroPad (str, len, char = '0') {
   if (str.length >= len) return str
 
   return char.repeat(len - str.length) + str
+}
+
+const warnings = new Map();
+
+function localWarn (s, id, maxCount=2) {
+  let count = warnings.get(id);
+
+  if (count >= maxCount) return
+
+  if (!count) {
+    count = 0;
+  }
+
+  console.warn(`Warning ${id}: ${s}`);
+
+  warnings.set(id, count + 1);
+  if (count >= maxCount - 1) {
+    console.warn(`Warning ${id} raised ${maxCount} times; no longer being reported`);
+  }
 }
 
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
@@ -1154,19 +1146,25 @@ function prettyPrintMantissa(mantissa, color = "", binary = false) {
 // and a number are both primitives, while a Grapheme.FastRealInterval is an object. Both are concrete types, although
 // a number and FastRealinterval may both represent the abstract type "real". (See below)
 class ConcreteType {
-    constructor(params = {}) {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
-        this.name = params.name;
+    constructor(params) {
+        var _a, _b, _c, _d, _e, _f, _g;
+        let name = this.name = params.name;
         // Whether the type is a primitive, and thus whether it can be "written to"
         this.isPrimitive = !!params.isPrimitive;
-        // FUNCTION which, when called, returns a new instance of the type
-        this.init = (_a = params.init) !== null && _a !== void 0 ? _a : null;
-        if (this.init == null) {
-            throw new Error("No default initializer provided for concrete type");
+        // Function which, when called, returns a new instance of the type
+        if (!params.init) {
+            throw new TypeError(`ConcreteType ${name} needs an initializer`);
         }
+        this.init = params.init;
+        if (!params.castPermissive) {
+            throw new TypeError(`ConcreteType ${name} needs a permissive casting function`);
+        }
+        // FUNCTION which, when called with a single argument, attempts to construct the type and will never fail (will
+        // returned the undefined version instead)
+        this.castPermissive = (_a = params.castPermissive) !== null && _a !== void 0 ? _a : null;
         // Default value
         this.defaultValue = this.init();
-        // STRING which, when evaled, returns a new instance of the type (used for primitives only)
+        // STRING which, when eval-ed, returns a new instance of the type (used for primitives only)
         this.initStr = (_b = params.initStr) !== null && _b !== void 0 ? _b : null;
         // Returns true if the passed parameter is of this type
         this.typecheck = (_c = params.typecheck) !== null && _c !== void 0 ? _c : null;
@@ -1179,9 +1177,6 @@ class ConcreteType {
         // FUNCTION which, when called with two arguments src and dst, deep copies the contents of src to dst. Only used
         // for non-primitives
         this.copyTo = (_g = params.copyTo) !== null && _g !== void 0 ? _g : null;
-        // FUNCTION which, when called with a single argument, attempts to construct the type and will never fail (will
-        // returned the undefined version instead)
-        this.castPermissive = (_h = params.castPermissive) !== null && _h !== void 0 ? _h : null;
         this.fillDefaults();
     }
     // Convenience method to avoid duplicate code for primitives
@@ -1216,14 +1211,9 @@ class ConcreteType {
 // example, "complex" is a type, while the Grapheme.Complex class is a concrete type. The unqualified word "type" refers
 // to the former; "concrete type" is used in the latter case.
 class MathematicalType {
-    constructor(params = {}) {
-        var _a;
+    constructor(params) {
         // Name of the type
         this.name = params.name;
-        this.concreteTypes = (_a = params.concreteTypes) !== null && _a !== void 0 ? _a : {};
-    }
-    getConcreteType(evalMode) {
-        return this.concreteTypes[evalMode];
     }
     isSameType(type) {
         return this.name === type.name;
@@ -1256,11 +1246,13 @@ class MathematicalType {
  * floating-point, enabling greater optimization. Furthermore, NaN is implicitly converted to false in a boolean
  * expression, so user code that doesn't handle undefinedness will treat undefined results as false--which is
  * usually what is intended.
+ *
+ * TODO: Optimize. Math.sign is a slow builtin
  */
 // All these functions assume their inputs are in (-0, +0, 1, false, true, NaN). They return results in the range (0, 1, NaN)
 // and propagate NaNs as appropriate
 const Functions = Object.freeze({
-    not: a => 1 - a,
+    not: (a) => 1 - a,
     and: (a, b) => a * b,
     or: (a, b) => Math.sign(a + b),
     eq: (a, b) => 1 - Math.abs(a - b),
@@ -1278,18 +1270,17 @@ const Comparisons = Object.freeze({
 });
 // Test for values
 const Test = Object.freeze({
-    true: a => a === 1,
-    false: a => a === 0,
-    defined: a => a === a,
-    undefined: a => a !== a
+    true: (a) => a === 1,
+    false: (a) => a === 0,
+    defined: (a) => a === a,
+    undefined: (a) => a !== a
 });
 /**
- * Convert any object to a nullable boolean via the following conversion:
- * undefined, null, NaN -> NaN;
- * -0, 0, 0n, "", false, document.all (:P) -> 0,
- * everything else -> 1
- * @param {*} b
- * @returns {number} The nullable boolean
+ * Convert any object to a nullable boolean. Anything falsy, except NaN, is converted to 0. NaN is converted to NaN, and
+ * everything else is converted to 1.
+ *
+ * @param b Any object
+ * @returns The nullable boolean
  */
 function toNullableBoolean(b) {
     if (b == null || b !== b)
@@ -1297,26 +1288,26 @@ function toNullableBoolean(b) {
     return +!!b;
 }
 /**
- * Returns true if b can be USED as a nullable boolean (i.e., it is one of -0, 0, false, true, or NaN) because of
- * implicit conversions
- * @param {*} b
- * @returns {boolean} Whether b can be used AS a nullable boolean
+ * Returns true if b can be used as if it were a nullable boolean (i.e., it is one of -0, 0, false, true, or NaN)
+ * because of implicit conversions
+ * @param b Any object
+ * @returns Whether b can be used a a nullable boolean
  */
 function isUsableNullableBoolean(b) {
     return b === 0 || b !== b || typeof b === "boolean";
 }
 /**
- * Returns true if b is STRICTLY a nullable boolean (i.e., it is one of 0, 1, or NaN)
- * @param {*} b
- * @returns {boolean} Whether b IS a nullable boolean
+ * Returns true if b is strictly a nullable boolean (i.e., it is one of 0, 1, or NaN)
+ * @param b Any object
+ * @returns Whether b is a nullable boolean
  */
 function isNullableBoolean(b) {
     return b === 1 || b !== b || Object.is(b, 0);
 }
 /**
  * Returns a descriptive nonempty string if b is not a usable nullable boolean
- * @param {*} b
- * @returns {string}
+ * @param b Any object
+ * @returns Error string if argument is not a usable nullable boolean; empty otherwise
  */
 function typecheckUsableNullableBoolean(b) {
     if (typeof b === "boolean")
@@ -1324,9 +1315,9 @@ function typecheckUsableNullableBoolean(b) {
     if (typeof b === "number") {
         if (b === 0 || b === 1 || b !== b)
             return "";
-        return `Expected nullable boolean (0, 1, NaN, false, or true), got number ${b}`;
+        return `Expected nullable boolean (±0, 1, NaN, false, or true), got number ${b}`;
     }
-    return `Expected nullable boolean (0, 1, NaN, false, or true), got type ${typeof b}`;
+    return `Expected nullable boolean (±0, 1, NaN, false, or true), got type ${typeof b}`;
 }
 const NullableBoolean = Object.freeze({
     Functions,
@@ -1356,16 +1347,16 @@ const builtinIsInteger = Number.isInteger;
 const builtinIsFinite = Number.isFinite;
 /**
  * Check if a parameter is a valid nullable integer (must be an integer number or NaN, ±Infinity)
- * @param {*} i
- * @returns {boolean} Whether the given parameter is a valid nullable integer
+ * @param i Anything
+ * @returns Whether the given parameter is a valid nullable integer
  */
 function isNullableInteger(i) {
     return builtinIsInteger(i) || (typeof i === "number" && !builtinIsFinite(i));
 }
 /**
  * Return a descriptive error message if a number is not a valid nullable integer; otherwise, return the empty string
- * @param {*} i
- * @returns {string}
+ * @param i Anything
+ * @returns Error message if the parameter is an invalid nullable integer; otherwise, an empty message
  */
 function typecheckNullableInteger(i) {
     let isInteger = builtinIsInteger(i);
@@ -1385,6 +1376,7 @@ const NullableInteger = Object.freeze({
 
 /**
  * A real interval with only min, max, defMin (bit 0), defMax (bit 1), contMin (bit 2), contMax (bit 3)
+ * TODO: types, functions
  */
 class FastRealInterval {
     constructor(min = 0, max = min, info = 0b111) {
@@ -2126,23 +2118,23 @@ const gammaLookup = Object.freeze([
 ]);
 const lookupLen = 172;
 // g = 7
-const lanczosCoefficients = [
+const lanczosCoefficients = Object.freeze([
     676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
-];
+]);
 /**
  * Gamma function, extension of the factorial function. Credit to Frederick Johannson; this uses the Lanczos
- * approximation (see https://en.wikipedia.org/wiki/Lanczos_approximation)
+ * approximation (see https://en.wikipedia.org/wiki/Lanczos_approximation).
+ *
+ * NaN -> NaN, Infinity -> Infinity, -Infinity -> NaN
  *
  * Geometric mean of error: 11 ulp (particularly bad near poles, as one would expect)
- * @param x {number}
- * @returns {number}
+ * @param x Any floating-point number
+ * @returns Approximation to gamma(x)
  */
 function gammaReal(x) {
     x = +x;
-    if (!Number.isFinite(x)) {
-        // NaN -> NaN, Infinity -> Infinity, -Infinity -> NaN since the limit doesn't exist
+    if (!Number.isFinite(x))
         return Infinity + x;
-    }
     if (Number.isInteger(x)) {
         // Use lookup table for extra precision
         if (x <= 0)
@@ -2161,17 +2153,20 @@ function gammaReal(x) {
         s += lanczosCoefficients[i] / (x + i + 1);
     }
     let t = x + 7.5; // 8 - 0.5
-    let y = 2.5066282746310007 /* sqrt(2 pi) */ * Math.pow(t, x + 0.5) * Math.exp(-t) * s; // yeah idk
-    return y;
+    // yeah idk
+    return 2.5066282746310007 * Math.pow(t, x + 0.5) * Math.exp(-t) * s;
 }
 
+/**
+ * Normal-precision complex number.
+ */
 class Complex {
     constructor(re = 0, im = 0) {
         this.re = +re;
         this.im = +im;
     }
     /**
-     * Attempt to parse an object (returns an undefined Complex if couldn't sensibly convert)
+     * Attempt to parse an object. Returns a Complex with NaN parts if couldn't sensibly convert.
      * @param o {any}
      * @return {Complex}
      */
@@ -2184,7 +2179,7 @@ class Complex {
         else if (typeof o === "object") {
             if (Array.isArray(o)) {
                 re = +o[0];
-                im = +g[1];
+                im = +o[1];
             }
             else if (o.x !== undefined && o.y !== undefined) {
                 re = +o.x;
@@ -2197,9 +2192,15 @@ class Complex {
         }
         return new Complex(re, im);
     }
+    /**
+     * Add two complex numbers and write the result to this complex number.
+     * @param c1
+     * @param c2
+     */
     add(c1, c2) {
-        this.re = c1.re + c2.re;
-        this.im = c1.im + c2.im;
+        let c1r = c1.re, c2r = c2.re, c1i = c1.im, c2i = c2.im;
+        this.re = c1r + c2r;
+        this.im = c1i + c2i;
     }
     multiply(c1, c2) {
         let c1r = c1.re, c2r = c2.re, c1i = c1.im, c2i = c2.im;
@@ -2212,9 +2213,9 @@ class Complex {
     }
     divide(c1, c2) {
         let c1r = c1.re, c2r = c2.re, c1i = c1.im, c2i = c2.im;
-        let denom = 1 / (c2r * c2r + c2i * c2i);
-        this.re = (c1r * c2r + c1i * c2i) * denom;
-        this.im = (c1i * c2r - c1r * c2i) * denom;
+        let d = 1 / (c2r * c2r + c2i * c2i);
+        this.re = (c1r * c2r + c1i * c2i) * d;
+        this.im = (c1i * c2r - c1r * c2i) * d;
     }
     reciprocal(c) {
         let cr = c.re, ci = c.im;
@@ -2410,7 +2411,8 @@ let concreteIntervalBoolean = new ConcreteType({
     init: () => new FastBooleanInterval(false, false, 0b111),
     typecheck: b => b instanceof FastBooleanInterval,
     clone: b => new FastBooleanInterval(b.min, b.max, b.info),
-    copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info; }
+    copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info; },
+    castPermissive: () => { throw 1; }
 });
 let concreteIntervalReal = new ConcreteType({
     name: "interval_real",
@@ -2426,24 +2428,13 @@ let concreteIntervalInt = new ConcreteType(Object.assign(Object.assign({}, concr
  * MATHEMATICAL TYPES
  */
 let mathematicalReal = new MathematicalType({
-    name: "real",
-    concreteTypes: {
-        "normal": concreteReal,
-        "interval": concreteIntervalReal
-    }
+    name: "real"
 });
 let mathematicalInt = new MathematicalType({
-    name: "int",
-    concreteTypes: {
-        "normal": concreteInt,
-        "interval": concreteIntervalInt
-    }
+    name: "int"
 });
 let mathematicalComplex = new MathematicalType({
-    name: "complex",
-    concreteTypes: {
-        "normal": concreteComplex
-    }
+    name: "complex"
 });
 function defineConcreteType(concreteType) {
     let { name } = concreteType;
@@ -2481,18 +2472,19 @@ let mathematicalTypes = new Map();
 [mathematicalReal, mathematicalInt, mathematicalComplex].forEach(defineMathematicalType);
 
 // Evaluators are functions of a specific signature that compute some operator. They are less abstract than the
-let unaryPrimitives = {
+const jsPrimitives = Object.freeze(['+', '-', '/', '*', '&&', '||', '==', '!=', '<=', '>=', '<', '>']);
+const unaryPrimitives = {
     '-': x => -x
 };
-let binaryPrimitives = {};
-['+', '-', '/', '*', '&&', '||', '==', '!=', '<=', '>=', '<', '>'].forEach(op => {
+const binaryPrimitives = {};
+jsPrimitives.forEach(op => {
     binaryPrimitives[op] = (new Function('x', 'y', `return x ${op} y`));
 });
 class ConcreteEvaluator {
-    constructor(params = {}) {
-        var _a, _b, _c, _d, _e;
+    constructor(params) {
+        var _a, _b, _c, _d;
         /**
-         * Argument types (should all be concrete types)
+         *
          * @type {ConcreteType[]}
          */
         this.args = ((_a = params.args) !== null && _a !== void 0 ? _a : []).map(toConcreteType);
@@ -2512,9 +2504,7 @@ class ConcreteEvaluator {
          */
         this.identity = !!params.identity;
         /**
-         * Either "new" or "write". "new" means the func returns a new instance of the object. "write" means the function
-         * writes the result to the last argument (arg1, arg2, dst). For example, a "write" +(complex, complex, complex)
-         * would put the result of the addition of the first two numbers into the second, overwriting whatever was there
+         *
          * @type {string}
          */
         this.evalType = (_c = params.evalType) !== null && _c !== void 0 ? _c : "new";
@@ -2523,9 +2513,12 @@ class ConcreteEvaluator {
         }
         // Primitive evaluator symbol (that can basically be evaled, for example "+" in +(real, real) -> real)
         this.primitive = (_d = params.primitive) !== null && _d !== void 0 ? _d : "";
-        this.func = (_e = params.func) !== null && _e !== void 0 ? _e : null;
+        this.func = params.func;
         this.fillDefaults();
     }
+    /**
+     * Fill certain default values that are implicit in other properties
+     */
     fillDefaults() {
         if (this.returns.isPrimitive && this.evalType === "write")
             throw new Error("Cannot write to a primitive");
@@ -2552,7 +2545,7 @@ class ConcreteEvaluator {
                 this.evalType = "new";
             }
             if (!func)
-                throw new Error("Unable to generate evaluation function");
+                throw new ResolutionError("Unable to generate evaluation function");
             this.func = func;
         }
     }
@@ -2615,6 +2608,16 @@ class ConcreteCast extends ConcreteEvaluator {
         return false;
     }
 }
+// TODO logical concrete casts for each concrete type
+class IdentityConcreteCast extends ConcreteCast {
+    isIdentity() {
+        return true;
+    }
+    callNew(args) {
+        return args[0];
+    }
+}
+let I = new IdentityConcreteCast({});
 const BUILTIN_CONCRETE_CASTS = new Map();
 /**
  * Register a concrete cast from src to dst
@@ -2638,10 +2641,8 @@ function registerConcreteCast(cast) {
  */
 function getConcreteCast(srcType, dstType) {
     var _a;
-    if (!(srcType instanceof ConcreteType) || !(dstType instanceof ConcreteType))
-        throw new Error("Invalid source or destination type");
-    if (srcType.isSameType(dstType))
-        return "identity";
+    if (srcType.isSameConcreteType(dstType))
+        return I;
     let srcCasts = BUILTIN_CONCRETE_CASTS.get(srcType.toHashStr());
     if (!srcCasts)
         return null;
@@ -2666,7 +2667,7 @@ function castDistance(casts) {
 }
 
 class EvaluationMode {
-    constructor(name, params = {}) {
+    constructor(name, params) {
         var _a;
         this.name = name;
         this.args = (_a = params.args) !== null && _a !== void 0 ? _a : [];
@@ -2685,6 +2686,9 @@ class EvaluationMode {
             this.typeMap.set(mathematical, toConcreteType(concrete));
         }
     }
+    /**
+     * Get the concrete type associated with the mathematical type. Returns null if no type was found.
+     */
     getConcreteType(mType) {
         var _a;
         return (_a = this.typeMap.get(mType.name)) !== null && _a !== void 0 ? _a : null;
@@ -2693,7 +2697,7 @@ class EvaluationMode {
         return this.name;
     }
 }
-let normal = new EvaluationMode("normal", {
+const normal = new EvaluationMode("normal", {
     typeMap: {
         "int": "int",
         "real": "real",
@@ -2701,7 +2705,7 @@ let normal = new EvaluationMode("normal", {
         "complex": "complex"
     }
 });
-let fastInterval = new EvaluationMode("fast_interval", {
+const fastInterval = new EvaluationMode("fast_interval", {
     typeMap: {
         "int": "fast_int_interval",
         "real": "fast_real_interval",
@@ -2711,6 +2715,11 @@ let fastInterval = new EvaluationMode("fast_interval", {
 const EvaluationModes = new Map();
 EvaluationModes.set("normal", normal);
 EvaluationModes.set("fast_interval", fastInterval);
+/**
+ * Convert the argument, either a string or an evaluation mode, to the corresponding evaluation mode
+ * @param o Any object
+ * @param throwOnError Whether to throw a descriptive error
+ */
 function toEvaluationMode(o, throwOnError = true) {
     var _a;
     if (o instanceof EvaluationMode)
@@ -2748,7 +2757,7 @@ function convertArgumentTypes(args) {
     return converted;
 }
 class OperatorDefinition {
-    constructor(params = {}) {
+    constructor(params) {
         var _a, _b;
         /**
          * Readable name of the operator that identifies it: e.g., "^", "/", "gamma"
@@ -2778,13 +2787,6 @@ class OperatorDefinition {
         };
         if (params.tags)
             Object.assign(this.tags, params.tags);
-        /**
-         * Evaluators within this.evaluators that will be used immediately in a given evaluation mode, without any other
-         * conditions in place. In particular, these are evaluators with all the correct matching types, and preferring a
-         * "new" rather than a "writes" evaluator. Note that any "writes" evaluator can be used as a "new" evaluator with
-         * the callNew(args) function.
-         * @type {Map<string, ConcreteEvaluator>}
-         */
         this.defaultEvaluators = new Map();
         this.fillDefaultEvaluators();
     }
@@ -2799,12 +2801,12 @@ class OperatorDefinition {
             mode,
             returns: mode.getConcreteType(this.returns),
             args: args.map(mt => mode.getConcreteType(mt))
-        })).filter(({ returns, args }) => returns != null && args.every(a => a != null)); // eliminate signatures w/ missing types
+        })).filter(({ returns, args }) => returns !== null && args.every(a => a !== null)); // eliminate signatures w/ missing types
         for (let p of possibleSignatures) {
             let { mode, returns, args } = p;
             let foundEvaluator;
             for (let e of evaluators) {
-                // See if the evaluator matches the signature
+                // See if the evaluator matches the signature. null returns and args are filtered out above
                 if (e.returns.isSameConcreteType(returns) &&
                     args.every((arg, i) => arg.isSameConcreteType(e.args[i]))) {
                     foundEvaluator = e;
@@ -2828,16 +2830,9 @@ class OperatorDefinition {
         return (_a = this.defaultEvaluators.get(mode.name)) !== null && _a !== void 0 ? _a : null;
     }
     /**
-     *
-     * @param returns
-     * @param args
-     */
-    getBestEvaluator({ returns, args }) {
-    }
-    /**
      * Check whether this operator can be called with the given mathematical types.
-     * @param args {MathematicalType[]}
-     * @returns {number} -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it
+     * @param args
+     * @returns -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it
      */
     canCallWith(args) {
         return castDistance(this.getCasts(args));
@@ -2845,7 +2840,6 @@ class OperatorDefinition {
     /**
      * Get a list of mathematical casts from source types to the required types for this operator.
      * @param args
-     * @returns {null|MathematicalCast[]}
      */
     getCasts(args) {
         if (this.args.length !== args.length)
@@ -2873,14 +2867,12 @@ class MathematicalCast extends OperatorDefinition {
         var _a;
         if (!params.src || !params.dst)
             throw new Error("No source or destination types provided");
-        params.args = [params.src];
-        params.returns = params.dst;
-        super(params);
+        let nParams = Object.assign(Object.assign({}, params), { name: params.src.toString(), args: [params.src], returns: params.dst });
+        super(nParams);
         this.name = (_a = this.name) !== null && _a !== void 0 ? _a : this.returns.toHashStr();
     }
     /**
      * Source type
-     * @returns {MathematicalType}
      */
     srcType() {
         return this.args[0];
@@ -2914,8 +2906,8 @@ class IdentityMathematicalCast extends MathematicalCast {
 const CachedIdentityCasts = new Map();
 /**
  * Generate formal identity evaluators for a given mathematical cast
- * @param srcType {MathematicalType}
- * @returns {ConcreteCast[]}
+ * @param srcType
+ * @returns
  */
 function generateIdentityEvaluators(srcType) {
     let evaluators = [];
@@ -2933,7 +2925,7 @@ function generateIdentityEvaluators(srcType) {
 }
 /**
  * Generate a cached IdentityCast object for the given source type
- * @param srcType {MathematicalType}
+ * @param srcType
  */
 function generateIdentityCast(srcType) {
     let s = srcType.toHashStr();
@@ -2949,7 +2941,6 @@ function generateIdentityCast(srcType) {
 }
 /**
  * First map key is source type; second map key is destination type
- * @type {Map<string, Map<string, MathematicalCast>>}
  */
 const BuiltinMathematicalCasts = new Map();
 /**
@@ -3481,10 +3472,6 @@ class ResolutionError extends Error {
 }
 /**
  * Helper function (doesn't need to be fast)
- * @param node {ASTNode}
- * @param name {string}
- * @param keys {Array<string>} Keys to look for
- * @param params {{}}
  * @returns {string}
  */
 function prettyPrintNode(node, name, keys, params) {
@@ -3504,9 +3491,13 @@ function prettyPrintNode(node, name, keys, params) {
     return name + "{" + out.join(", ") + "}";
 }
 const KNOWN_KEYS = ["type", "value", "name", "children"];
+const suspiciousVariableNames = [
+    "defaultType",
+    "throwOnUnresolved"
+];
 class ASTNode {
-    constructor(params = {}) {
-        var _a, _b;
+    constructor(params) {
+        var _a, _b, _c;
         /**
          * MathematicalType of the node (int, complex, etc.). Null if not resolved
          */
@@ -3521,23 +3512,32 @@ class ASTNode {
          * must not be null (or the definition is not known). If a variable, this will be called if this is not null.
          * @type {null|OperatorDefinition}
          */
-        this.operatorDefinition = null;
+        this.operatorDefinition = (_c = params.operatorDefinition) !== null && _c !== void 0 ? _c : null;
         /**
          * Highest node in this tree
          * @type {null|ASTNode}
          */
         this.topNode = null;
     }
-    applyAll(func, onlyGroups = false, childrenFirst = false, depth = 0) {
+    /**
+     * Apply a function f to all children recursively, with some options
+     * @param f Function taking in an ASTNode as its first argument, and optionally the depth from the top node as its second
+     * @param onlyGroups Only apply f on groups
+     * @param childrenFirst Whether to call f on children first
+     * @param depth Starting depth
+     */
+    applyAll(f, onlyGroups = false, childrenFirst = false, depth = 0) {
         if (!onlyGroups)
-            func(this, depth);
+            f(this, depth);
     }
+    /**
+     * Whether this node is a group
+     */
     isGroup() {
         return false;
     }
     /**
-     * Is this node an operator node that is a function (and not an infix, prefix or postfix operator)
-     * @returns {boolean}
+     * Whether this node is an operator node that is semantically a function (and not an infix, prefix or postfix operator)
      */
     isFunctionNode() {
         return false;
@@ -3545,6 +3545,9 @@ class ASTNode {
     toString() {
         return `[object ${this.nodeTypeAsString()}]`;
     }
+    /**
+     * Node type as an enum (use nodeTypeAsString() for a string version)
+     */
     nodeType() {
         return 0;
     }
@@ -3563,11 +3566,14 @@ class ASTNode {
         return "UnknownNode";
     }
     /**
-     * For debug use only. Example: OperatorNode{type=int, name="+", children=List{ConstantNode{type=int, value="3"}, VariableNode{type=int, name="x"}}}
+     * For debug use. Example: OperatorNode{type=int, name="+", children=List{ConstantNode{type=int, value="3"}, VariableNode{type=int, name="x"}}}
      */
     prettyPrint(params = {}) {
         return prettyPrintNode(this, this.nodeTypeAsString(), KNOWN_KEYS, params);
     }
+    /**
+     * Deep clone this ASTNode TODO
+     */
     clone() {
         return new ASTNode(this);
     }
@@ -3577,14 +3583,15 @@ class ASTNode {
      * @param vars {{}} Mapping from variable names to their types
      * @param opts
      */
-    resolveTypes(vars, opts) {
+    resolveTypes(vars, opts = {}) {
         // Convert all arg values to mathematical types
-        opts !== null && opts !== void 0 ? opts : (opts = {});
-        if (opts.throwOnUnresolved === undefined)
-            opts.throwOnUnresolved = true;
-        if (!opts.vars)
-            opts.vars = vars;
-        this.applyAll(node => node._resolveTypes(opts), false /* only groups */, true /* children first */);
+        let { defaultType = "real", throwOnUnresolved = true } = opts;
+        for (let sus of suspiciousVariableNames) {
+            if (sus in vars) {
+                localWarn(`Option ${sus} found in first argument to resolveTypes(vars, opts). Note that vars is a dictionary of variables, so ${sus} will be treated as a variable.`, `unusual variable name in resolveTypes()`, 3);
+            }
+        }
+        this.applyAll(node => node._resolveTypes({ vars, throwOnUnresolved, defaultType }), false /* only groups */, true /* children first */);
         return this;
     }
     /**
@@ -3602,34 +3609,38 @@ class ASTNode {
      * @param vars
      * @param opts
      */
-    evaluate(vars, opts = {}) {
-        var _a;
+    evaluate(vars, { mode = "normal", typecheck = true } = {}) {
         if (!this.allResolved())
             throw new EvaluationError("This node has not had its types fully resolved (call .resolveTypes())");
-        let mode = toEvaluationMode((_a = opts.mode) !== null && _a !== void 0 ? _a : "normal"); // throws on fail
-        return this._evaluate(vars, mode, opts);
+        let convertedMode = toEvaluationMode(mode !== null && mode !== void 0 ? mode : "normal", true); // throws on fail
+        return this._evaluate(vars, convertedMode, { mode, typecheck });
     }
     _evaluate(vars, mode, opts) {
-        throw new Error("ASTNode cannot be evaluated");
+        throw new EvaluationError("ASTNode cannot be evaluated directly");
     }
     /**
      * Returns a Map of variable names to information about those variables.
-     * @returns {Map<string, {type: MathematicalType, operatorDefinition: null|OperatorDefinition, count: number}>}
      */
     getVariableDependencies() {
         let knownVars = new Map();
-        this.applyAll(node => {
-            var _a;
+        this.applyAll((node) => {
             if (node.nodeType() === ASTNode.TYPES.VariableNode) {
                 let name = node.name;
                 let info = knownVars.get(name);
                 if (!info) {
-                    info = {};
+                    if (node.type == null) {
+                        throw new ResolutionError(`Type of variable ${name} has not been resolved`);
+                    }
+                    info = {
+                        type: node.type,
+                        operatorDefinition: node.operatorDefinition,
+                        count: 1
+                    };
                     knownVars.set(name, info);
                 }
-                info.type = node.type;
-                info.operatorDefinition = node.operatorDefinition;
-                info.count = ((_a = info.count) !== null && _a !== void 0 ? _a : 0) + 1;
+                else {
+                    info.count++;
+                }
             }
         });
         return knownVars;
@@ -3646,24 +3657,18 @@ ASTNode.TYPES = Object.freeze({
 // Node with children. A plain ASTGroup is usually just a parenthesized thing
 class ASTGroup extends ASTNode {
     constructor(params = {}) {
+        var _a;
         super(params);
+        this.children = (_a = params.children) !== null && _a !== void 0 ? _a : [];
         this.info.isFunction = false;
     }
-    /**
-     * Apply a function to this node and all of its children, recursively.
-     * @param func {Function} The callback function. We call it each time with (node, depth) as arguments
-     * @param onlyGroups {boolean} Only call the callback on groups
-     * @param childrenFirst {boolean} Whether to call the callback function for each child first, or for the parent first.
-     * @param depth {number}
-     * @returns {ASTNode}
-     */
     applyAll(func, onlyGroups = false, childrenFirst = false, depth = 0) {
         if (!childrenFirst)
             func(this, depth);
         let children = this.children;
         for (let i = 0; i < children.length; ++i) {
             let child = children[i];
-            if (child instanceof ASTNode && (!onlyGroups || child.isGroup())) {
+            if (!onlyGroups || child.isGroup()) {
                 child.applyAll(func, onlyGroups, childrenFirst, depth + 1);
             }
         }
@@ -3688,12 +3693,12 @@ class ASTGroup extends ASTNode {
         }
         this.type = children[0].type;
     }
-    _evaluate(vars, mode, opts = {}) {
+    _evaluate(vars, mode, opts) {
         return this.children[0]._evaluate(vars, mode, opts);
     }
 }
 class ConstantNode extends ASTNode {
-    constructor(params = {}) {
+    constructor(params) {
         super(params);
         // Generally a text rendition of the constant node; e.g., "0.3" or "50"
         this.value = params.value;
@@ -3706,20 +3711,24 @@ class ConstantNode extends ASTNode {
     }
     _resolveTypes(args) {
     }
-    _evaluate(vars, mode, opts = {}) {
+    _evaluate(vars, mode, opts) {
+        if (!this.type) {
+            throw new EvaluationError(`Type of constant variable with value ${this.value} has not been resolved`);
+        }
         let type = mode.getConcreteType(this.type);
         if (!type) {
             throw new EvaluationError(`Cannot find concrete type in mode ${mode.name} for mathematical type ${this.type.toHashStr()}`);
         }
-        return type.castPermissive(this.value); // basically never throws
+        return type.castPermissive(this.value);
     }
 }
 class VariableNode extends ASTNode {
-    constructor(params = {}) {
+    constructor(params) {
+        var _a;
         super(params);
         this.name = params.name;
-        if (!this.name || typeof this.name !== "string")
-            throw new Error("Variable name must be a string");
+        this.operatorDefinition = (_a = params.operatorDefinition) !== null && _a !== void 0 ? _a : null;
+        // TODO var name check in parse string
     }
     nodeType() {
         return 2;
@@ -3740,7 +3749,7 @@ class VariableNode extends ASTNode {
         }
         this.type = toMathematicalType(info !== null && info !== void 0 ? info : (defaultType !== null && defaultType !== void 0 ? defaultType : "real"));
     }
-    _evaluate(vars, mode, opts = {}) {
+    _evaluate(vars, mode, opts) {
         if (this.operatorDefinition) { // pi, e, i
             let evaluator = this.operatorDefinition.getDefaultEvaluator(mode);
             if (evaluator === null) {
@@ -3752,27 +3761,25 @@ class VariableNode extends ASTNode {
         if (v === undefined) {
             throw new EvaluationError(`Variable ${this.name} is not defined in the current scope`);
         }
+        if (opts.typecheck) {
+            let concreteType = mode.getConcreteType(this.type);
+            let works = concreteType.typecheck(v);
+            if (!works) {
+                let msg = concreteType.typecheckVerbose(v);
+                throw new EvaluationError(`Variable ${this.name} should have concrete type ${concreteType.toHashStr()}. ${msg}`);
+            }
+        }
         return v;
     }
 }
 class OperatorNode extends ASTGroup {
-    constructor(params = {}) {
-        var _a, _b;
+    constructor(params) {
+        var _a, _b, _c;
         super(params);
         this.name = params.name;
-        if (!this.name || typeof this.name !== "string")
-            throw new Error("Operator name must be a string");
-        // Arguments to the operator
         this.children = (_a = params.children) !== null && _a !== void 0 ? _a : [];
-        // Extra arguments that have an effect on the operator's mathematical meaning, but which are unwieldy to represent
-        // directly as an argment. Current use: comparison chain, where the arguments are the comparisons to be done and
-        // extraArgs.comparisons is, say, [ '<', '<=' ]
         this.extraArgs = (_b = params.extraArgs) !== null && _b !== void 0 ? _b : {};
-        /**
-         * Array of casts needed
-         * @type {null|MathematicalCast[]}
-         */
-        this.casts = null;
+        this.casts = (_c = params.casts) !== null && _c !== void 0 ? _c : [];
     }
     nodeType() {
         return 3;
@@ -3787,7 +3794,7 @@ class OperatorNode extends ASTGroup {
         return this.children.map(c => c.type);
     }
     _resolveTypes(opts) {
-        let childArgTypes = this.children.map(c => c.type);
+        let childArgTypes = this.childArgTypes();
         if (!childArgTypes.some(t => t === null)) {
             let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes);
             if (definition !== null && casts.every(cast => cast !== null)) {
@@ -3801,10 +3808,10 @@ class OperatorNode extends ASTGroup {
         this.operatorDefinition = null;
         this.casts = null;
         if (opts.throwOnUnresolved) {
-            throw new ResolutionError(`Unable to resolve operator definition ${this.name}(${childArgTypes.map(t => t.toHashStr())})`);
+            throw new ResolutionError(`Unable to resolve operator definition ${this.name}(${childArgTypes.map(t => { var _a; return (_a = t === null || t === void 0 ? void 0 : t.toHashStr()) !== null && _a !== void 0 ? _a : "unknown"; })})`);
         }
     }
-    _evaluate(vars, mode, opts = {}) {
+    _evaluate(vars, mode, opts) {
         if (!this.operatorDefinition)
             throw new EvaluationError("Operator definition not resolved");
         if (!this.casts)
@@ -3817,8 +3824,9 @@ class OperatorNode extends ASTGroup {
                 throw new EvaluationError(`No concrete cast (in mode ${mode.name}) from source ${mode.getConcreteType(cast.srcType()).toHashStr()}`
                     + ` to destination ${mode.getConcreteType(cast.dstType()).toHashStr()}`);
             }
+            let uncastedChild = c._evaluate(vars, mode, opts);
             return ccast.callNew([
-                c._evaluate(vars, mode, opts) // compute child
+                uncastedChild
             ]);
         });
         let evaluator = this.operatorDefinition.getDefaultEvaluator(mode);
@@ -3830,6 +3838,37 @@ class OperatorNode extends ASTGroup {
  * In this file, we convert strings representing expressions in Grapheme into their ASTNode counterparts. For example,
  * x^2 is compiled to OperatorNode{operator=^, children=[VariableNode{name="x"}, ConstantNode{value="2"}]}
  */
+class ParserError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'ParserError';
+    }
+}
+// ASTNode that might still have tokens in it
+class UnprocessedASTNode {
+    constructor(nodeType, type, info, children) {
+        this.type = type;
+        this.nodeType = nodeType;
+        this.info = info;
+        this.children = children;
+    }
+    applyAll(f, childrenFirst = false) {
+        let children = this.children;
+        if (!childrenFirst)
+            f(this);
+        for (let i = 0; i < children.length; ++i) {
+            let child = children[i];
+            if (child instanceof UnprocessedASTNode) {
+                child.applyAll(f, childrenFirst);
+            }
+            else {
+                f(child);
+            }
+        }
+        if (childrenFirst)
+            f(this);
+    }
+}
 const operator_regex = /^[*\-\/+^]|^[<>]=?|^[=!]=|^and\s+|^or\s+/;
 const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/; // functions may only use (, [ is reserved for indexing
 const constant_regex = /^[0-9]*\.?[0-9]*e?[0-9]+/;
@@ -3837,65 +3876,65 @@ const variable_regex = /^[a-zA-Z_][a-zA-Z0-9_]*/;
 const paren_regex = /^[()\[\]]/;
 const comma_regex = /^,/;
 const string_regex = /^"(?:[^"\\]|\\.)*"/;
-class ParserError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = 'ParserError';
-    }
-}
 /**
  * Helper function to throw an error at a specific index in a string.
  * TODO make signature uniform
- * @param string {String} The string to complain about
- * @param info {any} The token in the string where the error occurred, ideally with an index attribute
- * @param message {String} The error message, to be combined with contextual information
- * @param noIndex {boolean} If true, provide no index
+ * @param string Erroneous parsed string
+ * @param info The token in the string where the error occurred, ideally with an index attribute
+ * @param message The raw error message, to be combined with contextual information
+ * @param noIndex If true, provide no index
  */
 function raiseParserError(string, info, message = "", noIndex = false) {
-    var _a, _b, _c, _d;
-    // Spaces to offset the caret to the correct place along the string
-    let token = (_b = (_a = info === null || info === void 0 ? void 0 : info.token) !== null && _a !== void 0 ? _a : info) !== null && _b !== void 0 ? _b : {};
-    let endToken = (_c = info === null || info === void 0 ? void 0 : info.endToken) !== null && _c !== void 0 ? _c : token;
-    let index = token.index;
-    if (index == null) {
-        noIndex = true;
-        index = 0;
+    var _a;
+    let index = -1, token = null, endToken = null;
+    if (info !== null) {
+        if ('index' in info) {
+            index = info.index;
+        }
+        else {
+            token = info.token;
+            if (info.endToken != null) {
+                endToken = info.endToken;
+            }
+            index = token.index;
+        }
     }
-    const spaces = ' '.repeat(index);
-    let errorLen = ((_d = endToken.index) !== null && _d !== void 0 ? _d : index) - index + 1;
+    if (!noIndex) // can't use an index if we have no index information
+        noIndex = index === -1;
+    let spaces = ' '.repeat(index);
+    let errorLen = ((_a = endToken === null || endToken === void 0 ? void 0 : endToken.index) !== null && _a !== void 0 ? _a : index) - index + 1;
     throw new ParserError('Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen)));
 }
-/**
- * Check whether a string's parentheses are balanced
- * @param string
- */
-function checkParensBalanced(string) {
-    // Stack of parentheses
-    const stack = [];
+function raiseUnknownParserError() {
+    throw new ParserError("?"); // hi
+}
+function checkParensBalanced(s) {
+    // TODO: Handle strings (tokens)
+    const parenStack = [];
     let i = 0;
     let err = false;
-    outer: for (; i < string.length; ++i) {
-        const chr = string[i];
+    outer: for (; i < s.length; ++i) {
+        let chr = s[i];
         switch (chr) {
             case '(':
             case '[':
-                stack.push(chr);
+                parenStack.push(chr);
                 break;
             case ')':
             case ']':
-                if (stack.length === 0) {
+                if (parenStack.length === 0) {
                     err = true;
                     break outer;
                 }
                 if (chr === ')') {
-                    let pop = stack.pop();
+                    let pop = parenStack.pop();
                     if (pop !== '(') {
                         err = true;
                         break outer;
                     }
                 }
                 else {
-                    let pop = stack.pop();
+                    let pop = parenStack.pop();
                     if (pop !== '[') {
                         err = true;
                         break outer;
@@ -3903,102 +3942,108 @@ function checkParensBalanced(string) {
                 }
         }
     }
-    if (stack.length !== 0)
+    if (parenStack.length !== 0)
         err = true;
     if (err)
-        raiseParserError(string, i, 'unbalanced parentheses/brackets');
+        raiseParserError(s, { index: i }, 'unbalanced parentheses/brackets');
 }
 // Exclude valid variables if needed later
 function isValidVariableName(str) {
     return true;
 }
-function* tokenizer(string) {
-    string = string.trimEnd();
+const trimRight = ('trimRight' in String.prototype) ? (s) => s.trimRight() : (s) => {
+    return s.replace(/\s+$/, '');
+};
+function getTokens(s) {
     let i = 0;
-    let prev_len = string.length;
-    let original_string = string;
-    while (string) {
-        string = string.trim();
-        i += prev_len - string.length;
-        prev_len = string.length;
+    let original_string = s;
+    s = trimRight(s);
+    let prev_len = s.length;
+    let tokens = [];
+    while (s) {
+        s = s.trim(); // repeatedly trim off whitespace and grab the next token TODO: optimize to simply iterate
+        i += prev_len - s.length;
+        prev_len = s.length;
         let match;
         do {
-            match = string.match(paren_regex);
+            match = s.match(paren_regex);
             if (match) {
-                yield {
+                tokens.push({
                     type: 'paren',
                     paren: match[0],
                     index: i
-                };
+                });
                 break;
             }
-            match = string.match(constant_regex);
+            match = s.match(constant_regex);
             if (match) {
-                yield {
+                tokens.push({
                     type: 'constant',
                     value: match[0],
                     index: i
-                };
+                });
                 break;
             }
-            match = string.match(operator_regex);
+            match = s.match(operator_regex);
             if (match) {
-                yield {
+                tokens.push({
                     type: 'operator',
                     op: match[0].replace(/\s+/g, ''),
                     index: i
-                };
+                });
                 break;
             }
-            match = string.match(comma_regex);
+            match = s.match(comma_regex);
             if (match) {
-                yield {
+                tokens.push({
                     type: 'comma',
                     index: i
-                };
+                });
                 break;
             }
-            match = string.match(function_regex);
+            match = s.match(function_regex);
             if (match) {
                 // First group is the function name, second group is the type of parenthesis (bracket or open)
-                yield {
+                tokens.push({
                     type: 'function',
                     name: match[1],
                     index: i
-                };
-                yield {
+                });
+                tokens.push({
                     type: 'paren',
                     paren: '(',
                     index: i + match[1].length
-                };
+                });
                 break;
             }
-            match = string.match(variable_regex);
+            match = s.match(variable_regex);
             if (match) {
-                yield {
+                tokens.push({
                     type: 'variable',
                     name: match[0],
                     index: i
-                };
+                });
                 break;
             }
-            match = string.match(string_regex);
+            match = s.match(string_regex);
             if (match) {
-                yield {
+                tokens.push({
                     type: 'string',
                     contents: match[0].slice(1, -1),
                     index: i
-                };
+                });
+                // fall through
             }
             raiseParserError(original_string, { index: i }, 'unrecognized token');
         } while (false);
         let len = match[0].length;
-        string = string.slice(len);
+        s = s.slice(len); // rm token
     }
+    return tokens;
 }
 function checkValid(tokens, string) {
     if (tokens.length === 0) {
-        raiseParserError(string, 0, 'empty expression', true /* no index */);
+        raiseParserError(string, { index: 0 }, 'empty expression', true);
     }
     for (let i = 0; i < tokens.length - 1; ++i) {
         let token1 = tokens[i];
@@ -4034,21 +4079,20 @@ function checkValid(tokens, string) {
         (tokens[0].type === 'operator' &&
             !(tokens[0].op === '-' || tokens[0].op === '+')))
         raiseParserError(string, { index: 0 }, 'expression begins with comma or operator');
-    const last_token = tokens[tokens.length - 1];
-    if (last_token.type === 'comma' || last_token.type === 'operator')
-        raiseParserError(string, last_token, 'expression ends with comma or operator');
+    const lastToken = tokens[tokens.length - 1];
+    if (lastToken.type === 'comma' || lastToken.type === 'operator')
+        raiseParserError(string, lastToken, 'expression ends with comma or operator');
 }
 /**
  * Find a pair of parentheses in a list of tokens, namely the first one as indexed by the closing paren/bracket. For
  * example, in (x(y(z)(w))) it will find (z), returning [ paren1 index, paren2 index, paren1 token, paren2 token ]
- * @param children
  */
 function findParenIndices(children) {
     let startIndex = -1;
     let startToken = null;
     for (let i = 0; i < children.length; ++i) {
         let child = children[i];
-        if (!child.paren)
+        if (!('paren' in child))
             continue;
         if (child.paren === '(' || child.paren === '[') {
             startIndex = i;
@@ -4060,9 +4104,8 @@ function findParenIndices(children) {
     return null;
 }
 /**
- * Given a string like "1.5", "3e10", etc., determine whether it is an integer. Assumes the string is well-formed.
- * @param s {string}
- * @return {boolean}
+ * Given a string like "1.5", "3e10", etc., determine whether it is an integer without evaluating it. Assumes the string
+ * is well-formed.
  */
 function isStringInteger(s) {
     if (s[0] === '-')
@@ -4073,7 +4116,7 @@ function isStringInteger(s) {
     // If mFracLen > 0 (fractional part), integer if exponent >= mFracLen
     // If mFracLen = 0 (no fractional part), integer if exponent >= -mIntTrailingZeros
     if (e !== -1) { // get exponent
-        exponent = parseInt(s.slice(e + 1));
+        exponent = parseInt(s.slice(e + 1), 10);
         if (Number.isNaN(exponent))
             throw new Error("unrecognized exponent " + s.slice(e + 1));
     }
@@ -4113,25 +4156,25 @@ function isStringInteger(s) {
 }
 /**
  * Convert constants and variables to their ASTNode counterparts
- * @param tokens {Array}
  */
 function processConstantsAndVariables(tokens) {
     for (let i = 0; i < tokens.length; ++i) {
         let token = tokens[i];
         let node;
-        switch (token.type) {
-            case 'constant':
-                node = new ConstantNode({ value: token.value });
-                node.type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real');
-                break;
-            case 'variable':
-                node = new VariableNode({ name: token.name });
-                break;
-            default:
-                continue;
+        if ('type' in token) {
+            switch (token.type) {
+                case 'constant':
+                    let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real');
+                    node = new UnprocessedASTNode("constant", type, { value: token.value, token, startToken: token, endToken: token }, []);
+                    break;
+                case 'variable':
+                    node = new UnprocessedASTNode("variable", null, { name: token.name, token, startToken: token, endToken: token }, []);
+                    break;
+                default:
+                    continue;
+            }
+            tokens[i] = node;
         }
-        node.info.token = node.info.startToken = node.info.endToken = token;
-        tokens[i] = node;
     }
 }
 // To process parentheses, we find pairs of them and combine them into ASTNodes containing the nodes and
@@ -4139,6 +4182,8 @@ function processConstantsAndVariables(tokens) {
 // through each node recursively and convert all paren pairs to a node, then recurse into those new nodes
 function processParentheses(rootNode) {
     rootNode.applyAll(node => {
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         let parensRemaining = true;
         while (parensRemaining) {
             parensRemaining = false;
@@ -4146,11 +4191,9 @@ function processParentheses(rootNode) {
             if (indices) {
                 parensRemaining = true;
                 let [startIndex, endIndex, startToken, endToken] = indices;
-                let newNode = new ASTGroup();
+                let newNode = new UnprocessedASTNode("group", null, {}, []);
                 let expr = node.children.splice(startIndex, endIndex - startIndex + 1, newNode);
                 newNode.children = expr.slice(1, expr.length - 1);
-                newNode.info.token = newNode.info.startToken = startToken;
-                newNode.info.endToken = endToken;
             }
         }
     }, true);
@@ -4158,22 +4201,20 @@ function processParentheses(rootNode) {
 // Turn function tokens followed by ASTNodes into OperatorNodes
 function processFunctions(rootNode) {
     rootNode.applyAll(node => {
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         let children = node.children;
         for (let i = 0; i < children.length; ++i) {
             let token = children[i];
             if (token.type === 'function') {
-                let newNode = new OperatorNode({ name: token.name });
-                children[i] = newNode;
                 let nextNode = children[i + 1];
-                if (!nextNode) {
-                    throw new Error("Unknown error");
+                if (!nextNode || !(nextNode instanceof UnprocessedASTNode)) {
+                    raiseUnknownParserError();
                 }
+                let newNode = new UnprocessedASTNode("operator", null /* unknown type */, { name: token.name, isFunction: true }, nextNode.children);
+                children[i] = newNode;
                 // Take children from the node coming immediately after
                 newNode.children = nextNode.children;
-                newNode.info.token = newNode.info.startToken = token;
-                newNode.info.endToken = nextNode.info.endToken;
-                newNode.info.startExprToken = nextNode.info.startToken;
-                newNode.info.isFunction = true;
                 // Remove the node immediately after
                 children.splice(i + 1, 1);
             }
@@ -4184,33 +4225,35 @@ function processFunctions(rootNode) {
 // into a single binary operator
 function combineBinaryOperator(node, i) {
     const children = node.children;
-    let newNode = new OperatorNode({ name: children[i].op });
-    newNode.children = [children[i - 1], children[i + 1]];
+    let child = children[i];
+    if (child instanceof UnprocessedASTNode || !('op' in child)) {
+        raiseUnknownParserError();
+    }
+    let prevChild = children[i - 1];
+    let nextChild = children[i + 1];
+    if (!(prevChild instanceof UnprocessedASTNode) || !(nextChild instanceof UnprocessedASTNode)) {
+        raiseUnknownParserError();
+    }
+    let newNode = new UnprocessedASTNode("operator", null, { name: child.op }, [prevChild, nextChild]);
     children.splice(i - 1, 3, newNode);
 }
 // Process the highest precedence operators. Note that e^x^2 = (e^x)^2 and e^-x^2 = e^(-x^2).
 function processUnaryAndExponentiation(root) {
     root.applyAll(node => {
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         let children = node.children;
         // We iterate backwards
         for (let i = children.length - 1; i >= 0; --i) {
             let child = children[i];
-            if (child instanceof ASTNode || !child.op)
+            if (child instanceof UnprocessedASTNode || !('op' in child))
                 continue;
-            if (child.op === '-') {
+            if (child.op === '-' || child.op === '+') {
                 // If the preceding token is an unprocessed non-operator token, or node, then it's a binary expression
                 if (i !== 0 && children[i - 1].type !== 'operator')
                     continue;
-                let newNode = new OperatorNode({ name: '-' });
-                newNode.children = [children[i + 1]];
+                let newNode = new UnprocessedASTNode("operator", null, { name: child.op }, [children[i + 1]]);
                 children.splice(i, 2, newNode);
-            }
-            else if (child.op === '+') {
-                // See above
-                if (i !== 0 && children[i - 1].type !== 'operator')
-                    continue;
-                // Unary + is considered a no-op
-                children.splice(i, 1);
             }
             else if (child.op === '^') {
                 combineBinaryOperator(node, i);
@@ -4222,10 +4265,12 @@ function processUnaryAndExponentiation(root) {
 // Combine binary operators, going from left to right, with equal precedence for all
 function processOperators(root, operators) {
     root.applyAll(node => {
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         let children = node.children;
         for (let i = 0; i < children.length; ++i) {
             let child = children[i];
-            if (child instanceof ASTNode || !child.op)
+            if (child instanceof UnprocessedASTNode || !('op' in child))
                 continue;
             if (operators.includes(child.op)) {
                 combineBinaryOperator(node, i);
@@ -4242,13 +4287,15 @@ const comparisonOperators = ['<', '<=', '==', '!=', '>=', '>'];
 // but that duplicates the internal nodes which is inefficient
 function processComparisonChains(root) {
     root.applyAll(node => {
-        // TODO: process backwards
+        // TODO: process backwards for efficiency
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         const children = node.children;
         for (let i = 0; i < children.length; ++i) {
             let child = children[i];
-            if (child instanceof ASTNode || !child.op)
+            if (child instanceof UnprocessedASTNode || !('op' in child))
                 continue;
-            if (comparisonOperators.includes(children[i].op)) {
+            if (comparisonOperators.includes(child.op)) {
                 let comparisonChainFound = false;
                 // Found a comparison operator token; we now check for whether the tokens +2, +4, etc. ahead of it are also
                 // comparison tokens. If so, we emit a comparison chain
@@ -4256,9 +4303,9 @@ function processComparisonChains(root) {
                 let j = i + 2;
                 for (; j < children.length; j += 2) {
                     let nextChild = children[j];
-                    if (nextChild instanceof ASTNode || !nextChild.op)
+                    if (nextChild instanceof UnprocessedASTNode || !('op' in nextChild))
                         continue;
-                    if (comparisonOperators.includes(children[j].op)) {
+                    if (comparisonOperators.includes(nextChild.op)) {
                         comparisonChainFound = true;
                     }
                     else {
@@ -4268,7 +4315,7 @@ function processComparisonChains(root) {
                 if (comparisonChainFound) {
                     // The nodes i, i+2, i+4, ..., j-4, j-2 are all comparison nodes. Thus, all nodes in the range i-1 ... j-1
                     // should be included in the comparison chain
-                    let comparisonChain = new OperatorNode({ name: 'comparison_chain' });
+                    let comparisonChain = new UnprocessedASTNode("operator", null, { name: 'comparison_chain' }, []);
                     // Looks something like [ ASTNode, '<', ASTNode, '<=', ASTNode ]
                     let removedChildren = children.splice(i - 1, j - i + 1, comparisonChain // inserts the comparison chain as replacement
                     );
@@ -4276,12 +4323,15 @@ function processComparisonChains(root) {
                     let cchainChildren = (comparisonChain.children = []);
                     let comparisons = []; // [ '<', '<=' ]
                     for (let i = 1; i < removedChildren.length - 2; i += 2) {
-                        comparisons.push(removedChildren[i].op);
+                        let child = removedChildren[i];
+                        if (!('op' in child))
+                            raiseUnknownParserError();
+                        comparisons.push(child.op);
                     }
                     for (let i = 0; i < removedChildren.length; i += 2) {
                         cchainChildren.push(removedChildren[i]);
                     }
-                    comparisonChain.extraArgs.comparisons = comparisons;
+                    comparisonChain.info.comparisons = comparisons;
                     return;
                 }
             }
@@ -4291,6 +4341,8 @@ function processComparisonChains(root) {
 // Remove residual commas from the node
 function removeCommas(root) {
     root.applyAll(node => {
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         let children = node.children;
         let i = children.length;
         while (i--) {
@@ -4301,15 +4353,21 @@ function removeCommas(root) {
 }
 function verifyCommaSeparation(root, string) {
     root.applyAll(node => {
+        var _a, _b, _c, _d;
         // Every function with multiple elements in it should have commas separating each argument, with no leading or
         // trailing commas.
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         let children = node.children;
-        let isPlainGroup = (node instanceof ASTGroup) && !(node instanceof OperatorNode);
-        let isFunction = node.isFunctionNode();
+        let isPlainGroup = node.nodeType === "group";
+        let isFunction = !!node.info.isFunction;
         if (!isFunction && !isPlainGroup)
             return;
-        if (children.length === 0)
-            return; // fine. () is the empty tuple
+        if (children.length === 0) {
+            // will eventually be fine. () is the empty tuple
+            raiseParserError(string, { index: (_b = (_a = node.info.token) === null || _a === void 0 ? void 0 : _a.index) !== null && _b !== void 0 ? _b : -1 }, "empty parentheses");
+            return;
+        }
         if (children[0].type === 'comma')
             raiseParserError(string, children[0], "leading comma in expression");
         // Must have the form "a,b,c"
@@ -4321,15 +4379,18 @@ function verifyCommaSeparation(root, string) {
                 raiseParserError(string, child, "spurious comma");
             }
             if (prevChild && prevChild.type !== "comma" && child.type !== "comma") {
-                // child is a node
-                raiseParserError(string, child.info, "trailing expression");
+                // child must be a node
+                if (child instanceof UnprocessedASTNode) {
+                    raiseParserError(string, { index: (_d = (_c = child.info.token) === null || _c === void 0 ? void 0 : _c.index) !== null && _d !== void 0 ? _d : -1 }, "trailing expression");
+                }
+                raiseUnknownParserError();
             }
             prevChild = child;
         }
         // TODO tuples
         if (isPlainGroup) {
             if (children.length > 1)
-                raiseParserError(string, children[2].info, "tuples not yet implemented");
+                raiseParserError(string, { index: -1 }, "tuples not yet implemented");
         }
     }, true);
 }
@@ -4339,19 +4400,25 @@ function verifyCommaSeparation(root, string) {
  */
 function attachInformation(root) {
     root.applyAll(node => {
+        if (!(node instanceof UnprocessedASTNode))
+            return;
         let info = node.info;
         if (!info.token) {
-            info.token = info.startToken = node.children[0].info.token;
-            info.endToken = node.children[node.children.length - 1].info.token;
+            let firstChild = node.children[0];
+            let lastChild = node.children[node.children.length - 1];
+            if (!(firstChild instanceof UnprocessedASTNode) || !(lastChild instanceof UnprocessedASTNode)) {
+                raiseUnknownParserError();
+            }
+            info.token = info.startToken = firstChild.info.token;
+            info.endToken = lastChild.info.token;
         }
-    }, true, true /* children first */);
+    }, true /* children first */);
 }
 /**
  * Parse a given list of tokens, returning a single ASTNode.
  * Perf: parseString("x^2+y^2+e^-x^2+pow(3,gamma(2401 + complex(2,3)))" took 0.028 ms / iteration as of Mar 14, 2022.
- * @param tokens {any[]}
- * @param string {string} String where tokens ultimately came from (used for descriptive error messages)
- * @returns {ASTNode}
+ * @param tokens
+ * @param string String where tokens ultimately came from (used for descriptive error messages)
  */
 function parseTokens(tokens, string) {
     // This is somewhat of a recursive descent parser because the grammar is nontrivial, but really isn't that
@@ -4360,8 +4427,7 @@ function parseTokens(tokens, string) {
     // Placed here because all further nodes will be groups or OperatorNodes
     processConstantsAndVariables(tokens);
     // Everything is done recursively within this root node
-    let root = new ASTGroup();
-    root.children = tokens;
+    let root = new UnprocessedASTNode("group", null, {}, tokens);
     processParentheses(root);
     processFunctions(root);
     // Order of operations: unary -/+, ^ (all right to left, together); PEMDAS
@@ -4380,21 +4446,60 @@ function parseTokens(tokens, string) {
     removeCommas(root);
     let c = root.children[0];
     if (!c)
-        throw new Error("Unknown error");
-    c.info.parsedFrom = string;
-    return c;
+        raiseUnknownParserError();
+    if (c instanceof UnprocessedASTNode) {
+        c.info.parsedFrom = string;
+        return c;
+    }
+    raiseUnknownParserError();
+}
+function convertToASTNode(string, n) {
+    let nn, isGroup = false;
+    switch (n.nodeType) {
+        case "constant":
+            nn = new ConstantNode(n.info);
+            break;
+        case "group":
+            nn = new ASTGroup(n.info);
+            isGroup = true;
+            break;
+        case "operator":
+            nn = new OperatorNode(n.info);
+            isGroup = true;
+            break;
+        case "variable":
+            nn = new VariableNode(n.info);
+            break;
+        case "generic":
+        default:
+            raiseUnknownParserError();
+    }
+    if (isGroup) {
+        let children = [];
+        for (let i = 0; i < n.children.length; ++i) {
+            let child = n.children[i];
+            if (!(child instanceof UnprocessedASTNode)) {
+                raiseParserError(string, child /* token */, "unprocessed token");
+            }
+            else {
+                children.push(convertToASTNode(string, child));
+            }
+        }
+        // nn is an ast group by construction
+        nn.children = children;
+    }
+    return nn;
 }
 function parseString(string) {
+    // noinspection ALL
     if (typeof string !== "string") {
         throw new ParserError("parseString expects a string");
     }
     checkParensBalanced(string);
-    let tokens = [];
-    for (let token of tokenizer(string)) {
-        tokens.push(token);
-    }
+    let tokens = getTokens(string);
     checkValid(tokens, string);
-    return parseTokens(tokens, string);
+    let parsed = parseTokens(tokens, string);
+    return convertToASTNode(string, parsed);
 }
 
 class CompilationError extends Error {
@@ -4876,5 +4981,5 @@ function complexToRGB(c) {
     return hslToRGB(h, s, l);
 }
 
-export { BigFloat, CompilationError, Complex, ParserError, ROUNDING_MODE, addMantissas, compileNode, complexToRGB, countFloatsBetween, flipRoundingMode, floatStore, flrLog2, frExp, gammaReal, getExponent, getExponentAndMantissa, getFloatStoreExponent, getFloatStoreMantissa, getMantissa, getTrailingInfo, getWorkingPrecision, getWorkingRM, intView, integerExp, isDenormal, isRoundingMode, isValidVariableName, mantissaClz, mantissaCtz, neededWordsForPrecision, parseString, pow2, prettyPrintMantissa, raiseParserError, rationalExp, resolveOperatorDefinition, roundDown, roundMantissaToPrecision, roundUp, roundingModeToString, setFloatStore, setWorkingPrecision, setWorkingRM, subtractMantissas, toBinary, toHex, tokenizer, ulp, ulpError, validateBigFloat, validateMantissa };
+export { BigFloat, CompilationError, Complex, ParserError, ROUNDING_MODE, addMantissas, compileNode, complexToRGB, countFloatsBetween, floatStore, flrLog2, frExp, gammaReal, getExponent, getExponentAndMantissa, getFloatStoreExponent, getFloatStoreMantissa, getMantissa, getTokens, getTrailingInfo, getWorkingPrecision, getWorkingRM, intView, integerExp, isDenormal, isValidVariableName, mantissaClz, mantissaCtz, neededWordsForPrecision, parseString, pow2, prettyPrintMantissa, rationalExp, resolveOperatorDefinition, roundDown, roundMantissaToPrecision, roundUp, setFloatStore, setWorkingPrecision, setWorkingRM, subtractMantissas, toBinary, toHex, ulp, ulpError, validateBigFloat, validateMantissa };
 //# sourceMappingURL=main.js.map

@@ -18,10 +18,11 @@
 
   // use global variables for convenience
     function play () {
-      s = "e^(i*z)/(e^-z+e^z)"
+      s = "e^(i*z)"
       n = parseString(s)
 
-      n.resolveTypes({ defaultType: "complex" })
+      n.resolveTypes({}, { defaultType: "complex" })
+      //draw()
     }
 
     function draw() {
@@ -50,8 +51,6 @@
     function m(s) {
       return s.prettyPrint()
     }
-
-    window.onload = play
 </script>
 
 </body>

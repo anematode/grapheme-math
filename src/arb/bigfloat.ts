@@ -1,4 +1,4 @@
-import {isRoundingMode, ROUNDING_MODE} from "../rounding_modes.js"
+import {isRoundingMode, ROUNDING_MODE, RoundingMode} from "../rounding_modes.js"
 import {leftZeroPad} from "../../grapheme_shared.js"
 import { flrLog2, getFloatStoreExponent, getFloatStoreMantissa, isDenormal, pow2, setFloatStore } from "../fp/manip.js"
 
@@ -34,14 +34,14 @@ const recip2Pow30 = 9.313225746154785e-10 // 2^-30
 const recip2Pow60 = 8.673617379884035e-19 // 2^-60
 
 // Default precision and rounding mode values
-let WORKING_PRECISION = 53
-let WORKING_RM = ROUNDING_MODE.NEAREST
+let WORKING_PRECISION: number = 53
+let WORKING_RM: RoundingMode = ROUNDING_MODE.NEAREST
 
 /**
  * Set the working precision. Silently fails if the precision is invalid
  * @param p {number}
  */
-export function setWorkingPrecision (p) {
+export function setWorkingPrecision (p: number) {
   if (precisionInRange(p))
     WORKING_PRECISION = p
 }
@@ -50,7 +50,7 @@ export function setWorkingPrecision (p) {
  * Get the working precision.
  * @returns {number}
  */
-export function getWorkingPrecision () {
+export function getWorkingPrecision (): number {
   return WORKING_PRECISION
 }
 
@@ -58,16 +58,15 @@ export function getWorkingPrecision () {
  * Set the working rounding mode. Silently fails if the rounding mode is invalid
  * @param rm
  */
-export function setWorkingRM (rm) {
+export function setWorkingRM (rm: RoundingMode) {
   if (isRoundingMode(rm))
     WORKING_RM = rm
 }
 
 /**
  * Get the working rounding mode
- * @returns {number}
  */
-export function getWorkingRM () {
+export function getWorkingRM (): RoundingMode {
   return WORKING_RM
 }
 
@@ -82,17 +81,17 @@ export function getWorkingRM () {
  * prec = 31, neededWords = 3                 --> end of precision
  * m = [ 1, 0b111111111111111111111111111111, 0 ]
  *       <------------- prec -------------->
- * @param prec {number}
- * @returns {number}
+ * @param prec
+ * @returns
  */
-export function neededWordsForPrecision (prec) {
+export function neededWordsForPrecision (prec: number): number {
   prec |= 0
 
   return ((prec - 1) / BIGFLOAT_WORD_BITS + 2) | 0
 }
 
 // Whether a precision is valid
-function precisionInRange (prec) {
+function precisionInRange (prec: number): boolean {
   return typeof prec === "number" && prec >= BIGFLOAT_MIN_PRECISION && prec <= BIGFLOAT_MAX_PRECISION
 }
 

@@ -14,7 +14,9 @@
       s = "e^(i*z)/(e^-z+e^z)"
       n = parseString(s)
 
-      n.resolveTypes({ defaultType: "complex" })
+      n.resolveTypes({}, { defaultType: "complex" })
+      n.resolveTypes({}, { defaultType: "complex" })
+      n.resolveTypes({}, { defaultType: "complex" })
       c = compileNode(n)
     }
 </script>

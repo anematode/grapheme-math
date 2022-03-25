@@ -66,7 +66,8 @@ let concreteIntervalBoolean = new ConcreteType({
 
   typecheck: b => b instanceof FastBooleanInterval,
   clone: b => new FastBooleanInterval(b.min, b.max, b.info),
-  copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info }
+  copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info },
+  castPermissive: () => { throw 1 }
 })
 
 let concreteIntervalReal = new ConcreteType({
@@ -89,26 +90,15 @@ let concreteIntervalInt = new ConcreteType({
  */
 
 let mathematicalReal = new MathematicalType({
-  name: "real",
-  concreteTypes: {
-    "normal": concreteReal,
-    "interval": concreteIntervalReal
-  }
+  name: "real"
 })
 
 let mathematicalInt = new MathematicalType({
-  name: "int",
-  concreteTypes: {
-    "normal": concreteInt,
-    "interval": concreteIntervalInt
-  }
+  name: "int"
 })
 
 let mathematicalComplex = new MathematicalType({
-  name: "complex",
-  concreteTypes: {
-    "normal": concreteComplex
-  }
+  name: "complex"
 })
 
 export function defineConcreteType (concreteType) {

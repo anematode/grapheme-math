@@ -1,14 +1,14 @@
 import { toMathematicalType } from './builtin/builtin_types.js'
 import { MathematicalType } from './type.js'
 import {castDistance, ConcreteCast, ConcreteEvaluator} from './evaluator.js'
-import {EvaluationModes} from "./eval_modes.js"
+import {EvaluationMode, EvaluationModes} from "./eval_modes.js"
 
 /**
  * Attempt conversion from array of types to corresponding mathematical types
  * @param args {any}
  * @returns MathematicalType[]
  */
-function convertArgumentTypes(args) {
+function convertArgumentTypes(args: any): Array<MathematicalType> {
   if (args == null) return []
   if (!Array.isArray(args)) throw new TypeError("Expected argument type list to be an array")
 
@@ -25,8 +25,46 @@ function convertArgumentTypes(args) {
   return converted
 }
 
+type CastOperatorDefinitionBaseParams = {
+  evaluators: Array<ConcreteEvaluator>
+
+  tags?: OperatorDefinitionTags
+  builtin?: boolean
+  constant?: boolean
+}
+
+type OperatorDefinitionParams = CastOperatorDefinitionBaseParams & {
+  name: string
+  args: Array<MathematicalType|string>
+  returns: MathematicalType|string
+}
+
+type CastDefinitionParams = CastOperatorDefinitionBaseParams & {
+  src: MathematicalType | string
+  dst: MathematicalType | string
+}
+
+type OperatorDefinitionTags = {
+  builtin: boolean
+  constant: boolean
+}
+
 export class OperatorDefinition {
-  constructor (params={}) {
+  name: string
+  args: Array<MathematicalType>
+  returns: MathematicalType
+  evaluators: Array<ConcreteEvaluator>
+  tags: OperatorDefinitionTags
+
+  /**
+   * Evaluators within this.evaluators that will be used immediately in a given evaluation mode, without any other
+   * conditions in place. In particular, these are evaluators with all the correct matching types, and preferring a
+   * "new" rather than a "writes" evaluator. Note that any "writes" evaluator can be used as a "new" evaluator with
+   * the callNew(args) function.
+   */
+  defaultEvaluators: Map<string, ConcreteEvaluator>
+
+  constructor (params: OperatorDefinitionParams) {
     /**
      * Readable name of the operator that identifies it: e.g., "^", "/", "gamma"
      * @type {string}
@@ -60,15 +98,7 @@ export class OperatorDefinition {
 
     if (params.tags) Object.assign(this.tags, params.tags)
 
-    /**
-     * Evaluators within this.evaluators that will be used immediately in a given evaluation mode, without any other
-     * conditions in place. In particular, these are evaluators with all the correct matching types, and preferring a
-     * "new" rather than a "writes" evaluator. Note that any "writes" evaluator can be used as a "new" evaluator with
-     * the callNew(args) function.
-     * @type {Map<string, ConcreteEvaluator>}
-     */
     this.defaultEvaluators = new Map()
-
     this.fillDefaultEvaluators()
   }
 
@@ -83,16 +113,16 @@ export class OperatorDefinition {
       mode,
       returns: mode.getConcreteType(this.returns),
       args: args.map(mt => mode.getConcreteType(mt))
-    })).filter(({ returns, args }) => returns != null && args.every(a => a != null)) // eliminate signatures w/ missing types
+    })).filter(({ returns, args }) => returns !== null && args.every(a => a !== null)) // eliminate signatures w/ missing types
 
     for (let p of possibleSignatures) {
       let { mode, returns, args } = p
       let foundEvaluator
 
       for (let e of evaluators) {
-        // See if the evaluator matches the signature
-        if (e.returns.isSameConcreteType(returns) &&
-          args.every((arg, i) => arg.isSameConcreteType(e.args[i]))) {
+        // See if the evaluator matches the signature. null returns and args are filtered out above
+        if (e.returns.isSameConcreteType(returns!) &&
+          args.every((arg, i) => arg!.isSameConcreteType(e.args[i]))) {
 
           foundEvaluator = e
           if (e.evalType === "new") { // prefer "new" evaluators
@@ -112,37 +142,27 @@ export class OperatorDefinition {
    * @param mode {EvaluationMode}
    * @returns {ConcreteEvaluator|null}
    */
-  getDefaultEvaluator (mode) {
+  getDefaultEvaluator (mode: EvaluationMode): ConcreteEvaluator | null {
     return this.defaultEvaluators.get(mode.name) ?? null
   }
 
   /**
-   *
-   * @param returns
-   * @param args
-   */
-  getBestEvaluator ({ returns, args }) {
-
-  }
-
-  /**
    * Check whether this operator can be called with the given mathematical types.
-   * @param args {MathematicalType[]}
-   * @returns {number} -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it
+   * @param args
+   * @returns -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it
    */
-  canCallWith (args) {
+  canCallWith (args: Array<MathematicalType>): number {
     return castDistance(this.getCasts(args))
   }
 
   /**
    * Get a list of mathematical casts from source types to the required types for this operator.
    * @param args
-   * @returns {null|MathematicalCast[]}
    */
-  getCasts (args) {
+  getCasts (args: Array<MathematicalType>): Array<MathematicalCast> | null {
     if (this.args.length !== args.length) return null
 
-    let casts = []
+    let casts: Array<MathematicalCast> = []
     for (let i = 0; i < args.length; ++i) {
       let cast = getMathematicalCast(args[i] /* src */, this.args[i])
 
@@ -153,33 +173,32 @@ export class OperatorDefinition {
     return casts
   }
 
-  prettyPrint() {
+  prettyPrint(): string {
     // ^(int, int) -> int
     return `${this.name}(${this.args.map(arg => arg.prettyPrint()).join(', ')}) -> ${this.returns.prettyPrint()}`
   }
 }
+
+
 
 /**
  * A mathematical cast is just a special operator that converts one type to another, accepting a single argument and
  * returning the destination type
  */
 export class MathematicalCast extends OperatorDefinition {
-  constructor (params) {
+  constructor (params: CastDefinitionParams) {
     if (!params.src || !params.dst) throw new Error("No source or destination types provided")
+    let nParams: OperatorDefinitionParams = { ...params, name: params.src.toString(), args: [ params.src ], returns: params.dst }
 
-    params.args = [ params.src ]
-    params.returns = params.dst
-
-    super(params)
+    super(nParams)
 
     this.name = this.name ?? this.returns.toHashStr()
   }
 
   /**
    * Source type
-   * @returns {MathematicalType}
    */
-  srcType () {
+  srcType (): MathematicalType {
     return this.args[0]
   }
 
@@ -216,11 +235,11 @@ const CachedIdentityCasts = new Map()
 
 /**
  * Generate formal identity evaluators for a given mathematical cast
- * @param srcType {MathematicalType}
- * @returns {ConcreteCast[]}
+ * @param srcType
+ * @returns
  */
-function generateIdentityEvaluators(srcType) {
-  let evaluators = []
+function generateIdentityEvaluators(srcType: MathematicalType): Array<ConcreteCast> {
+  let evaluators: Array<ConcreteCast> = []
 
   for (let mode of EvaluationModes.values()) {
     let concreteType = mode.getConcreteType(srcType)
@@ -239,9 +258,9 @@ function generateIdentityEvaluators(srcType) {
 
 /**
  * Generate a cached IdentityCast object for the given source type
- * @param srcType {MathematicalType}
+ * @param srcType
  */
-function generateIdentityCast (srcType) {
+function generateIdentityCast (srcType: MathematicalType): IdentityMathematicalCast {
   let s = srcType.toHashStr()
   let c = CachedIdentityCasts.get(s)
 
@@ -258,9 +277,8 @@ function generateIdentityCast (srcType) {
 
 /**
  * First map key is source type; second map key is destination type
- * @type {Map<string, Map<string, MathematicalCast>>}
  */
-const BuiltinMathematicalCasts = new Map()
+const BuiltinMathematicalCasts: Map<string, Map<string, MathematicalCast>> = new Map()
 
 /**
  * Register a mathematical cast from src to dst
@@ -276,7 +294,7 @@ export function registerMathematicalCast (cast) {
     CASTS.set(srcType, new Map())
   let srcCasts = CASTS.get(srcType)
 
-  srcCasts.set(dstType, cast)
+  srcCasts!.set(dstType, cast)
   return cast
 }
 

@@ -32,45 +32,64 @@
 import { toConcreteType } from './builtin/builtin_types.js'
 import {ConcreteType} from "./type.js"
 
-let unaryPrimitives = {
+const jsPrimitives = Object.freeze(['+', '-', '/', '*', '&&', '||', '==', '!=', '<=', '>=', '<', '>'] as const)
+const unaryPrimitives = {
   '-': x => -x
 }
 
-let binaryPrimitives = {}
-;['+', '-', '/', '*', '&&', '||', '==', '!=', '<=', '>=', '<', '>'].forEach(op => {
+// @ts-ignore
+const binaryPrimitives: { [key in typeof jsPrimitives[number]]: Function } = {}
+// Fill binary primitives
+;jsPrimitives.forEach(op => {
   binaryPrimitives[op] = (new Function('x', 'y', `return x ${op} y`))
 })
 
+type AllowedJSPrimitive = (typeof jsPrimitives)[number] | ""
+
+type ConcreteEvaluatorParams = {
+  args: Array<string|ConcreteType>
+  returns: string|ConcreteType
+  func?: Function // required if primitive is not specified
+
+  /** @defaultValue new */
+  evalType?: "new" | "write"
+
+  /** @defaultValue false */
+  identity?: boolean
+
+  primitive?: AllowedJSPrimitive
+}
+
 export class ConcreteEvaluator {
-  constructor (params={}) {
-    /**
-     * Argument types (should all be concrete types)
-     * @type {ConcreteType[]}
-     */
+  // Argument types
+  args: Array<ConcreteType>
+  // Return type
+  returns: ConcreteType
+  // Number of arguments (calculated automatically)
+  argCount: number
+  // Whether the evaluator accepts a single argument and returns that argument immediately
+  identity: boolean
+  // If not the empty string, the equivalent JS primitive that may be used
+  primitive: AllowedJSPrimitive
+  /**
+   * Either "new" or "write". "new" means the func returns a new instance of the object. "write" means the function
+   * writes the result to the last argument (arg1, arg2, dst). For example, a "write" +(complex, complex, complex)
+   * would put the result of the addition of the first two numbers into the second, overwriting whatever was there
+   */
+  evalType: "new" | "write"
+  // Underlying JS function that can be called
+  func: Function
+
+  constructor (params: ConcreteEvaluatorParams) {
     this.args = (params.args ?? []).map(toConcreteType)
     if (!this.args.every(arg => !!arg)) throw new Error("Unknown argument type")
 
-    /**
-     * Return type
-     * @type {ConcreteType}
-     */
     this.returns = toConcreteType(params.returns ?? "void")
     if (!this.returns) throw new Error("Unknown return type")
 
     this.argCount = this.args.length
-
-    /**
-     * Whether this operation is an identity operation (at the type level)
-     * @type {boolean}
-     */
     this.identity = !!params.identity
 
-    /**
-     * Either "new" or "write". "new" means the func returns a new instance of the object. "write" means the function
-     * writes the result to the last argument (arg1, arg2, dst). For example, a "write" +(complex, complex, complex)
-     * would put the result of the addition of the first two numbers into the second, overwriting whatever was there
-     * @type {string}
-     */
     this.evalType = params.evalType ?? "new"
     if (this.evalType !== "new" && this.evalType !== "write") {
       throw new Error("Evaluator type must be either new or write, not " + this.evalType)
@@ -78,38 +97,35 @@ export class ConcreteEvaluator {
 
     // Primitive evaluator symbol (that can basically be evaled, for example "+" in +(real, real) -> real)
     this.primitive = params.primitive ?? ""
-    this.func = params.func ?? null
-
-    this.fillDefaults()
+    this.func = params.func ?? this.getDefaultFunc()
   }
 
-  fillDefaults () {
+  getDefaultFunc(): Function {
     if (this.returns.isPrimitive && this.evalType === "write") throw new Error("Cannot write to a primitive")
 
-    if (!this.func) {
-      let func
+    let func: Function | null = null
 
-      if (this.identity) {
-        if (this.evalType === "new") {
-          func = this.returns.clone
-        } else if (this.evalType === "write") {
-          func = this.returns.copyTo
-        }
-      } else if (this.primitive) {
-        if (this.argCount === 0) {
-          func = new Function("return " + this.primitive)
-        } else if (this.argCount === 1) {
-          func = unaryPrimitives[this.primitive]
-        } else if (this.argCount === 2) {
-          func = binaryPrimitives[this.primitive]
-        }
-
-        this.evalType = "new"
+    if (this.identity) {
+      if (this.evalType === "new") {
+        func = this.returns.clone
+      } else if (this.evalType === "write") {
+        func = this.returns.copyTo
+      }
+    } else if (this.primitive) {
+      if (this.argCount === 0) {
+        func = new Function("return " + this.primitive)
+      } else if (this.argCount === 1) {
+        func = unaryPrimitives[this.primitive]
+      } else if (this.argCount === 2) {
+        func = binaryPrimitives[this.primitive]
       }
 
-      if (!func) throw new Error("Unable to generate evaluation function")
-      this.func = func
+      this.evalType = "new"
     }
+
+    if (!func) throw new Error("Unable to generate evaluation function")
+
+    return func
   }
 
   /**
@@ -124,7 +140,7 @@ export class ConcreteEvaluator {
   getCasts (args) {
     if (this.args.length !== args.length) return null
 
-    let casts = []
+    let casts: Array<ConcreteCast> = []
     for (let i = 0; i < args.length; ++i) {
       let cast = getConcreteCast(args[i] /* src */, this.args[i])
 
@@ -182,11 +198,23 @@ export class ConcreteCast extends ConcreteEvaluator {
   }
 }
 
+// TODO logical concrete casts for each concrete type
 export class IdentityConcreteCast extends ConcreteCast {
   isIdentity () {
     return true
   }
+
+  callNew(args) {
+    return args[0]
+  }
 }
+
+let I = new IdentityConcreteCast({
+  // TODO
+  src: "int",
+  dst: "int",
+  func: x => x
+})
 
 const BUILTIN_CONCRETE_CASTS = new Map()
 
@@ -214,11 +242,8 @@ export function registerConcreteCast (cast) {
  * @param srcType
  * @param dstType
  */
-export function getConcreteCast (srcType, dstType) {
-  if (!(srcType instanceof ConcreteType) || !(dstType instanceof ConcreteType))
-    throw new Error("Invalid source or destination type")
-
-  if (srcType.isSameType(dstType)) return "identity"
+export function getConcreteCast (srcType: ConcreteType, dstType: ConcreteType): ConcreteCast | null {
+  if (srcType.isSameConcreteType(dstType)) return I
 
   let srcCasts = BUILTIN_CONCRETE_CASTS.get(srcType.toHashStr())
   if (!srcCasts) return null
@@ -226,12 +251,12 @@ export function getConcreteCast (srcType, dstType) {
   return srcCasts.get(dstType.toHashStr()) ?? null
 }
 
-export function canConcreteCast (srcType, dstType) {
+export function canConcreteCast (srcType: ConcreteType, dstType: ConcreteType): boolean {
   return !!getConcreteCast(srcType, dstType)
 }
 
 export function getConcreteCasts () {
-  let casts = []
+  let casts: Array<ConcreteCast> = []
   for (let castList of BUILTIN_CONCRETE_CASTS.values()) {
     casts.push(...castList.values())
   }

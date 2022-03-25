@@ -7,10 +7,10 @@ import {
   VariableNode,
   OperatorNode,
   ASTGroup,
-  ASTNode
+  ASTNode, ConstantNodeParams, ASTGroupParams, OperatorNodeParams, VariableNodeParams
 } from './node.js'
 import { toMathematicalType } from './builtin/builtin_types.js'
-import {MathematicalType} from "./type";
+import {MathematicalType} from "./type.js";
 
 export class ParserError extends Error {
   constructor (message) {
@@ -85,12 +85,12 @@ type UnprocessedChildren = Array<UnprocessedChild>
 
 // ASTNode that might still have tokens in it
 class UnprocessedASTNode {
-  type: MathematicalType
+  type: MathematicalType | null
   nodeType: UnprocessedASTNodeType
-  info?: ASTNodeInfo
+  info: ASTNodeInfo
   children: UnprocessedChildren
 
-  constructor (nodeType: UnprocessedASTNodeType, type: MathematicalType, info: ASTNodeInfo, children: UnprocessedChildren) {
+  constructor (nodeType: UnprocessedASTNodeType, type: MathematicalType | null, info: ASTNodeInfo, children: UnprocessedChildren) {
     this.type = type
     this.nodeType = nodeType
     this.info = info
@@ -137,13 +137,16 @@ const string_regex = /^"(?:[^"\\]|\\.)*"/
  * @param noIndex If true, provide no index
  */
 function raiseParserError (string: string, info: ParserErrorInfo, message: string = "", noIndex: boolean =false): never {
-  let index = -1, token = null, endToken = null
+  let index = -1, token: null | Token = null, endToken: null | Token = null
+
   if (info !== null) {
     if ('index' in info) {
       index = info.index
     } else {
       token = info.token
-      endToken ??= info.endToken
+      if (info.endToken != null) {
+        endToken = info.endToken
+      }
 
       index = token.index
     }
@@ -398,9 +401,9 @@ function checkValid (tokens, string) {
   )
     raiseParserError(string, { index: 0 }, 'expression begins with comma or operator')
 
-  const last_token = tokens[tokens.length - 1]
-  if (last_token.type === 'comma' || last_token.type === 'operator')
-    raiseParserError(string, last_token, 'expression ends with comma or operator')
+  const lastToken = tokens[tokens.length - 1]
+  if (lastToken.type === 'comma' || lastToken.type === 'operator')
+    raiseParserError(string, lastToken, 'expression ends with comma or operator')
 }
 
 /**
@@ -421,7 +424,7 @@ function findParenIndices (children: Array<UnprocessedChild>): [ number, number,
     }
 
     if ((child.paren === ')' || child.paren === ']') && startIndex !== -1)
-      return [ startIndex, i, startToken, child ]
+      return [ startIndex, i, startToken as Token, child ]
   }
 
   return null
@@ -442,7 +445,7 @@ function isStringInteger (s: string): boolean {
   // If mFracLen = 0 (no fractional part), integer if exponent >= -mIntTrailingZeros
 
   if (e !== -1) { // get exponent
-    exponent = parseInt(s.slice(e + 1))
+    exponent = parseInt(s.slice(e + 1), 10)
 
     if (Number.isNaN(exponent)) throw new Error("unrecognized exponent " + s.slice(e + 1))
   } else {
@@ -609,7 +612,7 @@ function processUnaryAndExponentiation (root: UnprocessedASTNode) {
         if (i !== 0 && children[i - 1].type !== 'operator') continue
 
         let newNode = new UnprocessedASTNode("operator", null,
-            { name: child.op, token: null, startToken: null, endToken: null }, [ children[i + 1] ])
+            { name: child.op }, [ children[i + 1] ])
 
         children.splice(i, 2, newNode)
       } else if (child.op === '^') {
@@ -654,7 +657,7 @@ function processComparisonChains (root: UnprocessedASTNode) {
 
     for (let i = 0; i < children.length; ++i) {
       let child = children[i]
-      if (child instanceof ASTNode || !('op' in child)) continue
+      if (child instanceof UnprocessedASTNode || !('op' in child)) continue
 
       if (comparisonOperators.includes(child.op)) {
         let comparisonChainFound = false
@@ -690,9 +693,9 @@ function processComparisonChains (root: UnprocessedASTNode) {
           )
 
           // [ ASTNode, ASTNode, ASTNode ]
-          let cchainChildren = (comparisonChain.children = [])
+          let cchainChildren: UnprocessedChildren = (comparisonChain.children = [])
 
-          let comparisons = [] // [ '<', '<=' ]
+          let comparisons: Array<string> = [] // [ '<', '<=' ]
           for (let i = 1; i < removedChildren.length - 2; i += 2) {
             let child = removedChildren[i]
             if (!('op' in child)) raiseUnknownParserError()
@@ -733,20 +736,20 @@ function verifyCommaSeparation (root: UnprocessedASTNode, string: string) {
     if (!(node instanceof UnprocessedASTNode)) return
 
     let children = node.children
-    let isPlainGroup = (node instanceof ASTGroup) && !(node instanceof OperatorNode)
+    let isPlainGroup = node.nodeType === "group"
 
     let isFunction = !!node.info.isFunction
     if (!isFunction && !isPlainGroup) return
 
     if (children.length === 0) {
       // will eventually be fine. () is the empty tuple
-      raiseParserError(string, { index: node.info?.token.index ?? -1 }, "empty parentheses")
+      raiseParserError(string, { index: node.info.token?.index ?? -1 }, "empty parentheses")
       return
     }
     if (children[0].type === 'comma') raiseParserError(string, children[0], "leading comma in expression")
 
     // Must have the form "a,b,c"
-    let prevChild = null
+    let prevChild: UnprocessedChild | null = null
     for (let i = 0; i < children.length; ++i) {
       let child = children[i]
 
@@ -758,7 +761,7 @@ function verifyCommaSeparation (root: UnprocessedASTNode, string: string) {
       if (prevChild && prevChild.type !== "comma" && child.type !== "comma") {
         // child must be a node
         if (child instanceof UnprocessedASTNode) {
-          raiseParserError(string, {index: child.info.token.index ?? -1}, "trailing expression")
+          raiseParserError(string, {index: child.info.token?.index ?? -1}, "trailing expression")
         }
 
         raiseUnknownParserError()
@@ -848,22 +851,22 @@ function parseTokens (tokens: Array<Token>, string: string): UnprocessedASTNode 
 }
 
 function convertToASTNode(string: string, n: UnprocessedASTNode): ASTNode {
-  let nn = null, isGroup = false
+  let nn: ASTNode, isGroup = false
 
   switch (n.nodeType) {
     case "constant":
-      nn = new ConstantNode(n.info)
+      nn = new ConstantNode(n.info as ConstantNodeParams)
       break
     case "group":
-      nn = new ASTGroup(n.info)
+      nn = new ASTGroup(n.info as ASTGroupParams)
       isGroup = true
       break
     case "operator":
-      nn = new OperatorNode(n.info)
+      nn = new OperatorNode(n.info as OperatorNodeParams)
       isGroup = true
       break
     case "variable":
-      nn = new VariableNode(n.info)
+      nn = new VariableNode(n.info as VariableNodeParams)
       break
     case "generic":
     default:
@@ -883,13 +886,15 @@ function convertToASTNode(string: string, n: UnprocessedASTNode): ASTNode {
       }
     }
 
-    nn.children = children
+    // nn is an ast group by construction
+    (nn as ASTGroup).children = children
   }
 
   return nn
 }
 
 function parseString (string: string): ASTNode {
+  // noinspection ALL
   if (typeof string !== "string") {
     throw new ParserError("parseString expects a string")
   }

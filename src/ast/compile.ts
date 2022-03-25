@@ -1,5 +1,8 @@
+
+// @ts-nocheck
 import {ASTNode, EvaluationError} from "./node.js"
 import {toEvaluationMode} from "./eval_modes.js"
+
 
 export class CompilationError extends Error {
   constructor (message) {

@@ -1,10 +1,14 @@
 (async () => {
   try {
-    let GMath = await import("../../build/index.js")
+    let GMath = await import("/build/index.js")
     Object.assign(window, GMath)
   } catch (e) {
+    if (!(e instanceof TypeError && e.message.includes("imported"))) {
+      throw e
+    }
+
     console.log("Not local; importing from build")
-    let GMath = await import("../../build/main.js")
+    let GMath = await import("/build/main.js")
     Object.assign(window, GMath)
   }
 

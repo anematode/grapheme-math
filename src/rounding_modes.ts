@@ -13,8 +13,7 @@ export const ROUNDING_MODE = {
 
 Object.freeze(ROUNDING_MODE)
 
-// Unused
-type RoundingMode = typeof ROUNDING_MODE[keyof typeof ROUNDING_MODE]
+export type RoundingMode = typeof ROUNDING_MODE[keyof typeof ROUNDING_MODE]
 
 // Bitfield:
 // bit 0: 0 -> whatever or going up in some way, 1 -> going down in some way

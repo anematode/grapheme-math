@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
     "module": "es6",
-    "lib": [ "es2016" ],
-    "target": "es2016",
+    "lib": [ "es2017" ],
+    "target": "es2017",
     "outDir": "build",
     "sourceMap": true,
     "esModuleInterop": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "strictNullChecks": true
   },
   "include": ["src/**/*.ts"],
   "exclude": [

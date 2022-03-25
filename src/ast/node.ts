@@ -1,7 +1,10 @@
 import {resolveOperatorDefinition} from './builtin/builtin_operators.js'
 import {toMathematicalType} from "./builtin/builtin_types.js"
-import {toEvaluationMode} from "./eval_modes.js"
+import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
 import {MathematicalConstants} from "./globals.js"
+import {localWarn} from "../../grapheme_shared";
+import {MathematicalType} from "./type";
+import {MathematicalCast, OperatorDefinition} from "./operator_definition";
 
 /**
  * To evaluate a given node whose operators and types have been identified, we provide the following:
@@ -64,14 +67,10 @@ const reservedVariableNames = [
 
 /**
  * Helper function (doesn't need to be fast)
- * @param node {ASTNode}
- * @param name {string}
- * @param keys {Array<string>} Keys to look for
- * @param params {{}}
  * @returns {string}
  */
-function prettyPrintNode(node, name, keys, params) {
-  let out = []
+function prettyPrintNode(node: ASTNode, name: string, keys: Array<string>, params: any) {
+  let out: Array<string> = []
 
   for (let key of keys) {
     let value = node[key]
@@ -92,9 +91,59 @@ function prettyPrintNode(node, name, keys, params) {
 }
 
 const KNOWN_KEYS = ["type", "value", "name", "children"]
+const suspiciousVariableNames = [
+    "defaultType",
+    "throwOnUnresolved"
+]
+
+type ASTNodeInfo = {
+  extraArgs?: any
+  isFunction?: boolean
+}
+
+export type ASTNodeParams = {
+  type?: MathematicalType | null
+  info?: ASTNodeInfo | null
+  operatorDefinition?: OperatorDefinition | null
+}
+
+type ASTNodeFunctor = (node: ASTNode, depth?: number) => void
+
+export type ResolveTypesOptions = {
+  /** @defaultValue "real" */
+  defaultType?: string | MathematicalType
+  /** @defaultValue true */
+  throwOnUnresolved?: boolean
+}
+
+type FilledResolveTypesOptions = {
+  [key in keyof ResolveTypesOptions]: ResolveTypesOptions[key]
+} & {
+  vars: { [key: string]: string }
+}
+
+type VariableDependency = {
+  type: MathematicalType
+  operatorDefinition: null | OperatorDefinition
+  count: number
+}
+
+// Dictionary between variable names and their values
+type VariableLookupObject = {
+  [key: string]: any
+}
+
+type EvaluationOptions = {
+
+}
 
 export class ASTNode {
-  constructor (params={}) {
+  type: MathematicalType | null
+  info: ASTNodeInfo
+  operatorDefinition: OperatorDefinition | null
+  topNode: any // TODO
+
+  constructor (params: ASTNodeParams) {
     /**
      * MathematicalType of the node (int, complex, etc.). Null if not resolved
      */
@@ -111,7 +160,7 @@ export class ASTNode {
      * must not be null (or the definition is not known). If a variable, this will be called if this is not null.
      * @type {null|OperatorDefinition}
      */
-    this.operatorDefinition = null
+    this.operatorDefinition = params.operatorDefinition ?? null
 
     /**
      * Highest node in this tree
@@ -120,27 +169,39 @@ export class ASTNode {
     this.topNode = null
   }
 
-  applyAll (func, onlyGroups=false, childrenFirst=false, depth=0) {
-    if (!onlyGroups) func(this, depth)
+  /**
+   * Apply a function f to all children recursively, with some options
+   * @param f Function taking in an ASTNode as its first argument, and optionally the depth from the top node as its second
+   * @param onlyGroups Only apply f on groups
+   * @param childrenFirst Whether to call f on children first
+   * @param depth Starting depth
+   */
+  applyAll (f: ASTNodeFunctor, onlyGroups=false, childrenFirst=false, depth=0) {
+    if (!onlyGroups) f(this, depth)
   }
 
-  isGroup () {
+  /**
+   * Whether this node is a group
+   */
+  isGroup (): boolean {
     return false
   }
 
   /**
-   * Is this node an operator node that is a function (and not an infix, prefix or postfix operator)
-   * @returns {boolean}
+   * Whether this node is an operator node that is semantically a function (and not an infix, prefix or postfix operator)
    */
-  isFunctionNode () {
+  isFunctionNode (): boolean {
     return false
   }
 
-  toString () {
+  toString (): string {
     return `[object ${this.nodeTypeAsString()}]`
   }
 
-  nodeType () {
+  /**
+   * Node type as an enum (use nodeTypeAsString() for a string version)
+   */
+  nodeType (): number {
     return 0
   }
 
@@ -161,9 +222,9 @@ export class ASTNode {
   }
 
   /**
-   * For debug use only. Example: OperatorNode{type=int, name="+", children=List{ConstantNode{type=int, value="3"}, VariableNode{type=int, name="x"}}}
+   * For debug use. Example: OperatorNode{type=int, name="+", children=List{ConstantNode{type=int, value="3"}, VariableNode{type=int, name="x"}}}
    */
-  prettyPrint (params={}) {
+  prettyPrint (params={}): string {
     return prettyPrintNode(this, this.nodeTypeAsString(), KNOWN_KEYS, params)
   }
 
@@ -174,9 +235,12 @@ export class ASTNode {
     VariableNode: 2,
     OperatorNode: 3,
     ASTGroup: 4
-  })
+  } as const)
 
-  clone () {
+  /**
+   * Deep clone this ASTNode TODO
+   */
+  clone (): ASTNode {
     return new ASTNode(this)
   }
 
@@ -186,17 +250,19 @@ export class ASTNode {
    * @param vars {{}} Mapping from variable names to their types
    * @param opts
    */
-  resolveTypes (vars, opts) {
+  resolveTypes (vars: { [key: string]: string }, opts: ResolveTypesOptions = {}): ASTNode {
     // Convert all arg values to mathematical types
 
-    opts ??= {}
-    if (opts.throwOnUnresolved === undefined)
-      opts.throwOnUnresolved = true
+    let { defaultType = "real", throwOnUnresolved = true } = opts
 
-    if (!opts.vars)
-      opts.vars = vars
+    for (let sus of suspiciousVariableNames) {
+      if (sus in vars) {
+        localWarn(`Option ${sus} found in first argument to resolveTypes(vars, opts). Note that vars is a dictionary of variables, so ${sus} will be treated as a variable.`,
+            `unusual variable name in resolveTypes()`, 3)
+      }
+    }
 
-    this.applyAll(node => node._resolveTypes(opts), false /* only groups */, true /* children first */)
+    this.applyAll(node => node._resolveTypes({ vars, throwOnUnresolved, defaultType }), false /* only groups */, true /* children first */)
 
     return this
   }
@@ -209,7 +275,7 @@ export class ASTNode {
     return !!(this.type)
   }
 
-  _resolveTypes (opts) {
+  _resolveTypes (opts: FilledResolveTypesOptions) {
 
   }
 
@@ -219,38 +285,45 @@ export class ASTNode {
    * @param vars
    * @param opts
    */
-  evaluate (vars, opts={}) {
+  evaluate (vars, { mode = "normal", typecheck = true } = {}) {
     if (!this.allResolved())
       throw new EvaluationError("This node has not had its types fully resolved (call .resolveTypes())")
-    let mode = toEvaluationMode(opts.mode ?? "normal") // throws on fail
 
-    return this._evaluate(vars, mode, opts)
+    let convertedMode = toEvaluationMode(mode ?? "normal", true) // throws on fail
+
+    return this._evaluate(vars, convertedMode!, { mode, typecheck })
   }
 
-  _evaluate (vars, mode, opts) {
-    throw new Error("ASTNode cannot be evaluated")
+  _evaluate (vars: VariableLookupObject, mode: EvaluationMode, opts: EvaluationOptions) {
+    throw new EvaluationError("ASTNode cannot be evaluated directly")
   }
 
   /**
    * Returns a Map of variable names to information about those variables.
-   * @returns {Map<string, {type: MathematicalType, operatorDefinition: null|OperatorDefinition, count: number}>}
    */
-  getVariableDependencies () {
-    let knownVars = new Map()
+  getVariableDependencies (): Map<string, VariableDependency> {
+    let knownVars: Map<string, VariableDependency> = new Map()
 
-    this.applyAll(node => {
+    this.applyAll((node: ASTNode) => {
       if (node.nodeType() === ASTNode.TYPES.VariableNode) {
-        let name = node.name
+        let name = (node as VariableNode).name
         let info = knownVars.get(name)
 
         if (!info) {
-          info = {}
-          knownVars.set(name, info)
-        }
+          if (node.type == null) {
+            throw new ResolutionError(`Type of variable ${name} has not been resolved`)
+          }
 
-        info.type = node.type
-        info.operatorDefinition = node.operatorDefinition
-        info.count = (info.count ?? 0) + 1
+          info = {
+            type: node.type,
+            operatorDefinition: (node as VariableNode).operatorDefinition,
+            count: 1
+          }
+
+          knownVars.set(name, info)
+        } else {
+          info.count++
+        }
       }
     })
 
@@ -258,29 +331,29 @@ export class ASTNode {
   }
 }
 
+export type ASTGroupParams = ASTNodeParams & {
+  children?: Array<ASTNode>
+}
+
 // Node with children. A plain ASTGroup is usually just a parenthesized thing
 export class ASTGroup extends ASTNode {
-  constructor (params={}) {
+  children: Array<ASTNode>
+
+  constructor (params: ASTGroupParams = {}) {
     super(params)
+
+    this.children = params.children ?? []
 
     this.info.isFunction = false
   }
 
-  /**
-   * Apply a function to this node and all of its children, recursively.
-   * @param func {Function} The callback function. We call it each time with (node, depth) as arguments
-   * @param onlyGroups {boolean} Only call the callback on groups
-   * @param childrenFirst {boolean} Whether to call the callback function for each child first, or for the parent first.
-   * @param depth {number}
-   * @returns {ASTNode}
-   */
   applyAll (func, onlyGroups = false, childrenFirst = false, depth = 0) {
     if (!childrenFirst) func(this, depth)
 
     let children = this.children
     for (let i = 0; i < children.length; ++i) {
       let child = children[i]
-      if (child instanceof ASTNode && (!onlyGroups || child.isGroup())) {
+      if (!onlyGroups || child.isGroup()) {
         child.applyAll(func, onlyGroups, childrenFirst, depth + 1)
       }
     }
@@ -302,7 +375,7 @@ export class ASTGroup extends ASTNode {
     return new ASTGroup(this)
   }
 
-  _resolveTypes ( opts) {
+  _resolveTypes (opts: FilledResolveTypesOptions) {
     // Only called on a raw group, aka a parenthesized group
     let children = this.children
 
@@ -313,13 +386,19 @@ export class ASTGroup extends ASTNode {
     this.type = children[0].type
   }
 
-  _evaluate (vars, mode, opts={}) {
+  _evaluate (vars, mode, opts) {
     return this.children[0]._evaluate(vars, mode, opts)
   }
 }
 
+export type ConstantNodeParams = ASTNodeParams & {
+  value: string
+}
+
 export class ConstantNode extends ASTNode {
-  constructor (params={}) {
+  value: string
+
+  constructor (params: ConstantNodeParams) {
     super(params)
 
     // Generally a text rendition of the constant node; e.g., "0.3" or "50"
@@ -334,28 +413,40 @@ export class ConstantNode extends ASTNode {
     return new ConstantNode(this)
   }
 
-  _resolveTypes (args) {
+  _resolveTypes (args: FilledResolveTypesOptions) {
 
   }
 
-  _evaluate (vars, mode, opts={}) {
+  _evaluate (vars: VariableLookupObject, mode: EvaluationMode, opts: EvaluationOptions): any {
+    if (!this.type) {
+      throw new EvaluationError(`Type of constant variable with value ${this.value} has not been resolved`)
+    }
+
     let type = mode.getConcreteType(this.type)
 
-    if (!type){
+    if (!type) {
       throw new EvaluationError(`Cannot find concrete type in mode ${mode.name} for mathematical type ${this.type.toHashStr()}`)
     }
 
-    return type.castPermissive(this.value) // basically never throws
+    return type.castPermissive(this.value)
   }
 }
 
+export type VariableNodeParams = ASTNodeParams & {
+  name: string
+  operatorDefinition?: OperatorDefinition | null
+}
+
 export class VariableNode extends ASTNode {
-  constructor (params={}) {
+  name: string
+  operatorDefinition: OperatorDefinition | null
+
+  constructor (params: VariableNodeParams) {
     super(params)
 
     this.name = params.name
-    if (!this.name || typeof this.name !== "string")
-      throw new Error("Variable name must be a string")
+    this.operatorDefinition = params.operatorDefinition ?? null
+    // TODO var name check in parse string
   }
 
   nodeType () {
@@ -366,7 +457,7 @@ export class VariableNode extends ASTNode {
     return new VariableNode(this)
   }
 
-  _resolveTypes (opts) {
+  _resolveTypes (opts: FilledResolveTypesOptions) {
     let { vars, defaultType } = opts
 
     let name = this.name
@@ -385,7 +476,7 @@ export class VariableNode extends ASTNode {
     this.type = toMathematicalType(info ?? (defaultType ?? "real"))
   }
 
-  _evaluate (vars, mode, opts={}) {
+  _evaluate (vars, mode, opts) {
     if (this.operatorDefinition) { // pi, e, i
       let evaluator = this.operatorDefinition.getDefaultEvaluator(mode)
 
@@ -397,36 +488,47 @@ export class VariableNode extends ASTNode {
     }
 
     let v = vars[this.name]
-
     if (v === undefined) {
       throw new EvaluationError(`Variable ${this.name} is not defined in the current scope`)
+    }
+
+    if (opts.typecheck) {
+      let concreteType = mode.getConcreteType(this.type)
+
+      let works = concreteType.typecheck(v)
+      if (!works) {
+        let msg = concreteType.typecheckVerbose(v)
+
+        throw new EvaluationError(`Variable ${this.name} should have concrete type ${concreteType.toHashStr()}. ${msg}`)
+      }
     }
 
     return v
   }
 }
 
+export type OperatorNodeParams = ASTGroupParams & {
+  name: string
+  extraArgs?: { [key: string]: string },
+  casts: Array<MathematicalCast> | null
+}
+
 export class OperatorNode extends ASTGroup {
-  constructor (params={}) {
+  name: string
+  casts: Array<MathematicalCast> | null  // null when casts are not known
+
+  // Extra arguments that have an effect on the operator's mathematical meaning, but which are unwieldy to represent
+  // directly as an argment. Current use: comparison chain, where the arguments are the comparisons to be done and
+  // extraArgs.comparisons is, say, [ '<', '<=' ]
+  extraArgs: { [key: string]: string }
+
+  constructor (params: OperatorNodeParams) {
     super(params)
 
     this.name = params.name
-    if (!this.name || typeof this.name !== "string")
-      throw new Error("Operator name must be a string")
-
-    // Arguments to the operator
     this.children = params.children ?? []
-
-    // Extra arguments that have an effect on the operator's mathematical meaning, but which are unwieldy to represent
-    // directly as an argment. Current use: comparison chain, where the arguments are the comparisons to be done and
-    // extraArgs.comparisons is, say, [ '<', '<=' ]
     this.extraArgs = params.extraArgs ?? {}
-
-    /**
-     * Array of casts needed
-     * @type {null|MathematicalCast[]}
-     */
-    this.casts = null
+    this.casts = params.casts ?? []
   }
 
   nodeType () {
@@ -441,17 +543,17 @@ export class OperatorNode extends ASTGroup {
     return new OperatorNode(this)
   }
 
-  childArgTypes () {
+  childArgTypes (): Array<MathematicalType|null> {
     return this.children.map(c => c.type)
   }
 
   _resolveTypes (opts) {
-    let childArgTypes = this.children.map(c => c.type)
+    let childArgTypes = this.childArgTypes()
 
-    if (!childArgTypes.some(t => t === null)) {
-      let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes)
+    if (!childArgTypes.some(t => t === null)) { // null check done
+      let [ definition, casts ] = resolveOperatorDefinition(this.name, childArgTypes as Array<MathematicalType>)
 
-      if (definition !== null && casts.every(cast => cast !== null)) {
+      if (definition !== null && casts!.every(cast => cast !== null)) {
         this.type = definition.returns
         this.operatorDefinition = definition
         this.casts = casts
@@ -465,11 +567,11 @@ export class OperatorNode extends ASTGroup {
     this.casts = null
 
     if (opts.throwOnUnresolved) {
-      throw new ResolutionError(`Unable to resolve operator definition ${this.name}(${childArgTypes.map(t => t.toHashStr())})`)
+      throw new ResolutionError(`Unable to resolve operator definition ${this.name}(${childArgTypes.map(t => t?.toHashStr() ?? "unknown")})`)
     }
   }
 
-  _evaluate (vars, mode, opts={}) {
+  _evaluate (vars, mode, opts) {
     if (!this.operatorDefinition) throw new EvaluationError("Operator definition not resolved")
     if (!this.casts) throw new EvaluationError("Casts not resolved")
 
@@ -483,12 +585,19 @@ export class OperatorNode extends ASTGroup {
             + ` to destination ${mode.getConcreteType(cast.dstType()).toHashStr()}`)
       }
 
+      let uncastedChild = c._evaluate(vars, mode, opts)
       return ccast.callNew([
-        c._evaluate(vars, mode, opts) // compute child
+        uncastedChild
       ])
     })
 
     let evaluator = this.operatorDefinition.getDefaultEvaluator(mode)
+    if (!evaluator) {
+      throw new EvaluationError(
+          `No evaluator (in mode ${mode.name}} for operator ${this.operatorDefinition.prettyPrint()}`
+      )
+    }
+
     return evaluator.callNew(childrenValues)
   }
 }

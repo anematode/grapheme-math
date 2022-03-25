@@ -359,3 +359,22 @@ export const levenshtein = (function () {
     return dd
   }
 })()
+
+const warnings = new Map()
+
+export function localWarn (s, id, maxCount=2) {
+  let count = warnings.get(id)
+
+  if (count >= maxCount) return
+
+  if (!count) {
+    count = 0
+  }
+
+  console.warn(`Warning ${id}: ${s}`)
+
+  warnings.set(id, count + 1)
+  if (count >= maxCount - 1) {
+    console.warn(`Warning ${id} raised ${maxCount} times; no longer being reported`)
+  }
+}

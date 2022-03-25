@@ -1,19 +1,20 @@
-import { OperatorDefinition } from "../operator_definition.js"
+import {MathematicalCast, OperatorDefinition} from "../operator_definition.js"
 import { castDistance, ConcreteEvaluator } from '../evaluator.js'
-import {gammaReal} from "../../real/normal.js"
+import {gammaReal} from "../../real/gamma.js"
 import {Complex} from "../../complex/normal.js"
+import {MathematicalType} from "../type";
 
 // For now we'll just have a mapping  name -> Array of possibilities
-const KNOWN_OPERATORS = new Map()
+const KNOWN_OPERATORS: Map<string, Array<OperatorDefinition>> = new Map()
 
 // Put an operator in the global list
-function registerOperator(definition) {
+function registerOperator(definition: OperatorDefinition) {
   let name = definition.name
 
   if (!KNOWN_OPERATORS.has(name))
     KNOWN_OPERATORS.set(name, [])
 
-  KNOWN_OPERATORS.get(name).push(definition)
+  KNOWN_OPERATORS.get(name)!.push(definition)
 }
 
 /**
@@ -22,13 +23,13 @@ function registerOperator(definition) {
  * @param name
  * @param argTypes
  */
-export function resolveOperatorDefinition (name, argTypes) {
+export function resolveOperatorDefinition (name: string, argTypes: Array<MathematicalType>): [ OperatorDefinition, Array<MathematicalCast> ] | [ null, null ] {
   let defs = KNOWN_OPERATORS.get(name)
   if (!defs) return [ null, null ]
 
   // Choose first definition with the least cast distance (may change later)
-  let bestDef = null
-  let bestCasts = null
+  let bestDef: OperatorDefinition | null = null
+  let bestCasts: Array<MathematicalCast> | null = null
   let bestDist = Infinity
 
   for (let def of defs) {
@@ -47,7 +48,7 @@ export function resolveOperatorDefinition (name, argTypes) {
     }
   }
 
-  return [ bestDef, bestCasts ]
+  return bestDef ? [ bestDef, bestCasts! ] : [ null, null ]
 }
 
 /**
