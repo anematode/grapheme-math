@@ -1,4 +1,5 @@
-// Reference function. Slow but (hopefully) accurate
+// @ts-nocheck
+// Reference functions. Slow but (hopefully) accurate
 import {compareMantissas, leftShiftMantissa, prettyPrintMantissa, rightShiftMantissa} from "./old.js"
 import {roundMantissaToPrecision} from "./bigfloat.js";
 import {ROUNDING_MODE} from "../rounding_modes.js"

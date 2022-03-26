@@ -37,6 +37,8 @@ const recip2Pow60 = 8.673617379884035e-19 // 2^-60
 let WORKING_PRECISION: number = 53
 let WORKING_RM: RoundingMode = ROUNDING_MODE.NEAREST
 
+type Mantissa = Int32Array
+
 /**
  * Set the working precision. Silently fails if the precision is invalid
  * @param p {number}
@@ -96,21 +98,21 @@ function precisionInRange (prec: number): boolean {
 }
 
 // Throws if a precision is invalid
-function precisionInRangeThrows (prec) {
+function precisionInRangeThrows (prec: number) {
   if (typeof prec !== "number" || prec < BIGFLOAT_MIN_PRECISION || prec > BIGFLOAT_MAX_PRECISION)
     throw new RangeError(`Precision must be a number in range [${BIGFLOAT_MIN_PRECISION}, ${BIGFLOAT_MAX_PRECISION}], not ${prec}`)
 }
 
-function createMantissa (prec) {
+function createMantissa (prec: number): Int32Array {
   return new Int32Array(neededWordsForPrecision(prec))
 }
 
 /**
  * Throws if a mantissa is invalid, with a reason
- * @param m {Int32Array}
- * @param mLen {number} Length of the mantissa; defaults to the mantissa's total length
+ * @param m
+ * @param mLen Length of the mantissa; defaults to the mantissa's total length
  */
-export function validateMantissa (m, mLen=-1) {
+export function validateMantissa (m: Mantissa, mLen: number=-1) {
   if (!(m instanceof Int32Array)) throw new TypeError("Mantissa must be an Int32Array")
   if (mLen === -1) mLen = m.length
 
@@ -130,7 +132,7 @@ export function validateMantissa (m, mLen=-1) {
  * Checks whether a BigFloat is valid and throws if not
  * @param f {BigFloat}
  */
-export function validateBigFloat (f) {
+export function validateBigFloat (f: BigFloat) {
   if (!(f instanceof BigFloat)) throw new TypeError("f is not a BigFloat")
   let { sign, exp, prec, mant } = f
 
@@ -160,7 +162,7 @@ export function validateBigFloat (f) {
  * @param prec {number}
  */
 export function ulpError (m1, mLen, m2, m2shift, tLen, prec) {
-  let offset = Math.clz32(m[0]) - 2
+  let offset = Math.clz32(m1[0]) - 2
   let endOfPrecision = (prec + offset) | 0
   let endOfPrecisionWordI = (endOfPrecision / BIGFLOAT_WORD_BITS) | 0
 
@@ -185,7 +187,7 @@ export function ulpError (m1, mLen, m2, m2shift, tLen, prec) {
  * @param index {number} From which index (not bit!) to search
  * @returns {number}
  */
-export function getTrailingInfo (mantissa, index) {
+export function getTrailingInfo (mantissa: Mantissa, index: number): number {
   let mantissaLen = mantissa.length
 
   if (index >= 0) {
@@ -229,11 +231,11 @@ export function getTrailingInfo (mantissa, index) {
  * @param trailing {number} Trailing information about the mantissa. 0 -> all zeros, 1 -> between 0 and 0.5, 2 -> tie (0.5), 3 -> greater than 0.5
  * @return {number} The shift, in words, of the new mantissa
  */
-export function roundMantissaToPrecision (m, mLen, t, tLen, prec, rm, trailing=0) {
+export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa, tLen: number, prec: number, rm: RoundingMode, trailing: number=0): number {
   mLen = mLen | 0
   tLen = tLen | 0
   prec = prec | 0
-  rm = rm | 0
+  rm = (rm | 0) as RoundingMode
   trailing = trailing | 0
 
   if (rm === 0) {
@@ -408,7 +410,7 @@ export function roundMantissaToPrecision (m, mLen, t, tLen, prec, rm, trailing=0
  * @param tLen {number} Number of words in the target mantissa
  * @param rm {number} Rounding mode
  */
-export function addMantissas (m1, m1l, m2, m2l, m2shift, t, tLen, prec, rm = WORKING_RM) {
+export function addMantissas (m1: Mantissa, m1l: number, m2: Mantissa, m2l: number, m2shift: number, t: Mantissa, tLen: number, prec: number, rm: RoundingMode): number {
   let isAliased = m1 === t
   let mant2End = m2l + m2shift
 
@@ -520,7 +522,7 @@ export function addMantissas (m1, m1l, m2, m2l, m2shift, t, tLen, prec, rm = WOR
  * @param prec {number}
  * @param rm {number}
  */
-export function subtractMantissas (m1, m1Len, m2, m2Len, m2shift, t, tLen, prec, rm) {
+export function subtractMantissas (m1: Mantissa, m1Len: number, m2: Mantissa, m2Len: number, m2shift: number, t: Mantissa, tLen: number, prec: number, rm: RoundingMode) {
   // My algorithm for (efficient) subtraction is a bit complicated. The reference implementation allocates a mantissa
   // large enough to store the exact result, computes the exact result, and rounds it. But if m2shift is large, this
   // approach allocates and calculates way more stuff than it needs to. Ideally, we allocate little or nothing and only
@@ -601,7 +603,26 @@ export function subtractMantissas (m1, m1Len, m2, m2Len, m2shift, t, tLen, prec,
 }
 
 class BigFloat {
-  constructor (sign, exp, prec, mant) {
+  /**
+   * The sign of this float; can be ±0 (which are differentiated), ±1,  ±inf, and NaN. Special values are therefore signaled
+   * by special sign values. If the sign is not ±1 (in other words, if it is a special sign) then the mantissa values
+   * are exponent are arbitrary
+   */
+  sign: number
+  /**
+   * Exponent of this float; ranges between TODO
+   */
+  exp: number
+  /**
+   * Precision of this float; ranges between BIGFLOAT_MIN_PREC and BIGFLOAT_MAX_PREC
+   */
+  prec: number
+  /**
+   * Mantissa of this BigFloat, in 30-bit unsigned words
+   */
+  mant: Mantissa
+
+  constructor (sign: number, exp: number, prec: number, mant: Mantissa) {
     this.sign = sign
     this.exp = exp
     this.prec = prec
@@ -613,7 +634,7 @@ class BigFloat {
    * @param prec {number}
    * @returns {BigFloat}
    */
-  static new (prec=WORKING_PRECISION) {
+  static new (prec: number=WORKING_PRECISION): BigFloat {
     precisionInRangeThrows(prec)
 
     let mant = createMantissa(prec)
@@ -627,7 +648,7 @@ class BigFloat {
    * @param rm {number} Rounding mode
    * @returns {BigFloat}
    */
-  static fromNumber (n, prec=WORKING_PRECISION, rm=WORKING_RM) {
+  static fromNumber (n: number, prec: number=WORKING_PRECISION, rm: RoundingMode=WORKING_RM): BigFloat {
     let f = BigFloat.new(prec)
     f.setFromNumber(n, rm)
 
@@ -642,7 +663,7 @@ class BigFloat {
    * @param f32 {boolean} Whether to cast to a float32 instead of a float64
    * @returns {number}
    */
-  toNumber (rm = WORKING_RM, f32 = false) {
+  toNumber (rm: RoundingMode = WORKING_RM, f32: boolean = false): number {
     if (this.isSpecial()) return this.sign
 
     let m = this.mant, unshiftedExp = (this.exp - 1) * BIGFLOAT_WORD_BITS, mLen = m.length // exp in base 2
@@ -660,7 +681,7 @@ class BigFloat {
     if (rm & 16 && this.sign === -1) rm ^= 1 // flip rounding mode for sign
 
     // Round to the nearest float32 or float64, ignoring denormal numbers for now
-    let shift = roundMantissaToPrecision(m, mLen, roundedMantissa, 3, prec, rm)
+    let shift = roundMantissaToPrecision(m, mLen, roundedMantissa, 3, prec, rm as RoundingMode)
 
     let MIN_EXPONENT = f32 ? -149 : -1074
     let MIN_NORMAL_EXPONENT = f32 ? -126 : -1022
@@ -687,7 +708,7 @@ class BigFloat {
 
       if (exp < MIN_NORMAL_EXPONENT && exp >= MIN_EXPONENT && !denormal) {
         // denormal, round to a different precision
-        shift = roundMantissaToPrecision(m, mLen, roundedMantissa, 3, exp - MIN_EXPONENT, rm)
+        shift = roundMantissaToPrecision(m, mLen, roundedMantissa, 3, exp - MIN_EXPONENT, rm as RoundingMode)
         denormal = true // go back and calculate mAsInt
       } else break
     } while (denormal)
@@ -742,7 +763,7 @@ class BigFloat {
    * @param rm
    * @returns {BigFloat} This, for chaining
    */
-  setFromBigFloat (f, rm=WORKING_RM) {
+  setFromBigFloat (f: BigFloat, rm: RoundingMode=WORKING_RM): BigFloat {
     if (!(f instanceof BigFloat)) throw new TypeError("BigFloat.setFromBigFloat takes a BigFloat")
 
     let fs = f.sign
@@ -770,7 +791,7 @@ class BigFloat {
    * @param rm {number} Rounding mode to be used; only relevant if prec < 53
    * @returns {BigFloat}
    */
-  setFromNumber (n, rm=WORKING_RM) {
+  setFromNumber (n: number, rm: RoundingMode=WORKING_RM) {
     if (this.prec < 53) {
       // Weird and rare case. Rounding to a lower precision is needed
 
@@ -786,15 +807,15 @@ class BigFloat {
 
     let nDenormal = isDenormal(n)
     setFloatStore(n)
-    let valExponent = getFloatStoreExponent(n)
-    let valMantissa = getFloatStoreMantissa(n)
+    let valExponent = getFloatStoreExponent()
+    let valMantissa = getFloatStoreMantissa()
 
     // Exponent of the float (2^30)^newExp
     let newExp = Math.ceil((valExponent + 1) / BIGFLOAT_WORD_BITS)
 
     // The mantissa needs to be shifted to the right by this much. 0 < bitshift <= 30. If the number is denormal, we
     // have to shift it by one bit less
-    let bitshift = newExp * BIGFLOAT_WORD_BITS - valExponent - nDenormal
+    let bitshift = newExp * BIGFLOAT_WORD_BITS - valExponent - (+nDenormal)
     let denom = pow2(bitshift + 22)
     mant[0] =
       Math.floor(valMantissa / denom) /* from double */ +
@@ -844,7 +865,7 @@ class BigFloat {
    * @param target {BigFloat}
    * @param rm {number} Rounding mode
    */
-  static addTo (f1, f2, target, rm) {
+  static addTo (f1: BigFloat, f2: BigFloat, target: BigFloat, rm: RoundingMode=WORKING_RM) {
     let f1Sign = f1.sign, f2Sign = f2.sign
     if (!Number.isFinite(f1Sign) || !Number.isFinite(f2.sign)) {
       target.sign = f1Sign + f2Sign
@@ -852,10 +873,10 @@ class BigFloat {
     }
 
     if (f1Sign === 0) {
-      target.setFromFloat(f2, rm)
+      target.setFromBigFloat(f2, rm)
       return
     } else if (f2Sign === 0) {
-      target.setFromFloat(f1, rm)
+      target.setFromBigFloat(f1, rm)
       return
     }
 
@@ -892,11 +913,11 @@ const SCRATCH_DOUBLE = BigFloat.new(53)
  * @param a {number}
  * @returns {string}
  */
-export function toHex (a) {
+export function toHex (a: number): string {
   return ((a < 0) ? '-' : '') + "0x" + leftZeroPad(Math.abs(a).toString(16), 8, '0')
 }
 
-export function toBinary (a) {
+export function toBinary (a: number): string {
   return ((a < 0) ? '-' : '') + "0b" + leftZeroPad(Math.abs(a).toString(2), 30, '0')
 }
 
@@ -907,7 +928,7 @@ export function toBinary (a) {
  * @param binary {string} Whether to display it as 30-bit padded binary
  * @returns {string}
  */
-export function prettyPrintMantissa (mantissa, color="", binary=false) {
+export function prettyPrintMantissa (mantissa: Mantissa, color: string="", binary: boolean=false): string {
   return '[ ' + Array.from(mantissa).map(binary ? toBinary : toHex)
     .map(s => `${color}${s}${color ? "\x1b[0m" : ''}`).join(', ') + ' ]'
 }

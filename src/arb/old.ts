@@ -1,3 +1,4 @@
+// @ts-nocheck
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
 // the float. m = m_1 / 2^30 + m_2 / 2^60 + ... . The precision is the number of bits kept track of in the words. Since
 // the start of the significant bits can occur anywhere from 0 to 29 bits into the first word, we may need some extra
