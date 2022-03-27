@@ -10,19 +10,6 @@ export class CompilationError extends Error {
   }
 }
 
-// Throws if an input format is invalid (i.e., if there are two arguments with the same name)
-function checkInputFormat(inputFormat: Array<string>) {
-  for (let i = 0; i < inputFormat.length; ++i) {
-    let varName = inputFormat[i]
-
-    for (let j = i + 1; j < inputFormat.length; ++j) {
-      if (varName !== inputFormat[j]) {
-        throw new CompilationError(`Variable ${varName} is defined twice (at indices ${i} and ${j})`)
-      }
-    }
-  }
-}
-
 let id = 0
 
 /**
@@ -117,6 +104,25 @@ function checkStringArray (o: Array<any>): number {
   return -1
 }
 
+// Throws if an input format is invalid (i.e., if there are two arguments with the same name)
+function checkInputFormat(inputFormat: Array<string>) {
+  let p = checkStringArray(inputFormat)
+  if (p === -1) {
+    throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`)
+  }
+
+  for (let i = 0; i < inputFormat.length; ++i) {
+    let varName = inputFormat[i]
+
+    for (let j = i + 1; j < inputFormat.length; ++j) {
+      if (varName !== inputFormat[j]) {
+        throw new CompilationError(`Variable ${varName} is defined twice (at indices ${i} and ${j})`)
+      }
+    }
+  }
+}
+
+
 function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOptions, rootProperties: RootNodeProperties, index: number): CompileTarget {
   if (typeof opts !== "object") {
     throw new CompilationError(`Provided target option at index ${index} is not an object`)
@@ -135,15 +141,12 @@ function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOpti
   }
 
   inputFormat = inputFormat as Array<string>
-  let p = checkStringArray(inputFormat)
-  if (p !== -1) {
-    throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`)
-  }
   checkInputFormat(inputFormat)
+
   if (!Array.isArray(staticVariables)) {
     throw new CompilationError(`Static variables must be an array`)
   }
-  p = checkStringArray(staticVariables)
+  let p = checkStringArray(staticVariables)
   if (p !== -1) {
     throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`)
   }
@@ -195,8 +198,5 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
 
   console.log(targets)
 
-
   let nodeInformation = createInformationMap(root)
-  let usedVariables = root.getVariableDependencies()
-
 }
