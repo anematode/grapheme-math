@@ -117,7 +117,7 @@ function checkStringArray (o: Array<any>): number {
 // Throws if an input format is invalid (i.e., if there are two arguments with the same name)
 function checkInputFormat(inputFormat: Array<string>) {
   let p = checkStringArray(inputFormat)
-  if (p === -1) {
+  if (p !== -1) {
     throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`)
   }
 
@@ -180,6 +180,14 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
 
   astToGraphMap.set(root, "$ret")
 
+  function defineGraphNode(name: string, astNode: ASTNode | null, inf: MathematicalGraphNode) {
+    if (astNode) {
+      astToGraphMap.set(astNode, name)
+    }
+
+    assnMap.set(name, inf)
+  }
+
   // Implicitly left to right
   root.applyAll((astNode: ASTNode) => {
     let gNode: MathematicalGraphNode | null = null
@@ -210,18 +218,73 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
         // @ts-ignore
         let casts: Array<MathematicalCast> = (args.length === 0) ? [] : n.casts
 
-        let castedArgs =
+        let castedArgs = casts.map((cast, i) => {
+          let arg = args[i]
+          let argName = astToGraphMap.get(arg)
 
+          if (!argName) {
+            throw new CompilationError("?")
+          }
+
+          if (cast.isIdentity()) {
+            return argName
+          }
+
+          // Create node for the cast
+          defineGraphNode(argName, arg, {
+            name: argName,
+            type: cast.dstType(),
+            isConditional: false,
+            isCast: true,
+            isInput: false,
+            args: [ argName ],
+            operatorDefinition: cast
+          })
+
+          return argName
+        })
+
+        gNode = {
+          name,
+          type: n.type!,
+          isConditional: false,
+          isCast: false,
+          isInput: false,
+          args: castedArgs,
+          operatorDefinition: n.operatorDefinition!
+        }
+
+        break
       case ASTNode.TYPES.ASTGroup:
-        astNode = astNode as ASTGroup
+        // Groups are entirely elided by mapping them to the variable name of their only child
+        let c = (astNode as ASTGroup).children[0]
+        if (!c) {
+          throw new CompilationError("Empty ASTGroup in expression")
+        }
+
+        astToGraphMap.set(astNode, astToGraphMap.get(c)!)
+        return
       case ASTNode.TYPES.ConstantNode:
-        astNode = astNode as ConstantNode
+        gNode = {
+          name,
+          type: astNode.type!,
+          isConditional: false,
+          isCast: false,
+          isInput: false,
+          value: (astNode as ConstantNode).value
+        }
+
+        break
       case ASTNode.TYPES.ASTNode:
-        throw new CompilationError(`Raw ASTNode in provided expression`)
+        throw new CompilationError(`Raw ASTNode in expression`)
     }
 
-    assnMap.set(name, gNode)
+    defineGraphNode(name, astNode, gNode)
   }, false /* all children */, true /* children first */)
+
+  graph.nodes = assnMap
+
+  return graph
 }
 
 /**
@@ -260,4 +323,6 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
   }
 
   let mAssignmentGraph = createAssnGraph(root)
+
+  return mAssignmentGraph
 }

@@ -29,6 +29,9 @@ type NodeBase = {
   // Whether this node originated from a straightforward type cast
   isCast: boolean
 
+  // Names of variable arguments
+  args?: Array<string>
+
   // Corresponding AST node, if applicable
   astNode?: ASTNode
 
