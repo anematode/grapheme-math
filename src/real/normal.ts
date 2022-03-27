@@ -1,3 +1,3 @@
 
-import { gammaReal } from "./gamma.js"
-export { gammaReal }
+import { gammaReal, lnGammaReal } from "./gamma.js"
+export { gammaReal, lnGammaReal }

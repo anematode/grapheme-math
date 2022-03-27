@@ -391,7 +391,6 @@ function setWorkingRM(rm) {
 }
 /**
  * Get the working rounding mode
- * @returns {number}
  */
 function getWorkingRM() {
     return WORKING_RM;
@@ -407,8 +406,8 @@ function getWorkingRM() {
  * prec = 31, neededWords = 3                 --> end of precision
  * m = [ 1, 0b111111111111111111111111111111, 0 ]
  *       <------------- prec -------------->
- * @param prec {number}
- * @returns {number}
+ * @param prec
+ * @returns
  */
 function neededWordsForPrecision(prec) {
     prec |= 0;
@@ -428,8 +427,8 @@ function createMantissa(prec) {
 }
 /**
  * Throws if a mantissa is invalid, with a reason
- * @param m {Int32Array}
- * @param mLen {number} Length of the mantissa; defaults to the mantissa's total length
+ * @param m
+ * @param mLen Length of the mantissa; defaults to the mantissa's total length
  */
 function validateMantissa(m, mLen = -1) {
     if (!(m instanceof Int32Array))
@@ -480,7 +479,7 @@ function validateBigFloat(f) {
  * @param prec {number}
  */
 function ulpError(m1, mLen, m2, m2shift, tLen, prec) {
-    Math.clz32(m[0]) - 2;
+    Math.clz32(m1[0]) - 2;
 }
 /**
  * Given a subarray of a mantissa, return 0 if infinite zeros; 1 if between 0 and 0.5; 2 if a tie; 3 if between a tie
@@ -545,7 +544,7 @@ function roundMantissaToPrecision(m, mLen, t, tLen, prec, rm, trailing = 0) {
     mLen = mLen | 0;
     tLen = tLen | 0;
     prec = prec | 0;
-    rm = rm | 0;
+    rm = (rm | 0);
     trailing = trailing | 0;
     if (rm === 0) {
         // rounding mode whatever
@@ -720,7 +719,7 @@ function roundMantissaToPrecision(m, mLen, t, tLen, prec, rm, trailing = 0) {
  * @param tLen {number} Number of words in the target mantissa
  * @param rm {number} Rounding mode
  */
-function addMantissas(m1, m1l, m2, m2l, m2shift, t, tLen, prec, rm = WORKING_RM) {
+function addMantissas(m1, m1l, m2, m2l, m2shift, t, tLen, prec, rm) {
     let isAliased = m1 === t;
     let mant2End = m2l + m2shift;
     let newMantLen = tLen;
@@ -1041,7 +1040,7 @@ class BigFloat {
         let newExp = Math.ceil((valExponent + 1) / BIGFLOAT_WORD_BITS);
         // The mantissa needs to be shifted to the right by this much. 0 < bitshift <= 30. If the number is denormal, we
         // have to shift it by one bit less
-        let bitshift = newExp * BIGFLOAT_WORD_BITS - valExponent - nDenormal;
+        let bitshift = newExp * BIGFLOAT_WORD_BITS - valExponent - (+nDenormal);
         let denom = pow2(bitshift + 22);
         mant[0] =
             Math.floor(valMantissa / denom) /* from double */ +
@@ -1084,18 +1083,18 @@ class BigFloat {
      * @param target {BigFloat}
      * @param rm {number} Rounding mode
      */
-    static addTo(f1, f2, target, rm) {
+    static addTo(f1, f2, target, rm = WORKING_RM) {
         let f1Sign = f1.sign, f2Sign = f2.sign;
         if (!Number.isFinite(f1Sign) || !Number.isFinite(f2.sign)) {
             target.sign = f1Sign + f2Sign;
             return;
         }
         if (f1Sign === 0) {
-            target.setFromFloat(f2, rm);
+            target.setFromBigFloat(f2, rm);
             return;
         }
         else if (f2Sign === 0) {
-            target.setFromFloat(f1, rm);
+            target.setFromBigFloat(f1, rm);
             return;
         }
         let f1m = f1.mant, f2m = f2.mant, f1e = f1.exp, f2e = f2.exp;
@@ -2156,6 +2155,26 @@ function gammaReal(x) {
     // yeah idk
     return 2.5066282746310007 * Math.pow(t, x + 0.5) * Math.exp(-t) * s;
 }
+function lnGammaReal(x) {
+    x = +x;
+    if (!Number.isFinite(x))
+        return Infinity + x;
+    if (Number.isInteger(x)) {
+        if (x <= 0)
+            return NaN;
+    }
+    if (x < 0.5) {
+        // Reflection formula
+        return 1.1447298858494002 - (Math.log(Math.sin(Math.PI * x))) - lnGammaReal(1 - x);
+    }
+    x -= 1;
+    let s = 0.99999999999980993;
+    for (let i = 0; i < 8; ++i) {
+        s += lanczosCoefficients[i] / (x + i + 1);
+    }
+    let t = x + 7.5; // 8 - 0.5
+    return 0.9189385332046728 + Math.log(t) * (x + 0.5) - t + Math.log(s);
+}
 
 /**
  * Normal-precision complex number.
@@ -2476,86 +2495,69 @@ const jsPrimitives = Object.freeze(['+', '-', '/', '*', '&&', '||', '==', '!=', 
 const unaryPrimitives = {
     '-': x => -x
 };
+// @ts-ignore
 const binaryPrimitives = {};
 jsPrimitives.forEach(op => {
     binaryPrimitives[op] = (new Function('x', 'y', `return x ${op} y`));
 });
 class ConcreteEvaluator {
     constructor(params) {
-        var _a, _b, _c, _d;
-        /**
-         *
-         * @type {ConcreteType[]}
-         */
+        var _a, _b, _c, _d, _e;
         this.args = ((_a = params.args) !== null && _a !== void 0 ? _a : []).map(toConcreteType);
         if (!this.args.every(arg => !!arg))
             throw new Error("Unknown argument type");
-        /**
-         * Return type
-         * @type {ConcreteType}
-         */
         this.returns = toConcreteType((_b = params.returns) !== null && _b !== void 0 ? _b : "void");
         if (!this.returns)
             throw new Error("Unknown return type");
         this.argCount = this.args.length;
-        /**
-         * Whether this operation is an identity operation (at the type level)
-         * @type {boolean}
-         */
         this.identity = !!params.identity;
-        /**
-         *
-         * @type {string}
-         */
         this.evalType = (_c = params.evalType) !== null && _c !== void 0 ? _c : "new";
         if (this.evalType !== "new" && this.evalType !== "write") {
             throw new Error("Evaluator type must be either new or write, not " + this.evalType);
         }
         // Primitive evaluator symbol (that can basically be evaled, for example "+" in +(real, real) -> real)
         this.primitive = (_d = params.primitive) !== null && _d !== void 0 ? _d : "";
-        this.func = params.func;
-        this.fillDefaults();
+        this.func = (_e = params.func) !== null && _e !== void 0 ? _e : this.getDefaultFunc();
+        this.isConstant = !!params.isConstant;
     }
-    /**
-     * Fill certain default values that are implicit in other properties
-     */
-    fillDefaults() {
+    getDefaultFunc() {
         if (this.returns.isPrimitive && this.evalType === "write")
             throw new Error("Cannot write to a primitive");
-        if (!this.func) {
-            let func;
-            if (this.identity) {
-                if (this.evalType === "new") {
-                    func = this.returns.clone;
-                }
-                else if (this.evalType === "write") {
-                    func = this.returns.copyTo;
-                }
+        let func = null;
+        if (this.identity) {
+            if (this.evalType === "new") {
+                func = this.returns.clone;
             }
-            else if (this.primitive) {
-                if (this.argCount === 0) {
-                    func = new Function("return " + this.primitive);
-                }
-                else if (this.argCount === 1) {
-                    func = unaryPrimitives[this.primitive];
-                }
-                else if (this.argCount === 2) {
-                    func = binaryPrimitives[this.primitive];
-                }
-                this.evalType = "new";
+            else if (this.evalType === "write") {
+                func = this.returns.copyTo;
             }
-            if (!func)
-                throw new ResolutionError("Unable to generate evaluation function");
-            this.func = func;
         }
+        else if (this.primitive) {
+            if (this.argCount === 0) {
+                func = new Function("return " + this.primitive);
+            }
+            else if (this.argCount === 1) {
+                func = unaryPrimitives[this.primitive];
+            }
+            else if (this.argCount === 2) {
+                func = binaryPrimitives[this.primitive];
+            }
+            this.evalType = "new";
+        }
+        if (!func)
+            throw new Error("Unable to generate evaluation function");
+        return func;
     }
     /**
      * Given a list of concrete types, whether the evaluator can be called with those types. -1 if not, 0 if no casts are
      * needed, >0 for the number of needed casts
      * @param args
      */
-    canCallWith(args) {
-        return castDistance(this.getCasts(args));
+    castDistance(args) {
+        let casts = this.getCasts(args);
+        if (!casts)
+            return -1;
+        return castDistance(casts);
     }
     getCasts(args) {
         if (this.args.length !== args.length)
@@ -2617,7 +2619,13 @@ class IdentityConcreteCast extends ConcreteCast {
         return args[0];
     }
 }
-let I = new IdentityConcreteCast({});
+let I = new IdentityConcreteCast({
+    // TODO
+    src: "int",
+    dst: "int",
+    func: x => x
+});
+// src? -> dst? -> cast?
 const BUILTIN_CONCRETE_CASTS = new Map();
 /**
  * Register a concrete cast from src to dst
@@ -2625,12 +2633,12 @@ const BUILTIN_CONCRETE_CASTS = new Map();
  */
 function registerConcreteCast(cast) {
     const CASTS = BUILTIN_CONCRETE_CASTS;
-    let srcType = cast.srcType();
-    let dstType = cast.dstType();
+    let srcType = cast.srcType().toHashStr();
+    let dstType = cast.dstType().toHashStr();
     if (!CASTS.has(srcType))
-        CASTS.set(srcType.toHashStr(), new Map());
-    let srcCasts = CASTS.get(srcType.toHashStr());
-    srcCasts.set(dstType.toHashStr(), cast);
+        CASTS.set(srcType, new Map());
+    let srcCasts = CASTS.get(srcType); // set above
+    srcCasts.set(dstType, cast);
     return cast;
 }
 /**
@@ -2650,7 +2658,7 @@ function getConcreteCast(srcType, dstType) {
 }
 /**
  * Determine the number of non-identity casts in a list of casts, and -1 if there is an empty cast somewhere
- * @param casts {MathematicalCast[]}
+ * @param casts
  * @returns {number}
  */
 function castDistance(casts) {
@@ -2829,13 +2837,32 @@ class OperatorDefinition {
         var _a;
         return (_a = this.defaultEvaluators.get(mode.name)) !== null && _a !== void 0 ? _a : null;
     }
+    findEvaluator(args, preferences) {
+        let evaluators = this.evaluators;
+        let { evalType } = preferences;
+        let best = null;
+        for (let i = 0; i < evaluators.length; ++i) {
+            let e = evaluators[i];
+            let dist = e.castDistance(args);
+            if (dist === 0) {
+                best = e;
+                if (e.evalType === evalType) {
+                    break;
+                }
+            }
+        }
+        return best;
+    }
     /**
      * Check whether this operator can be called with the given mathematical types.
      * @param args
      * @returns -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it
      */
     canCallWith(args) {
-        return castDistance(this.getCasts(args));
+        let casts = this.getCasts(args);
+        if (!casts)
+            return -1;
+        return castDistance(casts);
     }
     /**
      * Get a list of mathematical casts from source types to the required types for this operator.
@@ -3011,7 +3038,7 @@ function resolveOperatorDefinition(name, argTypes) {
                 break;
         }
     }
-    return [bestDef, bestCasts];
+    return bestDef ? [bestDef, bestCasts] : [null, null];
 }
 /**
  * Basic arithmetic operations TODO: extended names, etc.
@@ -3065,6 +3092,19 @@ registerOperator(new OperatorDefinition({
             args: ["int"],
             returns: "int",
             primitive: "-"
+        })
+    ]
+}));
+// int(int)
+registerOperator(new OperatorDefinition({
+    name: 'int',
+    args: ["int"],
+    returns: "int",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["int"],
+            returns: "int",
+            identity: true
         })
     ]
 }));
@@ -3132,6 +3172,19 @@ registerOperator(new OperatorDefinition({
         })
     ]
 }));
+// real(real)
+registerOperator(new OperatorDefinition({
+    name: 'real',
+    args: ["real"],
+    returns: "real",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["real"],
+            returns: "real",
+            identity: true
+        })
+    ]
+}));
 registerOperator(new OperatorDefinition({
     name: '^',
     args: ["real", "real"],
@@ -3153,6 +3206,70 @@ registerOperator(new OperatorDefinition({
             args: ["real", "real"],
             returns: "real",
             func: Math.pow
+        })
+    ]
+}));
+registerOperator(new OperatorDefinition({
+    name: 'ln',
+    args: ["real"],
+    returns: "real",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["real"],
+            returns: "real",
+            func: Math.log
+        })
+    ]
+}));
+// TODO function aliasing
+registerOperator(new OperatorDefinition({
+    name: 'log',
+    args: ["real"],
+    returns: "real",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["real"],
+            returns: "real",
+            func: Math.log
+        })
+    ]
+}));
+registerOperator(new OperatorDefinition({
+    name: 'sin',
+    args: ["real"],
+    returns: "real",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["real"],
+            returns: "real",
+            evalType: "new",
+            func: Math.sin
+        })
+    ]
+}));
+registerOperator(new OperatorDefinition({
+    name: 'cos',
+    args: ["real"],
+    returns: "real",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["real"],
+            returns: "real",
+            evalType: "new",
+            func: Math.cos
+        })
+    ]
+}));
+registerOperator(new OperatorDefinition({
+    name: 'tan',
+    args: ["real"],
+    returns: "real",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["real"],
+            returns: "real",
+            evalType: "new",
+            func: Math.tan
         })
     ]
 }));
@@ -3201,6 +3318,19 @@ registerOperator(new OperatorDefinition({
                 dst.re = x;
                 dst.im = y;
             }
+        })
+    ]
+}));
+// complex(complex)
+registerOperator(new OperatorDefinition({
+    name: 'complex',
+    args: ["complex"],
+    returns: "complex",
+    evaluators: [
+        new ConcreteEvaluator({
+            args: ["complex"],
+            returns: "complex",
+            identity: true
         })
     ]
 }));
@@ -3398,7 +3528,8 @@ const MathematicalConstants = {
             new ConcreteEvaluator({
                 args: [],
                 returns: "real",
-                func: () => Math.PI
+                func: () => Math.PI,
+                isConstant: true
             })
         ]
     }),
@@ -3411,7 +3542,8 @@ const MathematicalConstants = {
             new ConcreteEvaluator({
                 args: [],
                 returns: "real",
-                func: () => Math.E
+                func: () => Math.E,
+                isConstant: true
             })
         ]
     }),
@@ -3424,7 +3556,8 @@ const MathematicalConstants = {
             new ConcreteEvaluator({
                 args: [],
                 returns: "complex",
-                func: () => new Complex(0, 1)
+                func: () => new Complex(0, 1),
+                isConstant: true
             })
         ]
     })
@@ -3702,6 +3835,10 @@ class ConstantNode extends ASTNode {
         super(params);
         // Generally a text rendition of the constant node; e.g., "0.3" or "50"
         this.value = params.value;
+        if (!params.type) {
+            throw new EvaluationError(`ConstantNode must be constructed with a mathematical type (e.g., real)`);
+        }
+        this.type = params.type;
     }
     nodeType() {
         return 1;
@@ -3795,7 +3932,7 @@ class OperatorNode extends ASTGroup {
     }
     _resolveTypes(opts) {
         let childArgTypes = this.childArgTypes();
-        if (!childArgTypes.some(t => t === null)) {
+        if (!childArgTypes.some(t => t === null)) { // null check done
             let [definition, casts] = resolveOperatorDefinition(this.name, childArgTypes);
             if (definition !== null && casts.every(cast => cast !== null)) {
                 this.type = definition.returns;
@@ -3830,6 +3967,9 @@ class OperatorNode extends ASTGroup {
             ]);
         });
         let evaluator = this.operatorDefinition.getDefaultEvaluator(mode);
+        if (!evaluator) {
+            throw new EvaluationError(`No evaluator (in mode ${mode.name}} for operator ${this.operatorDefinition.prettyPrint()}`);
+        }
         return evaluator.callNew(childrenValues);
     }
 }
@@ -3846,11 +3986,11 @@ class ParserError extends Error {
 }
 // ASTNode that might still have tokens in it
 class UnprocessedASTNode {
-    constructor(nodeType, type, info, children) {
-        this.type = type;
+    constructor(nodeType, info, children) {
         this.nodeType = nodeType;
         this.info = info;
         this.children = children;
+        this.type = "node";
     }
     applyAll(f, childrenFirst = false) {
         let children = this.children;
@@ -4165,10 +4305,10 @@ function processConstantsAndVariables(tokens) {
             switch (token.type) {
                 case 'constant':
                     let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real');
-                    node = new UnprocessedASTNode("constant", type, { value: token.value, token, startToken: token, endToken: token }, []);
+                    node = new UnprocessedASTNode("constant", { value: token.value, token, startToken: token, endToken: token, type }, []);
                     break;
                 case 'variable':
-                    node = new UnprocessedASTNode("variable", null, { name: token.name, token, startToken: token, endToken: token }, []);
+                    node = new UnprocessedASTNode("variable", { name: token.name, token, startToken: token, endToken: token }, []);
                     break;
                 default:
                     continue;
@@ -4191,7 +4331,7 @@ function processParentheses(rootNode) {
             if (indices) {
                 parensRemaining = true;
                 let [startIndex, endIndex, startToken, endToken] = indices;
-                let newNode = new UnprocessedASTNode("group", null, {}, []);
+                let newNode = new UnprocessedASTNode("group", {}, []);
                 let expr = node.children.splice(startIndex, endIndex - startIndex + 1, newNode);
                 newNode.children = expr.slice(1, expr.length - 1);
             }
@@ -4206,12 +4346,12 @@ function processFunctions(rootNode) {
         let children = node.children;
         for (let i = 0; i < children.length; ++i) {
             let token = children[i];
-            if (token.type === 'function') {
+            if (!(token instanceof UnprocessedASTNode) && token.type === 'function') {
                 let nextNode = children[i + 1];
                 if (!nextNode || !(nextNode instanceof UnprocessedASTNode)) {
                     raiseUnknownParserError();
                 }
-                let newNode = new UnprocessedASTNode("operator", null /* unknown type */, { name: token.name, isFunction: true }, nextNode.children);
+                let newNode = new UnprocessedASTNode("operator", { name: token.name, isFunction: true }, nextNode.children);
                 children[i] = newNode;
                 // Take children from the node coming immediately after
                 newNode.children = nextNode.children;
@@ -4234,7 +4374,7 @@ function combineBinaryOperator(node, i) {
     if (!(prevChild instanceof UnprocessedASTNode) || !(nextChild instanceof UnprocessedASTNode)) {
         raiseUnknownParserError();
     }
-    let newNode = new UnprocessedASTNode("operator", null, { name: child.op }, [prevChild, nextChild]);
+    let newNode = new UnprocessedASTNode("operator", { name: child.op }, [prevChild, nextChild]);
     children.splice(i - 1, 3, newNode);
 }
 // Process the highest precedence operators. Note that e^x^2 = (e^x)^2 and e^-x^2 = e^(-x^2).
@@ -4250,9 +4390,10 @@ function processUnaryAndExponentiation(root) {
                 continue;
             if (child.op === '-' || child.op === '+') {
                 // If the preceding token is an unprocessed non-operator token, or node, then it's a binary expression
-                if (i !== 0 && children[i - 1].type !== 'operator')
+                let preceding = children[i - 1];
+                if (i !== 0 && ('type' in preceding) && (preceding.type !== 'operator'))
                     continue;
-                let newNode = new UnprocessedASTNode("operator", null, { name: child.op }, [children[i + 1]]);
+                let newNode = new UnprocessedASTNode("operator", { name: child.op }, [children[i + 1]]);
                 children.splice(i, 2, newNode);
             }
             else if (child.op === '^') {
@@ -4315,7 +4456,7 @@ function processComparisonChains(root) {
                 if (comparisonChainFound) {
                     // The nodes i, i+2, i+4, ..., j-4, j-2 are all comparison nodes. Thus, all nodes in the range i-1 ... j-1
                     // should be included in the comparison chain
-                    let comparisonChain = new UnprocessedASTNode("operator", null, { name: 'comparison_chain' }, []);
+                    let comparisonChain = new UnprocessedASTNode("operator", { name: 'comparison_chain' }, []);
                     // Looks something like [ ASTNode, '<', ASTNode, '<=', ASTNode ]
                     let removedChildren = children.splice(i - 1, j - i + 1, comparisonChain // inserts the comparison chain as replacement
                     );
@@ -4427,7 +4568,7 @@ function parseTokens(tokens, string) {
     // Placed here because all further nodes will be groups or OperatorNodes
     processConstantsAndVariables(tokens);
     // Everything is done recursively within this root node
-    let root = new UnprocessedASTNode("group", null, {}, tokens);
+    let root = new UnprocessedASTNode("group", {}, tokens);
     processParentheses(root);
     processFunctions(root);
     // Order of operations: unary -/+, ^ (all right to left, together); PEMDAS
@@ -4502,399 +4643,655 @@ function parseString(string) {
     return convertToASTNode(string, parsed);
 }
 
+// An assignment graph is a (mathematical or concrete) abstraction of a set of assignments that would occur in a given
+class AssignmentGraph {
+    /**
+     * Iterate over input variables—variables which are either static or provided as arguments to the function
+     */
+    *inputNodes() {
+        let entries = this.nodes.entries();
+        for (let [name, entry] of entries) {
+            if (entry.isInput) {
+                yield [name, entry];
+            }
+        }
+    }
+    *nodesInOrder() {
+        // Starting at $ret, yield notes from left to right in the order they are needed
+        let nodes = this.nodes;
+        let enteredNodes = new Set();
+        let stack = ["$ret"]; // last element in stack is the element we will recurse into
+        let iters = 0;
+        const MAX_ITERS = 10000; // prevent infinite loopage
+        while (iters < MAX_ITERS && stack.length !== 0) {
+            let name = stack[stack.length - 1];
+            let node = nodes.get(name);
+            if (!node) {
+                throw new CompilationError(`Could not find node with name ${name}`);
+            }
+            if (enteredNodes.has(name)) {
+                yield [name, node];
+                stack.pop();
+            }
+            else {
+                if (node.args) {
+                    let args = node.args;
+                    for (let i = args.length - 1; i >= 0; --i) {
+                        if (!enteredNodes.has(args[i]))
+                            stack.push(args[i]); // push children in reverse order, so that we examine the first child first
+                    }
+                }
+                enteredNodes.add(name);
+            }
+            iters++;
+        }
+        if (iters === MAX_ITERS) {
+            throw new CompilationError("Infinite loop in assignment graph");
+        }
+    }
+}
+class MathematicalAssignmentGraph extends AssignmentGraph {
+}
+class ConcreteAssignmentGraph extends AssignmentGraph {
+    optimize(opts = {}) {
+        // Crude optimization
+    }
+}
+
+class Assembler {
+    constructor() {
+        let preamble = this.preamble = new PlainCodeFragment();
+        let main = this.main = new PlainCodeFragment();
+        let fs = this.fragments = new Map();
+        fs.set("main", main);
+        fs.set("preamble", preamble); // special code fragment
+        this.inputFormat = [];
+    }
+    add(f, fragmentName = "main") {
+        let fragment = (fragmentName === "main") ? this.main : this.fragments.get(fragmentName);
+        if (!fragment) {
+            throw new CompilationError(`Unknown fragment name ${fragmentName}`);
+        }
+        fragment.add(f);
+    }
+    prepareConcreteGraph(cGraph, target) {
+        let neededInputs = Array.from(cGraph.inputNodes());
+        let inputFormat = target.inputFormat;
+        let usesScope = inputFormat.includes("scope");
+        let typechecks = target.typechecks;
+        for (let [name, node] of neededInputs) {
+            if (inputFormat.includes(name)) {
+                // Variable is immediately defined
+                if (typechecks) {
+                    let f = new TypecheckFragment();
+                    f.name = name;
+                    f.concreteType = node.type;
+                    // TODO
+                }
+            }
+            else {
+                if (usesScope) {
+                    let f = new VariableDefinitionCodeFragment();
+                    f.name = name;
+                    f.value = `scope.${name}`;
+                    f.verbatim = true;
+                    this.add(f);
+                }
+                else {
+                    throw new CompilationError(`Can't find variable ${name}`);
+                }
+            }
+        }
+        this.inputFormat = inputFormat;
+        // First fragment in main is to get the input variables out of the arguments
+        for (let [name, node] of cGraph.nodesInOrder()) {
+            // Don't need to do anything if not input; everything taken care of above
+            if (!node.isInput) {
+                let ev = node.evaluator;
+                if (ev) {
+                    let loc = ev.isConstant ? "preamble" : "main"; // put in preamble if it's a constant
+                    let construct = ev.evalType === "new";
+                    if (construct || loc === "preamble") {
+                        let f = new VariableDefinitionCodeFragment();
+                        f.name = name;
+                        if (ev.primitive) {
+                            f.func = ev.primitive;
+                        }
+                        else {
+                            f.func = ev.func;
+                        }
+                        f.args = node.args;
+                        f.construct = construct;
+                        this.add(f, loc);
+                    }
+                    else {
+                        // writes evaluator
+                        let f = new InvokeVoidFunctionCodeFragment();
+                        f.func = ev.func;
+                        f.args = [...node.args, name]; // writes to name
+                        let cr = new VariableDefinitionCodeFragment();
+                        cr.name = name;
+                        cr.args = [];
+                        cr.func = node.type.init; // create the variable in the preamble
+                        cr.construct = true;
+                        this.add(f, "main");
+                        this.add(cr, "preamble");
+                    }
+                }
+                else {
+                    if (node.value !== undefined) { // Constant
+                        let n = new VariableDefinitionCodeFragment();
+                        n.name = name;
+                        n.value = node.value;
+                        n.construct = true;
+                        this.add(n, "preamble");
+                    }
+                }
+            }
+            if (name === "$ret") { // single return statement
+                this.add("return $ret;");
+            }
+        }
+    }
+    compile() {
+        // Map of closure var names to imported objects to be passed into the closure
+        let imports = new Map();
+        let exports = new Map();
+        let internalFunctions = new Map();
+        addInternalFunction([], "preamble");
+        addInternalFunction([], "main");
+        let writingTo = internalFunctions.get("main");
+        function importObject(o) {
+            let existing = imports.get(o);
+            if (existing !== undefined) {
+                return existing;
+            }
+            let name = "$import_" + genVariableName();
+            imports.set(o, name);
+            return name;
+        }
+        function enterFunction(fName) {
+            let intF = internalFunctions.get(fName);
+            if (!intF) {
+                throw new CompilationError(`Unrecognized internal function name ${intF}`);
+            }
+            writingTo = intF;
+        }
+        function write(s) {
+            writingTo.text += s;
+        }
+        function add(s, fName = "") {
+            if (fName) {
+                // TODO undef check
+                internalFunctions.get(fName).text += s;
+            }
+            else {
+                write(s);
+            }
+        }
+        function addMain(s) {
+            add(s, "main");
+        }
+        function addPreamble(s) {
+            add(s, "preamble");
+        }
+        function addInternalFunction(args, forcedName = "") {
+            let name = forcedName || ("$function_" + genVariableName());
+            internalFunctions.set(name, {
+                args: [],
+                text: ""
+            });
+            return name;
+        }
+        function addExport(exportName, internalName) {
+            if (exports.get(exportName)) {
+                throw new CompilationError(`Duplicate export name ${exportName}`);
+            }
+            exports.set(exportName, internalName);
+        }
+        function assembleInternalFunction(fName) {
+            let f = internalFunctions.get(fName);
+            if (!f) {
+                throw new CompilationError(`Failed to compile internal function ${fName} (not found)`);
+            }
+            let { args, text } = f;
+            let argsJoined = args.join(', ');
+            return `function ${fName}(${argsJoined}) {\n` + text + "}\n";
+        }
+        let env = {
+            assembler: this,
+            importFunction: importObject,
+            importValue: importObject,
+            add,
+            addInternalFunction,
+            addMain,
+            addPreamble,
+            enterMain: () => {
+                enterFunction("main");
+            },
+            enterPreamble: () => {
+                enterFunction("preamble");
+            },
+            enterFunction,
+            addExport
+        };
+        enterFunction("main");
+        this.main.compileToEnv(env);
+        // Preamble compilation should occur after all internal compilations
+        enterFunction("preamble");
+        this.preamble.compileToEnv(env);
+        let mainF = internalFunctions.get("main");
+        let preambleF = internalFunctions.get("preamble");
+        // The closure has the following structure:
+        // function ($import_$1, $import_$2, ...) {
+        //   var $2 = $import_$1()
+        //   // ... preamble ...
+        //   function main (scope, ... input format ...) {
+        //      // Function body
+        //      return $ret
+        //   }
+        //   return { evaluate: main }  // exports
+        // }
+        let importArray = []; // passed arguments to closure
+        let importNames = []; // closure argument names
+        for (let [o, name] of imports.entries()) {
+            importArray.push(o);
+            importNames.push(name);
+        }
+        mainF.args = this.inputFormat;
+        preambleF.args = importNames; // unused
+        let fsText = "";
+        for (let fName of internalFunctions.keys()) {
+            if (fName !== "preamble")
+                fsText += assembleInternalFunction(fName);
+        }
+        addExport("evaluate", "main");
+        // Build export text
+        let exportText = "return {";
+        for (let [name, e] of exports.entries()) {
+            exportText += `${name}: ${e},`;
+        }
+        exportText += "}";
+        let fBody = preambleF.text + fsText + exportText;
+        //console.log(fBody)
+        // Invoke the closure
+        let result = (new Function(...importNames, fBody)).apply(null, importArray);
+        return {
+            result
+        };
+    }
+}
+class TypecheckFragment {
+    compileToEnv(env) {
+        let t = this.concreteType;
+        let tc = t.typecheck;
+        let tcv = t.typecheckVerbose;
+        if (!tc) {
+            throw new CompilationError(`No defined typecheck for concrete type ${t.toHashStr()}`);
+        }
+        env.importFunction(tc);
+        tcv ? env.importFunction(tcv) : ''; // if no verbose typecheck available, don't include it
+        this.name;
+        /*env.addMain(`if (${typecheckFast}(${this.name}) {
+    
+        }`)*/
+    }
+}
+// Just a group of code fragments
+class PlainCodeFragment {
+    constructor() {
+        this.contents = [];
+    }
+    add(f) {
+        this.contents.push(f);
+    }
+    compileToEnv(env) {
+        // Just compile all children
+        this.contents.map(c => assembleFragment(env, c));
+    }
+}
+class InvokeVoidFunctionCodeFragment {
+    compileToEnv(env) {
+        let { func, args } = this;
+        args = args !== null && args !== void 0 ? args : [];
+        let s = args.join(', ');
+        env.add(`${env.importFunction(func)}(${s});\n`);
+    }
+}
+function assembleFragment(env, f) {
+    (typeof f === "string") ? env.add(f) : f.compileToEnv(env);
+}
+class VariableDefinitionCodeFragment {
+    compileToEnv(env) {
+        let { name, func, args, value, verbatim, construct } = this;
+        args = args !== null && args !== void 0 ? args : [];
+        let v = "";
+        if (typeof func === "function") {
+            let s = args.join(', ');
+            v = `${env.importFunction(func)}(${s})`;
+            // Comma separated, etc.
+        }
+        else if (typeof func === "string") {
+            // Primitive
+            let len = args.length;
+            if (len === 0 || len > 2) {
+                // TODO specificity
+                throw new CompilationError(`Invalid number of arguments (${len}) to primitive ${func}`);
+            }
+            v = (len === 1) ? `${func}(${args[0]})` // unary
+                : `(${args[0]}) ${func} (${args[1]})`; // binary
+        }
+        else {
+            v = verbatim ? (value + '') : env.importValue(value);
+        }
+        env.add(`${construct ? "var " : ""}${name} = ${v};\n`);
+    }
+}
+
 class CompilationError extends Error {
     constructor(message) {
         super(message);
         this.name = 'CompilationError';
     }
 }
-/**
- * An assignment graph is not exactly a graph... but whatever. It is a series of assignments, potentially with branches
- * (not yet implemented).
- *
- * Each element in the list of assignments defines exactly one variable. For example { type: "assignment", name: "$2",
- * operatorDefinition: OperatorDefinition, mathematicalType: MathematicalType, args: ["x", "$1"] } is an assignment
- */
-class AssignmentGraphNode {
-    constructor(parentGraph) {
-        this.parentGraph = parentGraph;
-        this.mathematicalType = null;
-        this.concreteType = null;
-        this.operatorDefinition = null;
-        this.evaluator = null;
-        this.nodeType = "constant";
-        this.children = [];
-        this.associatedASTNode = null;
-    }
-    /**
-     * Apply a function to this node and all of its children, recursively.
-     * @param func {Function} The callback function. We call it each time with (node, depth) as arguments
-     * @param childrenFirst {boolean} Whether to call the callback function for each child first, or for the parent first.
-     */
-    applyAll(func, childrenFirst = false) {
-        if (!childrenFirst)
-            func(this);
-        let children = this.children;
-        for (let i = 0; i < children.length; ++i) {
-            let child = children[i];
-            child.applyAll(func, childrenFirst);
-        }
-        if (childrenFirst)
-            func(this);
-        return this;
-    }
-    /**
-     * Get children's mathematical types as an array
-     * @returns {MathematicalType[]}
-     */
-    getChildMathematicalTypes() {
-        return this.children.map(c => c.mathematicalType);
-    }
-    /**
-     * Get children's concrete types as an array
-     * @returns {ConcreteType[]}
-     */
-    getChildConcreteTypes() {
-        return this.children.map(c => c.concreteType);
-    }
-    buildChildrenFromASTNode(depth) {
-        if (depth > 500) // prevent infinite loop
-            throw new CompilationError(`Maximum node depth exceeded`);
-        let children = this.children = [];
-        let associatedASTNode = this.associatedASTNode;
-        if (!associatedASTNode) {
-            throw new CompilationError("?");
-        }
-        // Construct assignment nodes
-        let astChildren = associatedASTNode.children;
-        if (astChildren)
-            for (let i = 0; i < astChildren.length; ++i) {
-                let astChild = astChildren[i];
-                let astCast = associatedASTNode.casts[i];
-                let fail = 0;
-                // Descend down plain groups (which should only have one child each)
-                while (astChild.nodeType() === ASTNode.TYPES.ASTGroup) {
-                    astChild = astChild.children[0];
-                    if (!astChild)
-                        throw new CompilationError(`ASTGroup contains no child??`);
-                    if (fail++ > 500) // prevent infinite loop
-                        throw new CompilationError(`Maximum node depth exceeded`);
-                }
-                // Reached a non-trivial node
-                let child = new AssignmentGraphNode(this.parentGraph);
-                let attachTo = this;
-                if (!astCast.isIdentity()) {
-                    attachTo = new AssignmentGraphNode(this.parentGraph);
-                    attachTo.associatedASTNode = astChild;
-                    attachTo.mathematicalType = astCast.type;
-                    attachTo.nodeType = "operator";
-                    children[i] = attachTo;
-                }
-                let astType;
-                switch (astType = astChild.nodeTypeAsString()) {
-                    case "ConstantNode":
-                        child.nodeType = "constant";
-                        break;
-                    case "VariableNode":
-                        child.nodeType = "variable";
-                        break;
-                    case "OperatorNode":
-                        child.nodeType = "operator";
-                        child.operatorDefinition = astChild.operatorDefinition;
-                        break;
-                    case "ASTGroup":
-                        break;
-                    default:
-                        throw new CompilationError(`Unknown ASTChild type ${astType}`);
-                }
-                child.associatedASTNode = astChild;
-                child.mathematicalType = astChild.type;
-                attachTo.children.push(child);
-            }
-        for (let i = 0; i < children.length; ++i) {
-            children[i].buildChildrenFromASTNode(depth + 1, variableLocations);
-        }
-    }
-}
-/**
- * Contains entirely assignment graph nodes. Assignments are not necessarily JS assignments per se,
- * but they occupy a much, much lower level of graph than the original AST. All casts are converted into assignments, so
- * that each assignment takes a concrete type to the same concrete type. Each assignment graph node is associated with
- * its original AST node.
- *
- * At first, each assignment is an OperatorDefinition or constant. Identity casts are elided immediately for efficiency.
- * Then concrete types and concrete evaluators are established. Finally, code fragments are generated and assembled into
- * a final closure, to be invoked.
- */
-class AssignmentGraph {
-    constructor() {
-        this.root = null;
-    }
-}
-function generateAssignmentGraph(astRoot, opts) {
-    let g = new AssignmentGraph();
-    g.variables = new Map(); // varInfo -> AssignmentGraphNode
-    for (let [varName, varInfo] of maps) {
-        let assnNode = new AssignmentGraphNode(g);
-        assnNode.nodeType = "variable";
-        assnNode.
-            variables.set(varName);
-    }
-}
-function analyzeNode(root, infoMap) {
-    root.applyAll(node => {
-        // For each
-    });
-}
-function logVariableLocations(variableLocations, log) {
-    for (let [varName, varInfo] of variableLocations.entries()) {
-        let location = varInfo.location;
-        switch (location) {
-            case "evaluate":
-                log(() => `Variable ${varName} is to be evaluated (${varInfo.constant ? "constant" : "nonconstant"})`);
-                break;
-            case "static":
-                log(() => `Variable ${varName} is static`);
-                break;
-            case "scope":
-                log(() => `Variable ${varName} is to be found in the scope object`);
-                break;
-            case "input":
-                log(() => `Variable ${varName} is to be found at index ${varInfo.index}`);
-                break;
-        }
-    }
-}
-function getVariableLocations(staticVariables, usedVariables, inputFormat, log, doDebug) {
-    /**
-     * Map between variables and where to find them
-     * @type {Map<string, { location: string }>}
-     */
-    let variableLocations = new Map();
-    // Whether a scope is used
-    let scopeIndex = inputFormat.indexOf('scope');
-    let usesScope = scopeIndex !== -1;
-    if (usesScope) {
-        let dup = inputFormat.indexOf('scope', scopeIndex + 1);
-        if (dup !== -1) {
-            throw new CompilationError(`Scope is defined twice, at indices ${scopeIndex} and ${dup}`);
-        }
-        variableLocations.set("scope", {
-            location: "input",
-            mangledName: "scope",
-            index: scopeIndex
-        });
-    }
-    for (let i = 0; i < inputFormat.length; ++i) {
-        let v = inputFormat[i];
-        if (typeof v !== 'string') {
-            throw new CompilationError(`Input variable at index ${i} is not a string`);
-        }
-        if (v === "scope")
-            continue;
-        if (!usedVariables.get(v)) {
-            throw new CompilationError(`Input variable ${v} at index ${i} is unused`);
-        }
-        variableLocations.set(v, {
-            location: "input",
-            mangledName: v,
-            index: i
-        });
-    }
-    for (let [varName, varInfo] of usedVariables.entries()) {
-        let definition = varInfo.operatorDefinition;
-        let existingLocation = variableLocations.get(varName);
-        if (definition) { // variable is to be evaluated, as in a builtin variable
-            if (existingLocation) {
-                // TODO descriptive
-                throw new CompilationError(`Variable ${varName} is a defined constant`);
-            }
-            variableLocations.set(varName, {
-                location: "evaluate",
-                operatorDefinition: definition,
-                mangledName: genVariableName(),
-                constant: definition.tags.constant
-            });
-        }
-        else {
-            if (existingLocation)
-                continue;
-            if (usesScope) {
-                // If a scope is used, assume the variable lies in the scope
-                variableLocations.set(varName, {
-                    location: "scope",
-                    mangledName: varName // okay to not mangle this
-                });
-                continue;
-            }
-            let staticInfo = staticVariables.get(varName);
-            if (staticInfo) {
-                variableLocations.set(varName, {
-                    location: "static",
-                    mangledName: genVariableName(),
-                    info: staticInfo
-                });
-            }
-            else {
-                // If all else fails, assume static with no information
-                variableLocations.set(varName, {
-                    location: "static",
-                    mangledName: genVariableName(),
-                    info: null
-                });
-            }
-        }
-    }
-    if (doDebug) {
-        logVariableLocations(variableLocations, log);
-    }
-    return {
-        usesScope,
-        variableLocations
-    };
-}
-function checkInputFormat(inputFormat) {
-    if (!Array.isArray(inputFormat)) {
-        if (typeof inputFormat !== "string") {
-            throw new CompilationError("inputFormat must be an array or string");
-        }
-        inputFormat = [inputFormat];
-    }
-    for (let i = 0; i < inputFormat.length; ++i) {
-        let varName = inputFormat[i];
-        for (let j = i + 1; j < inputFormat.length; ++j) {
-            if (varName !== inputFormat[j]) {
-                throw new CompilationError(`Variable ${varName} is defined twice (at indices ${i} and ${j})`);
-            }
-        }
-    }
-    return inputFormat;
-}
 let id = 0;
 /**
- * Generate a unique variable name that will not conflict with other names
+ * Generate a unique variable name that will not conflict with other names (locally or globally; no name will ever be
+ * returned twice)
  * @returns {string}
  */
 function genVariableName() {
     return "$" + (++id);
 }
-// Write a function which checks whether a string is a valid JS variable name (used for detecting accidental stuff, not
-// sanitizing). $ is not allowed.
-function isValidVariable(name) {
-    return typeof name === "string" && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+const defaultTarget = {
+    mode: "normal",
+    inputFormat: "scope",
+    typechecks: true,
+    returnNew: true
+};
+// -1 if fine, otherwise, index of problematic
+function checkStringArray(o) {
+    for (let i = 0; i < o.length; ++i) {
+        if (typeof o[i] !== "string") {
+            return i;
+        }
+    }
+    return -1;
 }
-function checkVariableNames(variableLocations) {
-    for (let varName in variableLocations.values()) {
-        if (!isValidVariable(varName)) {
-            throw new CompilationError(`Invalid variable name ${varName}`);
+// Throws if an input format is invalid (i.e., if there are two arguments with the same name)
+function checkInputFormat(inputFormat) {
+    let p = checkStringArray(inputFormat);
+    if (p !== -1) {
+        throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`);
+    }
+    for (let i = 0; i < inputFormat.length; ++i) {
+        let varName = inputFormat[i];
+        for (let j = i + 1; j < inputFormat.length; ++j) {
+            if (varName === inputFormat[j]) {
+                throw new CompilationError(`Variable ${varName} is defined twice (at indices ${i} and ${j})`);
+            }
         }
     }
 }
-function compileTarget(root, target, opts) {
-    var _a, _b, _c;
-    if (typeof target !== "object") {
-        throw new CompilationError(`Target description must be a JS object, not ${typeof target}`);
+function fillTargetOptions(nodeOpts, opts, rootProperties, index) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (typeof opts !== "object") {
+        throw new CompilationError(`Provided target option at index ${index} is not an object`);
     }
-    const doDebug = (_a = opts.debug) !== null && _a !== void 0 ? _a : true;
-    let debugLog = [];
-    opts.nodeInformation;
-    // For debugging purposes
-    function log(msg) {
-        if (!doDebug)
-            return;
-        if (typeof msg === "function") { // avoid unnecessary string computations when not debugging
-            msg = msg();
-        }
-        debugLog.push(msg);
+    let givenMode = (_a = opts.mode) !== null && _a !== void 0 ? _a : "normal";
+    let mode = toEvaluationMode(givenMode, true /* throw on error */);
+    let typechecks = (_c = (_b = opts.typechecks) !== null && _b !== void 0 ? _b : nodeOpts.typechecks) !== null && _c !== void 0 ? _c : true;
+    let returnNew = (_e = (_d = opts.returnNew) !== null && _d !== void 0 ? _d : nodeOpts.returnNew) !== null && _e !== void 0 ? _e : true;
+    let inputFormat = (_f = opts.inputFormat) !== null && _f !== void 0 ? _f : "scope";
+    let staticVariables = (_g = nodeOpts.staticVariables) !== null && _g !== void 0 ? _g : [];
+    if (typeof inputFormat === "string") {
+        inputFormat = [inputFormat];
     }
-    let mode = target.mode;
-    if (mode === undefined) {
-        log("Evaluation mode not given; defaulting to normal");
-        mode = "normal";
+    inputFormat = inputFormat;
+    checkInputFormat(inputFormat);
+    if (!Array.isArray(staticVariables)) {
+        throw new CompilationError(`Static variables must be an array`);
     }
-    try {
-        mode = toEvaluationMode(target.mode);
+    let p = checkStringArray(staticVariables);
+    if (p !== -1) {
+        throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`);
     }
-    catch (e) {
-        // Re-raise error
-        throw new CompilationError(e.message);
-    }
-    let inputFormat = target.inputFormat;
-    inputFormat = checkInputFormat(inputFormat);
-    // Compute variable locations; a variable is either provided as an input directly, provided in the scope object,
-    // an operator definition, or (if all fails) a static variable. Non-builtin variables are presumed to be in the scope
-    // if not explicitly declared to be static
-    let staticVariables = (_b = opts.staticVariables) !== null && _b !== void 0 ? _b : [];
-    let usedVariables = opts.usedVariables;
-    (_c = opts.typechecks) !== null && _c !== void 0 ? _c : true;
-    let { variableLocations, usesScope } = getVariableLocations(staticVariables, usedVariables, inputFormat, log, doDebug);
-    checkVariableNames(variableLocations);
-    // The evaluation procedure is as follows:
-    //  - Get all variables from their respective locations
-    //  - If enabled, typecheck and convert variables
-    //  - Compute each node in sequence, abstracted as a set of assignments
-    //  - Return the result
-    let assnGraph = generateAssignmentGraph(); // Elides identity casts and single-element ASTGroups
     return {
-        mode,
-        assnGraph,
-        debug: debugLog
+        mode: mode,
+        typechecks,
+        returnNew,
+        inputFormat,
+        staticVariables,
+        usedVariables: rootProperties.usedVariables
     };
 }
-function createInformationMap(root) {
-    let m = new Map();
-    root.applyAll(node => {
-        m.set(node, {});
-    });
-    return m;
+function createAssnGraph(root) {
+    let graph = new MathematicalAssignmentGraph();
+    let assnMap = new Map();
+    // ASTNode -> graph node name
+    let astToGraphMap = new Map();
+    astToGraphMap.set(root, "$ret");
+    function defineGraphNode(name, astNode, inf) {
+        if (astNode) {
+            astToGraphMap.set(astNode, name);
+        }
+        assnMap.set(name, inf);
+    }
+    // Implicitly left to right
+    root.applyAll((astNode) => {
+        var _a, _b;
+        let gNode = null;
+        let name = (_a = astToGraphMap.get(astNode)) !== null && _a !== void 0 ? _a : genVariableName();
+        switch (astNode.nodeType()) {
+            case ASTNode.TYPES.VariableNode: {
+                if (astToGraphMap.get(astNode)) {
+                    // Only define variables once
+                    return;
+                }
+                if (!astNode.operatorDefinition) {
+                    name = astNode.name;
+                    gNode = {
+                        name,
+                        type: astNode.type,
+                        isConditional: false,
+                        isCast: false,
+                        isInput: true,
+                        astNode
+                    };
+                    break;
+                }
+            }
+            // Fall through
+            case ASTNode.TYPES.OperatorNode:
+                let n = astNode;
+                // @ts-ignore
+                let args = (_b = n.children) !== null && _b !== void 0 ? _b : [];
+                // @ts-ignore
+                let casts = (args.length === 0) ? [] : n.casts;
+                let castedArgs = casts.map((cast, i) => {
+                    let arg = args[i];
+                    let argName = astToGraphMap.get(arg);
+                    if (!argName) {
+                        throw new CompilationError("?");
+                    }
+                    if (cast.isIdentity()) {
+                        return argName;
+                    }
+                    let castedArgName = genVariableName();
+                    // Create node for the cast
+                    defineGraphNode(castedArgName, arg, {
+                        name: castedArgName,
+                        type: cast.dstType(),
+                        isConditional: false,
+                        isCast: true,
+                        isInput: false,
+                        args: [argName],
+                        operatorDefinition: cast,
+                        astNode: arg // for casts, store the argument as the corresponding node
+                    });
+                    return castedArgName;
+                });
+                gNode = {
+                    name,
+                    type: n.type,
+                    isConditional: false,
+                    isCast: false,
+                    isInput: false,
+                    args: castedArgs,
+                    operatorDefinition: n.operatorDefinition,
+                    astNode
+                };
+                break;
+            case ASTNode.TYPES.ASTGroup:
+                // Groups are entirely elided by mapping them to the variable name of their only child
+                let c = astNode.children[0];
+                if (!c) {
+                    throw new CompilationError("Empty ASTGroup in expression");
+                }
+                astToGraphMap.set(astNode, astToGraphMap.get(c));
+                return;
+            case ASTNode.TYPES.ConstantNode:
+                gNode = {
+                    name,
+                    type: astNode.type,
+                    isConditional: false,
+                    isCast: false,
+                    isInput: false,
+                    value: astNode.value,
+                    astNode
+                };
+                break;
+            case ASTNode.TYPES.ASTNode:
+                throw new CompilationError(`Raw ASTNode in expression`);
+        }
+        defineGraphNode(name, astNode, gNode);
+    }, false /* all children */, true /* children first */);
+    graph.nodes = assnMap;
+    return graph;
+}
+/**
+ * Attempt to convert a mathematical assignment graph into a concrete graph
+ * @param mGraph Mathematically processed and optimized graph
+ * @param target (Filled) compile target
+ * @param index Index in the passed target array
+ */
+function concretizeAssnGraph(mGraph, target, index) {
+    let cNodes = new Map();
+    let mode = target.mode;
+    function defineGraphNode(name, cNode) {
+        cNodes.set(name, cNode);
+    }
+    function raiseNoConcreteType(mType) {
+        throw new CompilationError(`No concrete type found in mode ${mode.toString()} for mathematical type ${mType.toHashStr()}`);
+    }
+    // Compute concrete types of input nodes first
+    for (let [name, mNode] of mGraph.inputNodes()) {
+        let mType = mNode.type;
+        let cType = mode.getConcreteType(mType);
+        if (!cType)
+            raiseNoConcreteType(mType);
+        defineGraphNode(name, {
+            name,
+            type: cType,
+            isConditional: mNode.isConditional,
+            isCast: mNode.isCast,
+            isInput: mNode.isInput,
+            astNode: mNode.astNode
+        });
+    }
+    for (let [name, mNode] of mGraph.nodesInOrder()) {
+        let mType = mNode.type;
+        let cType = mode.getConcreteType(mType);
+        if (!cType)
+            raiseNoConcreteType(mType);
+        let o = mNode.operatorDefinition;
+        if (o) {
+            let argTypes = mNode.args.map(s => {
+                let cNode = cNodes.get(s);
+                if (!cNode)
+                    throw new CompilationError("?");
+                return cNode.type;
+            });
+            let evalType = "writes"; // preferred
+            if (name === "$ret") {
+                if (target.returnNew) { // if returning, prefer a new evaluator (for efficiency's sake)
+                    evalType = "new";
+                }
+            }
+            let evaluator = o.findEvaluator(argTypes, { evalType });
+            if (!evaluator) {
+                throw new CompilationError(`Unable to find evaluator ${o.prettyPrint()} in mode ${mode.toString()}, accepting concrete types (${argTypes.map(c => c.toHashStr()).join(' ')})`);
+            }
+            defineGraphNode(name, {
+                name,
+                type: cType,
+                isConditional: mNode.isConditional,
+                isCast: mNode.isCast,
+                isInput: mNode.isInput,
+                evaluator,
+                args: mNode.args,
+                astNode: mNode.astNode
+            });
+        }
+        else {
+            defineGraphNode(name, {
+                name,
+                type: cType,
+                isConditional: mNode.isConditional,
+                isCast: mNode.isCast,
+                isInput: mNode.isInput,
+                astNode: mNode.astNode,
+                value: mNode.value
+            });
+        }
+    }
+    let graph = new ConcreteAssignmentGraph();
+    graph.nodes = cNodes;
+    return graph;
 }
 /**
  * Compile an ASTNode into an evaluable function or functions. This should be preferred for any expression that will be
  * evaluated many times. This function needs to be pretty well optimized...
  * @param root
- * @param modes
+ * @param options
  */
-function compileNode(root, { targets = {
-    // Evaluation mode
-    mode: "normal",
-    // Function call will accept arguments as such. Special values: "scope" is a plain JS object which contains
-    // variables as key–value pairs. "scope_map" is a JS Map which contains variables as key–value pairs.
-    inputFormat: ["scope"],
-    // Static variables are actually OperatorDefinitions, since we want them to be evaluable in different modes. For
-    // example, pi might be 3.14159... in normal mode, but [3.1415926535897927, 3.1415926535897936] in interval mode.
-    // The values of (non-constant) static variables may be explicitly set with the setStatic(name, value) function,
-    // which will be returned.... hm.
-    // Whether to do typechecks on all inputted variables (might be slightly slower)
-    typechecks: true,
-    returnMutable: true,
-    returns: "value"
-}, staticVariables = [] } = {}) {
-    if (!(root instanceof ASTNode)) {
+function compileNode(root, options = {}) {
+    if (!(root instanceof ASTNode))
         throw new CompilationError("First argument to compileNode must be an ASTNode");
-    }
-    if (!root.allResolved()) {
+    if (!root.allResolved())
         throw new CompilationError("Node types must be resolved with .resolveTypes() first");
+    let targetOpts = options.targets;
+    if (!targetOpts) {
+        targetOpts = defaultTarget;
     }
-    let nodeInformation = createInformationMap(root);
-    let usedVariables = root.getVariableDependencies();
-    analyzeNode(root);
-    let opts = {
-        staticVariables,
-        nodeInformation,
-        usedVariables
+    if (!Array.isArray(targetOpts)) {
+        targetOpts = [targetOpts];
+    }
+    let rootProperties = {
+        usedVariables: root.getVariableDependencies()
     };
-    let out = [];
-    let targetIsArray = Array.isArray(targets);
-    if (!targetIsArray) {
-        targets = [targets];
+    targetOpts = targetOpts;
+    // Convert each target to a full target
+    let targets = [];
+    for (let i = 0; i < targetOpts.length; ++i) {
+        let to = targetOpts[i];
+        targets.push(fillTargetOptions(options, to, rootProperties, i));
     }
-    for (let target of targets) {
-        out.push(compileTarget(root, target, opts));
+    let mAssignmentGraph = createAssnGraph(root);
+    for (let i = 0; i < targets.length; ++i) {
+        let target = targets[i];
+        let cAssignmentGraph = concretizeAssnGraph(mAssignmentGraph, target);
+        cAssignmentGraph.optimize();
+        // The crude procedure to build a target is now as follows:
+        // - Variable retrieval from the input
+        // - Typechecks, if desired
+        // - Compiled assignment graph
+        // - Return $ret
+        let assembler = new Assembler();
+        assembler.prepareConcreteGraph(cAssignmentGraph, target);
+        return assembler.compile().result;
     }
-    if (!targetIsArray) {
-        out = out[0];
-    }
-    return out;
+    return mAssignmentGraph;
 }
 
 let intToReal = [
@@ -4981,5 +5378,5 @@ function complexToRGB(c) {
     return hslToRGB(h, s, l);
 }
 
-export { BigFloat, CompilationError, Complex, ParserError, ROUNDING_MODE, addMantissas, compileNode, complexToRGB, countFloatsBetween, floatStore, flrLog2, frExp, gammaReal, getExponent, getExponentAndMantissa, getFloatStoreExponent, getFloatStoreMantissa, getMantissa, getTokens, getTrailingInfo, getWorkingPrecision, getWorkingRM, intView, integerExp, isDenormal, isValidVariableName, mantissaClz, mantissaCtz, neededWordsForPrecision, parseString, pow2, prettyPrintMantissa, rationalExp, resolveOperatorDefinition, roundDown, roundMantissaToPrecision, roundUp, setFloatStore, setWorkingPrecision, setWorkingRM, subtractMantissas, toBinary, toHex, ulp, ulpError, validateBigFloat, validateMantissa };
+export { BigFloat, CompilationError, Complex, ParserError, ROUNDING_MODE, addMantissas, compileNode, complexToRGB, countFloatsBetween, floatStore, flrLog2, frExp, gammaReal, genVariableName, getExponent, getExponentAndMantissa, getFloatStoreExponent, getFloatStoreMantissa, getMantissa, getTokens, getTrailingInfo, getWorkingPrecision, getWorkingRM, intView, integerExp, isDenormal, isValidVariableName, lnGammaReal, mantissaClz, mantissaCtz, neededWordsForPrecision, parseString, pow2, prettyPrintMantissa, rationalExp, resolveOperatorDefinition, roundDown, roundMantissaToPrecision, roundUp, setFloatStore, setWorkingPrecision, setWorkingRM, subtractMantissas, toBinary, toHex, ulp, ulpError, validateBigFloat, validateMantissa };
 //# sourceMappingURL=main.js.map

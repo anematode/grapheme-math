@@ -296,6 +296,7 @@ export class Assembler {
     exportText += "}"
 
     let fBody = preambleF.text + fsText + exportText
+    //console.log(fBody)
 
     // Invoke the closure
     let result = (new Function(...importNames, fBody)).apply(null, importArray)

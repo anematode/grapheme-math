@@ -61,6 +61,14 @@
     let wrapper = document.getElementsByClassName("wrapper")[0]
     let selectedCase
 
+    // flattened (x, y)
+    let testCases = []
+
+    for (let i = 1; i < 1e5; ++i) {
+      testCases.push(i / 2.7)
+      testCases.push(i / 2.7 + 2)
+    }
+
     function getOutput() {
       return selectedCase.getElementsByClassName("output")[0]
     }
@@ -143,17 +151,9 @@
       return s.substring(i + 1, j)
     }
 
-    let $expr = "sin(x)^2+cos(x)^2+2*x^3+4*(x-2)^4+(gamma(log(x) + log(y)) + y*y)*y"
+    let $expr = "gamma(x / y)"
 
     function compileExample() {
-      // flattened (x, y)
-      let testCases = []
-
-      for (let i = 1; i < 1e5; ++i) {
-        testCases.push(i / 2.7)
-        testCases.push(i / 2.7)
-      }
-
       timeStart("parse")
       s = $expr
       n = parseString(s)
@@ -169,26 +169,18 @@
 
       let sum = 0
 
-      timeStart("evaluate")
+      /*timeStart("evaluate")
       for (let i = 0; i < testCases.length; i += 2) {
         let x = testCases[i], y = testCases[i + 1]
 
         sum += e.evaluate(x, y)
       }
-      timeEnd("evaluate")
+      timeEnd("evaluate")*/
 
       log("Sum: ", sum)
     }
 
     function evaluateExample() {
-      // flattened (x, y)
-      let testCases = []
-
-      for (let i = 1; i < 1e5; ++i) {
-        testCases.push(i / 2.7)
-        testCases.push(i / 2.7)
-      }
-
       timeStart("parse")
       s = $expr
       n = parseString(s)
@@ -212,14 +204,6 @@
     }
 
     function mathJSExample () {
-      // flattened (x, y)
-      let testCases = []
-
-      for (let i = 1; i < 1e5; ++i) {
-        testCases.push(i / 2.7)
-        testCases.push(i / 2.7)
-      }
-
       timeStart("parse")
       s = $expr
       n = math.parse(s)
@@ -248,7 +232,7 @@
 
     // warmup
 
-    s = $expr
+    /*s = $expr
     n = parseString(s)
     n = parseString(s)
 
@@ -259,7 +243,7 @@
     e = compileNode(n, {targets: {inputFormat: ['x', 'y']}})
 
     math.parse(s).compile()
-    math.parse(s).compile()
+    math.parse(s).compile()*/
   }
 </script>
 

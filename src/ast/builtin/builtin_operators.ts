@@ -112,6 +112,20 @@ registerOperator(new OperatorDefinition({
   ]
 }))
 
+// int(int)
+registerOperator(new OperatorDefinition({
+  name: 'int',
+  args: ["int"],
+  returns: "int",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "int" ],
+      returns: "int",
+      identity: true
+    })
+  ]
+}))
+
 /**
  * Real operators
  */
@@ -178,6 +192,20 @@ registerOperator(new OperatorDefinition({
       args: [ "real" ],
       returns: "real",
       primitive: "-"
+    })
+  ]
+}))
+
+// real(real)
+registerOperator(new OperatorDefinition({
+  name: 'real',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "real",
+      identity: true
     })
   ]
 }))
@@ -325,6 +353,20 @@ registerOperator(new OperatorDefinition({
         dst.re = x
         dst.im = y
       }
+    })
+  ]
+}))
+
+// complex(complex)
+registerOperator(new OperatorDefinition({
+  name: 'complex',
+  args: ["complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "complex" ],
+      returns: "complex",
+      identity: true
     })
   ]
 }))

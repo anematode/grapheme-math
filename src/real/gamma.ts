@@ -89,6 +89,32 @@ export function gammaReal (x: number): number {
   return 2.5066282746310007 * Math.pow(t, x + 0.5) * Math.exp(-t) * s
 }
 
+export function lnGammaReal (x: number): number {
+  x = +x
+
+  if (!Number.isFinite(x))
+    return Infinity + x
+
+  if (Number.isInteger(x)) {
+    if (x <= 0) return NaN
+  }
+
+  if (x < 0.5) {
+    // Reflection formula
+    return 1.1447298858494002 - (Math.log(Math.sin(Math.PI * x))) - lnGammaReal(1 - x)
+  }
+
+  x -= 1
+  let s = 0.99999999999980993
+
+  for (let i = 0; i < 8; ++i) {
+    s += lanczosCoefficients[i] / (x + i + 1)
+  }
+
+  let t = x + 7.5  // 8 - 0.5
+  return 0.9189385332046728 + Math.log(t) * (x + 0.5) - t + Math.log(s)
+}
+
 /**
  * Factorial function, accepting non-integer arguments.
  * @param x Any floating-point number
