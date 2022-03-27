@@ -88,16 +88,21 @@ export class Assembler {
       if (!node.isInput) {
         let ev = node.evaluator
         if (ev) {
-          let loc = "main" // ev.isConstant ? "preamble" : "main" // put in preamble if it's a constant
+          let loc = ev.isConstant ? "preamble" : "main" // put in preamble if it's a constant
           let construct = ev.evalType === "new"
 
           if (construct || loc === "preamble") {
             let f = new VariableDefinitionCodeFragment()
 
             f.name = name
-            f.func = ev.func
+            if (ev.primitive) {
+              f.func = ev.primitive
+            } else {
+              f.func = ev.func
+            }
             f.args = node.args!
             f.construct = construct
+
 
             this.add(f, loc)
           } else {
@@ -291,7 +296,6 @@ export class Assembler {
     exportText += "}"
 
     let fBody = preambleF.text + fsText + exportText
-    // console.log(fBody)
 
     // Invoke the closure
     let result = (new Function(...importNames, fBody)).apply(null, importArray)
@@ -326,9 +330,9 @@ class TypecheckFragment implements CodeFragment {
 
     let name = this.name
 
-    env.addMain(`if (${typecheckFast}(${this.name}) {
-       
-    }`)
+    /*env.addMain(`if (${typecheckFast}(${this.name}) {
+
+    }`)*/
   }
 }
 

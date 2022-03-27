@@ -442,6 +442,8 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
 
     let cAssignmentGraph = concretizeAssnGraph(mAssignmentGraph, target, i)
 
+    cAssignmentGraph.optimize()
+
     // The crude procedure to build a target is now as follows:
     // - Variable retrieval from the input
     // - Typechecks, if desired
