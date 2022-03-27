@@ -15,6 +15,7 @@ import { ConcreteType, MathematicalType } from "./type.js";
 import { ConcreteEvaluator } from "./evaluator.js";
 import { OperatorDefinition } from "./operator_definition.js";
 import { ASTNode } from "./node.js";
+import { CompilationError } from "./compile";
 
 type NodeBase = {
   // Technically duplicates the information in the Map, but makes things a bit easier. Each node has a unique name,
@@ -72,6 +73,62 @@ class AssignmentGraph<NodeType extends NodeBase> {
 
   // Map node name -> reference
   nodes: Map<string, NodeType>
+
+
+  /**
+   * Iterate over input variables—variables which are either static or provided as arguments to the function
+   */
+  * inputNodes (): Generator<[string, NodeType]> {
+    let entries = this.nodes.entries()
+
+    for (let [name, entry] of entries) {
+      if (entry.isInput) {
+        yield [name, entry]
+      }
+    }
+  }
+
+  * nodesInOrder (): Generator<[string, NodeType]> {
+    // Starting at $ret, yield notes from left to right in the order they are needed
+
+    let nodes = this.nodes
+    let enteredNodes = new Set<string>()
+    let stack = ["$ret"] // last element in stack is the element we will recurse into
+
+    let iters = 0
+    const MAX_ITERS = 10000 // prevent infinite loopage
+
+    while (iters < MAX_ITERS && stack.length !== 0) {
+      let name = stack[stack.length - 1]
+      let node = nodes.get(name)
+
+      if (!node) {
+        throw new CompilationError(`Could not find node with name ${name}`)
+      }
+
+      if (enteredNodes.has(name)) {
+        yield [name, node]
+        stack.pop()
+      } else {
+        if (node.args) {
+          let args = node.args
+
+          for (let i = args.length - 1; i >= 0; --i) {
+            if (!enteredNodes.has(args[i]))
+              stack.push(args[i]) // push children in reverse order, so that we examine the first child first
+          }
+        }
+
+        enteredNodes.add(name)
+      }
+
+      iters++
+    }
+
+    if (iters === MAX_ITERS) {
+      throw new CompilationError("Infinite loop in assignment graph")
+    }
+  }
 }
 
 export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGraphNode> {

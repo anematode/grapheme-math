@@ -2,9 +2,9 @@
 
 // Constants are treated as operators, since they are mathematical in nature and may have any number of concrete impls.
 
-import {OperatorDefinition} from "./operator_definition.js"
-import {ConcreteEvaluator} from "./evaluator.js"
-import {Complex} from "../complex/normal.js"
+import {OperatorDefinition} from "../operator_definition.js"
+import {ConcreteEvaluator} from "../evaluator.js"
+import {Complex} from "../../complex/normal.js"
 
 export const MathematicalConstants = {
   pi: new OperatorDefinition({
@@ -16,7 +16,8 @@ export const MathematicalConstants = {
       new ConcreteEvaluator({
         args: [],
         returns: "real",
-        func: () => Math.PI
+        func: () => Math.PI,
+        isConstant: true
       })
     ]
   }),
@@ -29,7 +30,8 @@ export const MathematicalConstants = {
       new ConcreteEvaluator({
         args: [],
         returns: "real",
-        func: () => Math.E
+        func: () => Math.E,
+        isConstant: true
       })
     ]
   }),
@@ -42,7 +44,8 @@ export const MathematicalConstants = {
       new ConcreteEvaluator({
         args: [],
         returns: "complex",
-        func: () => new Complex(0, 1)
+        func: () => new Complex(0, 1),
+        isConstant: true
       })
     ]
   })

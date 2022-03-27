@@ -31,6 +31,7 @@
 
 import { toConcreteType } from './builtin/builtin_types.js'
 import {ConcreteType} from "./type.js"
+import { MathematicalCast } from "./operator_definition";
 
 const jsPrimitives = Object.freeze(['+', '-', '/', '*', '&&', '||', '==', '!=', '<=', '>=', '<', '>'] as const)
 const unaryPrimitives = {
@@ -57,7 +58,11 @@ type ConcreteEvaluatorParams = {
   /** @defaultValue false */
   identity?: boolean
 
+  /** @defaultValue "" */
   primitive?: AllowedJSPrimitive
+
+  /** @defaultValue false */
+  isConstant?: boolean
 }
 
 export class ConcreteEvaluator {
@@ -79,6 +84,8 @@ export class ConcreteEvaluator {
   evalType: "new" | "write"
   // Underlying JS function that can be called
   func: Function
+  // Completely constant evaluator, e.g., () => Math.E
+  isConstant: boolean
 
   constructor (params: ConcreteEvaluatorParams) {
     this.args = (params.args ?? []).map(toConcreteType)
@@ -98,6 +105,7 @@ export class ConcreteEvaluator {
     // Primitive evaluator symbol (that can basically be evaled, for example "+" in +(real, real) -> real)
     this.primitive = params.primitive ?? ""
     this.func = params.func ?? this.getDefaultFunc()
+    this.isConstant = !!params.isConstant
   }
 
   getDefaultFunc(): Function {
@@ -133,11 +141,14 @@ export class ConcreteEvaluator {
    * needed, >0 for the number of needed casts
    * @param args
    */
-  canCallWith (args) {
-    return castDistance(this.getCasts(args))
+  castDistance (args: Array<ConcreteType>): number {
+    let casts = this.getCasts(args)
+    if (!casts) return -1
+
+    return castDistance(casts)
   }
 
-  getCasts (args) {
+  getCasts (args: Array<ConcreteType>): Array<ConcreteCast> | null {
     if (this.args.length !== args.length) return null
 
     let casts: Array<ConcreteCast> = []
@@ -155,7 +166,7 @@ export class ConcreteEvaluator {
    * Call an evaluator as if it were new (creating a new value if it's a writes evaluator)
    * @param args
    */
-  callNew (args) {
+  callNew (args: Array<any>): any {
     if (this.evalType === "new") {
       return this.func(...args)
     }
@@ -180,11 +191,11 @@ export class ConcreteCast extends ConcreteEvaluator {
     super(params)
   }
 
-  srcType () {
+  srcType (): ConcreteType {
     return this.args[0]
   }
 
-  dstType () {
+  dstType (): ConcreteType {
     return this.returns
   }
 
@@ -193,7 +204,7 @@ export class ConcreteCast extends ConcreteEvaluator {
    * underlying type, like real and int)
    * @returns {boolean}
    */
-  isIdentity () {
+  isIdentity (): boolean {
     return false
   }
 }
@@ -204,7 +215,7 @@ export class IdentityConcreteCast extends ConcreteCast {
     return true
   }
 
-  callNew(args) {
+  callNew (args) {
     return args[0]
   }
 }
@@ -216,23 +227,25 @@ let I = new IdentityConcreteCast({
   func: x => x
 })
 
-const BUILTIN_CONCRETE_CASTS = new Map()
+// src? -> dst? -> cast?
+const BUILTIN_CONCRETE_CASTS: Map<string, Map<string, ConcreteCast>> = new Map()
 
 /**
  * Register a concrete cast from src to dst
  * @param cast
  */
-export function registerConcreteCast (cast) {
+export function registerConcreteCast (cast: ConcreteCast): ConcreteCast {
   const CASTS = BUILTIN_CONCRETE_CASTS
 
-  let srcType = cast.srcType()
-  let dstType = cast.dstType()
+  let srcType = cast.srcType().toHashStr()
+  let dstType = cast.dstType().toHashStr()
 
   if (!CASTS.has(srcType))
-    CASTS.set(srcType.toHashStr(), new Map())
-  let srcCasts = CASTS.get(srcType.toHashStr())
+    CASTS.set(srcType, new Map())
+  let srcCasts = CASTS.get(srcType)! // set above
 
-  srcCasts.set(dstType.toHashStr(), cast)
+  srcCasts.set(dstType, cast)
+
   return cast
 }
 
@@ -255,7 +268,7 @@ export function canConcreteCast (srcType: ConcreteType, dstType: ConcreteType): 
   return !!getConcreteCast(srcType, dstType)
 }
 
-export function getConcreteCasts () {
+export function getConcreteCasts (): Array<ConcreteCast> {
   let casts: Array<ConcreteCast> = []
   for (let castList of BUILTIN_CONCRETE_CASTS.values()) {
     casts.push(...castList.values())
@@ -265,10 +278,10 @@ export function getConcreteCasts () {
 
 /**
  * Determine the number of non-identity casts in a list of casts, and -1 if there is an empty cast somewhere
- * @param casts {MathematicalCast[]}
+ * @param casts
  * @returns {number}
  */
-export function castDistance (casts) {
+export function castDistance (casts: Array<ConcreteCast> | Array<MathematicalCast>): number {
   let count = 0
 
   for (let cast of casts) {

@@ -8,8 +8,14 @@ import {
   VariableNode
 } from "./node.js"
 import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
-import {MathematicalAssignmentGraph, MathematicalGraphNode} from "./assignment_graph";
+import {
+  ConcreteAssignmentGraph,
+  ConcreteGraphNode,
+  MathematicalAssignmentGraph,
+  MathematicalGraphNode
+} from "./assignment_graph";
 import { MathematicalCast } from "./operator_definition";
+import { MathematicalType } from "./type";
 
 
 export class CompilationError extends Error {
@@ -195,15 +201,21 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
 
     switch (astNode.nodeType()) {
       case ASTNode.TYPES.VariableNode: {
-        astNode = astNode as VariableNode
+        if (astToGraphMap.get(astNode)) {
+          // Only define variables once
+          return
+        }
 
         if (!astNode.operatorDefinition) {
+          name = (astNode as VariableNode).name
+
           gNode = {
             name,
             type: astNode.type!,  // must be non-null since it passed null checks earlier
             isConditional: false,
             isCast: false,
-            isInput: true
+            isInput: true,
+            astNode
           }
 
           break
@@ -230,18 +242,21 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
             return argName
           }
 
+          let castedArgName = genVariableName()
+
           // Create node for the cast
-          defineGraphNode(argName, arg, {
-            name: argName,
+          defineGraphNode(castedArgName, arg, {
+            name: castedArgName,
             type: cast.dstType(),
             isConditional: false,
             isCast: true,
             isInput: false,
             args: [ argName ],
-            operatorDefinition: cast
+            operatorDefinition: cast,
+            astNode: arg // for casts, store the argument as the corresponding node
           })
 
-          return argName
+          return castedArgName
         })
 
         gNode = {
@@ -251,7 +266,8 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
           isCast: false,
           isInput: false,
           args: castedArgs,
-          operatorDefinition: n.operatorDefinition!
+          operatorDefinition: n.operatorDefinition!,
+          astNode
         }
 
         break
@@ -271,7 +287,8 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
           isConditional: false,
           isCast: false,
           isInput: false,
-          value: (astNode as ConstantNode).value
+          value: (astNode as ConstantNode).value,
+          astNode
         }
 
         break
@@ -283,6 +300,100 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
   }, false /* all children */, true /* children first */)
 
   graph.nodes = assnMap
+
+  return graph
+}
+
+/**
+ * Attempt to convert a mathematical assignment graph into a concrete graph
+ * @param mGraph Mathematically processed and optimized graph
+ * @param target (Filled) compile target
+ * @param index Index in the passed target array
+ */
+function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: CompileTarget, index: number): ConcreteAssignmentGraph {
+  let cNodes: Map<string, ConcreteGraphNode> = new Map()
+
+  let mode = target.mode
+
+  function defineGraphNode(name: string, cNode: ConcreteGraphNode) {
+    cNodes.set(name, cNode)
+  }
+
+  function raiseNoConcreteType(mType: MathematicalType): never {
+    throw new CompilationError(`No concrete type found in mode ${mode.toString()} for mathematical type ${mType.toHashStr()}`)
+  }
+
+  // Compute concrete types of input nodes first
+  for (let [ name, mNode ] of mGraph.inputNodes()) {
+    let mType = mNode.type
+    let cType = mode.getConcreteType(mType)
+
+    if (!cType)
+      raiseNoConcreteType(mType)
+
+    defineGraphNode(name, {
+      name,
+      type: cType,
+      isConditional: mNode.isConditional,
+      isCast: mNode.isCast,
+      isInput: mNode.isInput,
+      astNode: mNode.astNode
+    })
+  }
+
+  for (let [ name, mNode ] of mGraph.nodesInOrder()) {
+    let mType = mNode.type
+    let cType = mode.getConcreteType(mType)
+
+    if (!cType)
+      raiseNoConcreteType(mType)
+
+    let o = mNode.operatorDefinition
+    if (o) {
+      let argTypes = mNode.args!.map(s => {
+        let cNode = cNodes.get(s)
+        if (!cNode)
+          throw new CompilationError("?")
+
+        return cNode.type
+      })
+
+      let evalType: "writes" | "new" = "writes" // preferred
+      if (name === "$ret") {
+        if (target.returnNew) { // if returning, prefer a new evaluator (for efficiency's sake)
+          evalType = "new"
+        }
+      }
+
+      let evaluator = o.findEvaluator(argTypes, { evalType })
+      if (!evaluator) {
+        throw new CompilationError(`Unable to find evaluator ${o.prettyPrint()} in mode ${mode.toString()}, accepting concrete types (${argTypes.map(c => c.toHashStr()).join(' ')})`)
+      }
+
+      defineGraphNode(name, {
+        name,
+        type: cType,
+        isConditional: mNode.isConditional,
+        isCast: mNode.isCast,
+        isInput: mNode.isInput,
+        evaluator,
+        args: mNode.args,
+        astNode: mNode.astNode
+      })
+    } else {
+      defineGraphNode(name, {
+        name,
+        type: cType,
+        isConditional: mNode.isConditional,
+        isCast: mNode.isCast,
+        isInput: mNode.isInput,
+        astNode: mNode.astNode
+      })
+    }
+  }
+
+  let graph = new ConcreteAssignmentGraph()
+  graph.nodes = cNodes
 
   return graph
 }
@@ -323,6 +434,14 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
   }
 
   let mAssignmentGraph = createAssnGraph(root)
+
+  for (let i = 0; i < targets.length; ++i) {
+    let target = targets[i]
+
+    let cAssignmentGraph = concretizeAssnGraph(mAssignmentGraph, target, i)
+
+    return cAssignmentGraph
+  }
 
   return mAssignmentGraph
 }

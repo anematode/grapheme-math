@@ -1,5 +1,5 @@
 import { toMathematicalType } from './builtin/builtin_types.js'
-import { MathematicalType } from './type.js'
+import { ConcreteType, MathematicalType } from './type.js'
 import {castDistance, ConcreteCast, ConcreteEvaluator} from './evaluator.js'
 import {EvaluationMode, EvaluationModes} from "./eval_modes.js"
 
@@ -47,6 +47,10 @@ type CastDefinitionParams = CastOperatorDefinitionBaseParams & {
 type OperatorDefinitionTags = {
   builtin: boolean
   constant: boolean
+}
+
+type EvaluatorPreferences = {
+  evalType: "new" | "writes"
 }
 
 export class OperatorDefinition {
@@ -146,13 +150,38 @@ export class OperatorDefinition {
     return this.defaultEvaluators.get(mode.name) ?? null
   }
 
+  findEvaluator (args: Array<ConcreteType>, preferences: EvaluatorPreferences): ConcreteEvaluator | null {
+    let evaluators = this.evaluators
+
+    let { evalType } = preferences
+    let best: ConcreteEvaluator | null = null
+
+    for (let i = 0; i < evaluators.length; ++i) {
+      let e = evaluators[i]
+      let dist = e.castDistance(args)
+
+      if (dist === 0) {
+        best = e
+
+        if (e.evalType === evalType) {
+          break
+        }
+      }
+    }
+
+    return best
+  }
+
   /**
    * Check whether this operator can be called with the given mathematical types.
    * @param args
    * @returns -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it
    */
   canCallWith (args: Array<MathematicalType>): number {
-    return castDistance(this.getCasts(args))
+    let casts = this.getCasts(args)
+
+    if (!casts) return -1
+    return castDistance(casts)
   }
 
   /**
