@@ -208,6 +208,76 @@ registerOperator(new OperatorDefinition({
   ]
 }))
 
+registerOperator(new OperatorDefinition({
+  name: 'ln',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "real",
+      func: Math.log
+    })
+  ]
+}))
+
+// TODO function aliasing
+registerOperator(new OperatorDefinition({
+  name: 'log',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "real",
+      func: Math.log
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'sin',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "real",
+      evalType: "new",
+      func: Math.sin
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'cos',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "real",
+      evalType: "new",
+      func: Math.cos
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'tan',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: [ "real" ],
+      returns: "real",
+      evalType: "new",
+      func: Math.tan
+    })
+  ]
+}))
+
+
 /**
  * Complex
  */

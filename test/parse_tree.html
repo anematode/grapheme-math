@@ -57,6 +57,7 @@
         info2 = `Name: ${root.name}`
         break
       case "ASTGroup":
+        info2 = ``
         break
     }
 
@@ -98,7 +99,7 @@
 
       drawAST()
     } catch (e) {
-      document.getElementById("tree").innerHTML = `<p id="error">${e.toString().replaceAll(" ", "&nbsp;")}</p>`
+      document.getElementById("tree").innerHTML = `<p id="error">${(e.stack + '' || e.toString()).replaceAll(" ", "&nbsp;")}</p>`
     }
   }
 

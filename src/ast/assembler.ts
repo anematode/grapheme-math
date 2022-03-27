@@ -118,7 +118,7 @@ export class Assembler {
             this.add(cr, "preamble")
           }
         } else {
-          if (node.value) { // Constant
+          if (node.value !== undefined) { // Constant
             let n = new VariableDefinitionCodeFragment()
 
             n.name = name
@@ -291,6 +291,7 @@ export class Assembler {
     exportText += "}"
 
     let fBody = preambleF.text + fsText + exportText
+    // console.log(fBody)
 
     // Invoke the closure
     let result = (new Function(...importNames, fBody)).apply(null, importArray)

@@ -132,7 +132,7 @@ function checkInputFormat(inputFormat: Array<string>) {
     let varName = inputFormat[i]
 
     for (let j = i + 1; j < inputFormat.length; ++j) {
-      if (varName !== inputFormat[j]) {
+      if (varName === inputFormat[j]) {
         throw new CompilationError(`Variable ${varName} is defined twice (at indices ${i} and ${j})`)
       }
     }
@@ -388,7 +388,8 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
         isConditional: mNode.isConditional,
         isCast: mNode.isCast,
         isInput: mNode.isInput,
-        astNode: mNode.astNode
+        astNode: mNode.astNode,
+        value: mNode.value
       })
     }
   }
@@ -450,7 +451,7 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
     let assembler = new Assembler()
     assembler.prepareConcreteGraph(cAssignmentGraph, target)
 
-    return assembler.compile()
+    return assembler.compile().result
   }
 
   return mAssignmentGraph

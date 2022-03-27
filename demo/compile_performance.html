@@ -23,6 +23,7 @@
         display: block;
         background-color: #f2f2f2;
         font-family: "Consolas", monospace;
+        white-space: pre;
     }
 
     .code-snippet {
@@ -53,107 +54,213 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/languages/javascript.min.js" integrity="sha512-I9gpHTedDJcVkfGpzBuyrSHeNIsI9ShXYUMxA4X1Yp3JSoPqRuhdJMnd+2zbPCwACbBjcigjjdokhxv7TBXQVw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <script type="module" src="../test/perf/perf.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.4.1/math.js" integrity="sha512-chaoc0M8+8wskyWU/lt5wgBbX8Rx0349Ke8srsfzQc0+DsPhww0RTcuMiphUNF4AQ+L3C07JJKq3CQeTLssJRQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <script>
+  function play() {
     let wrapper = document.getElementsByClassName("wrapper")[0]
     let selectedCase
 
-    function getOutput () {
+    function getOutput() {
       return selectedCase.getElementsByClassName("output")[0]
     }
 
-    function addTestCase (name, code, f) {
-        let testCase = document.createElement("div")
-        testCase.className = "test-case"
-        testCase.innerHTML = `<h3>${name}</h3>`
+    function addTestCase(name, code, f) {
+      let testCase = document.createElement("div")
+      testCase.className = "test-case"
+      testCase.innerHTML = `<h3>${name}</h3>`
 
-        let m = document.createElement("code")
+      let m = document.createElement("code")
 
-        m.classList.add("code-snippet")
+      m.classList.add("code-snippet")
 
-        // highlight code
-        m.innerHTML = hljs.highlight(code, { language: "javascript" }).value.replace(/\n/g, "<br>").replace(/\t/g, "\t").replaceAll("$expr", `"${$expr}"`)
+      // highlight code
+      m.innerHTML = hljs.highlight(code, {language: "javascript"}).value.replace(/\n/g, "<br>").replaceAll("$expr", `"${$expr}"`)
       testCase.appendChild(m)
 
-        // add br element
-        let br = document.createElement("br")
-        testCase.appendChild(br)
+      // add br element
+      let br = document.createElement("br")
+      testCase.appendChild(br)
 
-        let output = document.createElement("textarea")
-        output.setAttribute("readonly", "true")
-        output.setAttribute("spellcheck", "false")
+      let output = document.createElement("textarea")
+      output.setAttribute("readonly", "true")
+      output.setAttribute("spellcheck", "false")
 
-        output.className = "output"
-        testCase.appendChild(output)
+      output.className = "output"
+      testCase.appendChild(output)
 
+      selectedCase = testCase
+
+      let run = document.createElement("button")
+      run.innerHTML = "Run"
+      run.onclick = function () {
+        output.value = ""
         selectedCase = testCase
-
-        let run = document.createElement("button")
-        run.innerHTML = "Run"
-        run.onclick = function () {
-          output.value = ""
-          selectedCase = testCase
-          try {
-            f()
-          } catch (e) {
-            log(e)
-          }
+        try {
+          f()
+        } catch (e) {
+          log((e.stack ?? e.toString()) + '')
         }
+      }
 
-        testCase.appendChild(run)
+      testCase.appendChild(run)
 
-        wrapper.appendChild(testCase)
+      wrapper.appendChild(testCase)
     }
 
-    function clearOutput () {
-        getOutput().value = ""
+    function clearOutput() {
+      getOutput().value = ""
     }
 
-    function addOutput (s) {
-        getOutput().value += s
+    function addOutput(s) {
+      getOutput().value += s
     }
 
     let timerName
     let time
-    function timeStart (name="timer") {
+
+    function timeStart(name = "timer") {
       time = performance.now()
 
       timerName = name
     }
 
-    function timeEnd () {
+    function timeEnd() {
       let elapsed = performance.now() - time
 
-      addOutput(`Timer ${timerName}: ${elapsed.toFixed(3)} ms`)
+      addOutput(`Timer ${timerName}: ${elapsed.toFixed(3)} ms\n`)
     }
 
-    function log (s) {
-      addOutput(s)
+    function log(...strs) {
+      addOutput(strs.join(' '))
     }
 
     // Get function body
-    function getBody (f) {
-        let s = f.toString()
-        let i = s.indexOf("{")
-        let j = s.lastIndexOf("}")
-        return s.substring(i + 1, j)
+    function getBody(f) {
+      let s = f.toString()
+      let i = s.indexOf("{")
+      let j = s.lastIndexOf("}")
+      return s.substring(i + 1, j)
     }
 
-    let $expr = "sin(x)^2+cos(x)^2+2*x^3+4*(x-2)^4+(gamma(ln(x) + ln(y)) + y*y)*y"
+    let $expr = "sin(x)^2+cos(x)^2+2*x^3+4*(x-2)^4+(gamma(log(x) + log(y)) + y*y)*y"
 
-    function cow () {
-      timeStart("compile")
+    function compileExample() {
+      // flattened (x, y)
+      let testCases = []
 
+      for (let i = 1; i < 1e5; ++i) {
+        testCases.push(i / 2.7)
+        testCases.push(i / 2.7)
+      }
+
+      timeStart("parse")
       s = $expr
       n = parseString(s)
+      timeEnd("parse")
 
-      n.resolveTypes({}, { defaultType: "complex" })
+      timeStart("resolve")
+      n.resolveTypes({}, {defaultType: "real"})
+      timeEnd("resolve")
 
+      timeStart("compile")
+      e = compileNode(n, {targets: {inputFormat: ['x', 'y']}})
       timeEnd("compile")
+
+      let sum = 0
+
+      timeStart("evaluate")
+      for (let i = 0; i < testCases.length; i += 2) {
+        let x = testCases[i], y = testCases[i + 1]
+
+        sum += e.evaluate(x, y)
+      }
+      timeEnd("evaluate")
+
+      log("Sum: ", sum)
     }
 
-    addTestCase("evaluate", getBody(cow), cow)
+    function evaluateExample() {
+      // flattened (x, y)
+      let testCases = []
 
+      for (let i = 1; i < 1e5; ++i) {
+        testCases.push(i / 2.7)
+        testCases.push(i / 2.7)
+      }
+
+      timeStart("parse")
+      s = $expr
+      n = parseString(s)
+      timeEnd("parse")
+
+      timeStart("resolve")
+      n.resolveTypes({}, {defaultType: "real"})
+      timeEnd("resolve")
+
+      let sum = 0
+
+      timeStart("evaluate")
+      for (let i = 0; i < testCases.length; i += 2) {
+        let x = testCases[i], y = testCases[i + 1]
+
+        sum += n.evaluate({x, y})
+      }
+      timeEnd("evaluate")
+
+      log("Sum: ", sum)
+    }
+
+    function mathJSExample () {
+      // flattened (x, y)
+      let testCases = []
+
+      for (let i = 1; i < 1e5; ++i) {
+        testCases.push(i / 2.7)
+        testCases.push(i / 2.7)
+      }
+
+      timeStart("parse")
+      s = $expr
+      n = math.parse(s)
+      timeEnd("parse")
+
+      timeStart("compile")
+      e = n.compile()
+      timeEnd("compile")
+
+      let sum = 0
+
+      timeStart("evaluate")
+      for (let i = 0; i < testCases.length; i += 2) {
+        let x = testCases[i], y = testCases[i + 1]
+
+        sum += e.evaluate({x, y})
+      }
+      timeEnd("evaluate")
+
+      log("Sum: ", sum)
+    }
+
+    addTestCase("evaluation", getBody(evaluateExample), evaluateExample)
+    addTestCase("compilation", getBody(compileExample), compileExample)
+    addTestCase("math.js", getBody(mathJSExample), mathJSExample)
+
+    // warmup
+
+    s = $expr
+    n = parseString(s)
+    n = parseString(s)
+
+    n.resolveTypes({}, {defaultType: "real"})
+    n.resolveTypes({}, {defaultType: "real"})
+
+    e = compileNode(n, {targets: {inputFormat: ['x', 'y']}})
+    e = compileNode(n, {targets: {inputFormat: ['x', 'y']}})
+
+    math.parse(s).compile()
+    math.parse(s).compile()
+  }
 </script>
 
 </body>
