@@ -3,17 +3,17 @@ import {EvaluationMode} from "./eval_modes.js";
 type ConcreteTypeParams = {
   // Required
   name: string
-  init: Function
-  castPermissive: Function
+  init: () => any
+  castPermissive: (any) => any
 
   // "Optional"
   isPrimitive?: boolean
   initStr?: string | null
-  typecheck?: Function | null
-  typecheckVerbose?: Function | null
-  isDefined?: Function | null
-  clone?: Function | null
-  copyTo?: Function | null
+  typecheck?: ((o: any) => boolean) | null
+  typecheckVerbose?: ((o: any) => string) | null
+  isDefined?: ((o: any) => boolean) | null
+  clone?: ((o: any) => any) | null
+  copyTo?: ((src: any, dst: any) => void) | null
 }
 
 // Abstraction of a concrete type--an actual class of JS object or primitive used in calculations. For example, a bool
@@ -22,16 +22,16 @@ type ConcreteTypeParams = {
 export class ConcreteType {
   name: string
   isPrimitive: boolean
-  init: Function
+  init: () => any
   defaultValue: any
-  castPermissive: Function
+  castPermissive: (any) => any
   initStr: string | null
 
-  typecheck: Function | null
-  typecheckVerbose: Function | null
-  isDefined: Function | null
-  clone: Function | null
-  copyTo: Function | null
+  typecheck: ((o: any) => boolean) | null
+  typecheckVerbose: ((o: any) => string) | null
+  isDefined: ((o: any) => boolean) | null
+  clone: ((o: any) => any) | null
+  copyTo: ((src: any, dst: any) => void) | null
 
   constructor (params: ConcreteTypeParams) {
     let name = this.name = params.name
