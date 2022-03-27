@@ -1,5 +1,15 @@
-import {ASTNode, EvaluationError, VariableDependencies} from "./node.js"
+import {
+  ASTGroup,
+  ASTNode,
+  ConstantNode,
+  EvaluationError,
+  OperatorNode,
+  VariableDependencies,
+  VariableNode
+} from "./node.js"
 import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
+import {MathematicalAssignmentGraph, MathematicalGraphNode} from "./assignment_graph";
+import { MathematicalCast } from "./operator_definition";
 
 
 export class CompilationError extends Error {
@@ -161,6 +171,59 @@ function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOpti
   }
 }
 
+function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
+  let graph = new MathematicalAssignmentGraph()
+  let assnMap = new Map<string, MathematicalGraphNode>()
+
+  // ASTNode -> graph node name
+  let astToGraphMap = new Map<ASTNode, string>()
+
+  astToGraphMap.set(root, "$ret")
+
+  // Implicitly left to right
+  root.applyAll((astNode: ASTNode) => {
+    let gNode: MathematicalGraphNode | null = null
+    let name = astToGraphMap.get(astNode) ?? genVariableName()
+
+    switch (astNode.nodeType()) {
+      case ASTNode.TYPES.VariableNode: {
+        astNode = astNode as VariableNode
+
+        if (!astNode.operatorDefinition) {
+          gNode = {
+            name,
+            type: astNode.type!,  // must be non-null since it passed null checks earlier
+            isConditional: false,
+            isCast: false,
+            isInput: true
+          }
+
+          break
+        }
+      }
+      // Fall through
+      case ASTNode.TYPES.OperatorNode:
+        let n = astNode as (OperatorNode | VariableNode)
+
+        // @ts-ignore
+        let args: Array<ASTNode> = n.children ?? []
+        // @ts-ignore
+        let casts: Array<MathematicalCast> = (args.length === 0) ? [] : n.casts
+
+        let castedArgs =
+
+      case ASTNode.TYPES.ASTGroup:
+        astNode = astNode as ASTGroup
+      case ASTNode.TYPES.ConstantNode:
+        astNode = astNode as ConstantNode
+      case ASTNode.TYPES.ASTNode:
+        throw new CompilationError(`Raw ASTNode in provided expression`)
+    }
+
+    assnMap.set(name, gNode)
+  }, false /* all children */, true /* children first */)
+}
+
 /**
  * Compile an ASTNode into an evaluable function or functions. This should be preferred for any expression that will be
  * evaluated many times. This function needs to be pretty well optimized...
@@ -196,7 +259,5 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
     targets.push(fillTargetOptions(options, to, rootProperties, i))
   }
 
-  console.log(targets)
-
-  let nodeInformation = createInformationMap(root)
+  let mAssignmentGraph = createAssnGraph(root)
 }

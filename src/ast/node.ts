@@ -139,6 +139,8 @@ type EvaluationOptions = {
 
 }
 
+type NodeTypeEnum = 0 | 1 | 2 | 3 | 4
+
 export class ASTNode {
   type: MathematicalType | null
   info: ASTNodeInfo
@@ -203,7 +205,7 @@ export class ASTNode {
   /**
    * Node type as an enum (use nodeTypeAsString() for a string version)
    */
-  nodeType (): number {
+  nodeType (): NodeTypeEnum {
     return 0
   }
 
@@ -370,7 +372,7 @@ export class ASTGroup extends ASTNode {
   }
 
   nodeType () {
-    return 4
+    return 4 as NodeTypeEnum
   }
 
   clone () {
@@ -408,7 +410,7 @@ export class ConstantNode extends ASTNode {
   }
 
   nodeType () {
-    return 1
+    return 1 as NodeTypeEnum
   }
 
   clone () {
@@ -452,7 +454,7 @@ export class VariableNode extends ASTNode {
   }
 
   nodeType () {
-    return 2
+    return 2 as NodeTypeEnum
   }
 
   clone() {
@@ -534,7 +536,7 @@ export class OperatorNode extends ASTGroup {
   }
 
   nodeType () {
-    return 3
+    return 3 as NodeTypeEnum
   }
 
   isFunctionNode() {
