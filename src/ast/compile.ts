@@ -16,6 +16,7 @@ import {
 } from "./assignment_graph";
 import { MathematicalCast } from "./operator_definition";
 import { MathematicalType } from "./type";
+import { Assembler } from "./assembler";
 
 
 export class CompilationError extends Error {
@@ -33,7 +34,7 @@ let id = 0
  * returned twice)
  * @returns {string}
  */
-function genVariableName (): string {
+export function genVariableName (): string {
   return "$" + (++id)
 }
 
@@ -77,7 +78,7 @@ export type CompileTargetOptions = {
   returnNew?: boolean
 }
 
-type CompileTarget = {
+export type CompileTarget = {
   mode: EvaluationMode
   inputFormat: Array<string>
   typechecks: boolean
@@ -440,7 +441,16 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
 
     let cAssignmentGraph = concretizeAssnGraph(mAssignmentGraph, target, i)
 
-    return cAssignmentGraph
+    // The crude procedure to build a target is now as follows:
+    // - Variable retrieval from the input
+    // - Typechecks, if desired
+    // - Compiled assignment graph
+    // - Return $ret
+
+    let assembler = new Assembler()
+    assembler.prepareConcreteGraph(cAssignmentGraph, target)
+
+    return assembler.compile()
   }
 
   return mAssignmentGraph

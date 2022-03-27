@@ -45,7 +45,7 @@ const binaryPrimitives: { [key in typeof jsPrimitives[number]]: Function } = {}
   binaryPrimitives[op] = (new Function('x', 'y', `return x ${op} y`))
 })
 
-type AllowedJSPrimitive = (typeof jsPrimitives)[number] | ""
+export type AllowedJSPrimitive = (typeof jsPrimitives)[number] | ""
 
 type ConcreteEvaluatorParams = {
   args: Array<string|ConcreteType>
