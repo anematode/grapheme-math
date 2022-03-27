@@ -4,11 +4,157 @@
     <meta charset="UTF-8">
     <title>Performance Comparison</title>
 </head>
+
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/styles/default.min.css">
+<style>
+    .wrapper {
+        display: flex;
+        flex-direction: row;
+    }
+
+    h3 {
+        padding: 0;
+        margin: 0;
+    }
+
+    .test-case {
+        margin: 10px;
+        padding: 20px;
+        display: block;
+        background-color: #f2f2f2;
+        font-family: "Consolas", monospace;
+    }
+
+    .code-snippet {
+        margin-bottom: 10px;
+    }
+
+    button {
+        display: block;
+        width: 80px;
+        height: 40px;
+        font-size: 20px;
+    }
+
+    textarea {
+        width: 100%;
+        margin: 0 auto;
+        height: 300px;
+    }
+</style>
 <body>
 
-<div>
+<div class="wrapper">
 
 </div>
+
+<!-- import highlight.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/highlight.min.js" integrity="sha512-BNc7saQYlxCL10lykUYhFBcnzdKMnjx5fp5s5wPucDyZ7rKNwCoqJh1GwEAIhuePEK4WM9askJBRsu7ma0Rzvg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/languages/javascript.min.js" integrity="sha512-I9gpHTedDJcVkfGpzBuyrSHeNIsI9ShXYUMxA4X1Yp3JSoPqRuhdJMnd+2zbPCwACbBjcigjjdokhxv7TBXQVw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script type="module" src="../test/perf/perf.js"></script>
+
+<script>
+    let wrapper = document.getElementsByClassName("wrapper")[0]
+    let selectedCase
+
+    function getOutput () {
+      return selectedCase.getElementsByClassName("output")[0]
+    }
+
+    function addTestCase (name, code, f) {
+        let testCase = document.createElement("div")
+        testCase.className = "test-case"
+        testCase.innerHTML = `<h3>${name}</h3>`
+
+        let m = document.createElement("code")
+
+        m.classList.add("code-snippet")
+
+        // highlight code
+        m.innerHTML = hljs.highlight(code, { language: "javascript" }).value.replace(/\n/g, "<br>").replace(/\t/g, "\t").replaceAll("$expr", `"${$expr}"`)
+      testCase.appendChild(m)
+
+        // add br element
+        let br = document.createElement("br")
+        testCase.appendChild(br)
+
+        let output = document.createElement("textarea")
+        output.setAttribute("readonly", "true")
+        output.setAttribute("spellcheck", "false")
+
+        output.className = "output"
+        testCase.appendChild(output)
+
+        selectedCase = testCase
+
+        let run = document.createElement("button")
+        run.innerHTML = "Run"
+        run.onclick = function () {
+          output.value = ""
+          selectedCase = testCase
+          try {
+            f()
+          } catch (e) {
+            log(e)
+          }
+        }
+
+        testCase.appendChild(run)
+
+        wrapper.appendChild(testCase)
+    }
+
+    function clearOutput () {
+        getOutput().value = ""
+    }
+
+    function addOutput (s) {
+        getOutput().value += s
+    }
+
+    let timerName
+    let time
+    function timeStart (name="timer") {
+      time = performance.now()
+
+      timerName = name
+    }
+
+    function timeEnd () {
+      let elapsed = performance.now() - time
+
+      addOutput(`Timer ${timerName}: ${elapsed.toFixed(3)} ms`)
+    }
+
+    function log (s) {
+      addOutput(s)
+    }
+
+    // Get function body
+    function getBody (f) {
+        let s = f.toString()
+        let i = s.indexOf("{")
+        let j = s.lastIndexOf("}")
+        return s.substring(i + 1, j)
+    }
+
+    let $expr = "sin(x)^2+cos(x)^2+2*x^3+4*(x-2)^4+(gamma(ln(x) + ln(y)) + y*y)*y"
+
+    function cow () {
+      timeStart("compile")
+
+      s = $expr
+      n = parseString(s)
+
+      n.resolveTypes({}, { defaultType: "complex" })
+
+      timeEnd("compile")
+    }
+
+    addTestCase("evaluate", getBody(cow), cow)
+
+</script>
 
 </body>
 </html>

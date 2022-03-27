@@ -72,6 +72,7 @@ type ASTNodeInfo = {
 
   // Constants
   value?: string
+  type?: MathematicalType
   // Variables, operators, functions
   name?: string
   // Comparison chains
@@ -85,16 +86,16 @@ type UnprocessedChildren = Array<UnprocessedChild>
 
 // ASTNode that might still have tokens in it
 class UnprocessedASTNode {
-  type: MathematicalType | null
+  type: "node"  // as opposed to a token
   nodeType: UnprocessedASTNodeType
   info: ASTNodeInfo
   children: UnprocessedChildren
 
-  constructor (nodeType: UnprocessedASTNodeType, type: MathematicalType | null, info: ASTNodeInfo, children: UnprocessedChildren) {
-    this.type = type
+  constructor (nodeType: UnprocessedASTNodeType, info: ASTNodeInfo, children: UnprocessedChildren) {
     this.nodeType = nodeType
     this.info = info
     this.children = children
+    this.type = "node"
   }
 
   applyAll (f: (UnprocessedChild) => void, childrenFirst=false) {
@@ -495,11 +496,11 @@ function processConstantsAndVariables (tokens: Array<Token|ASTNode>) {
       switch (token.type) {
         case 'constant':
           let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real')
-          node = new UnprocessedASTNode("constant", type, { value: token.value, token, startToken: token, endToken: token }, [])
+          node = new UnprocessedASTNode("constant", { value: token.value, token, startToken: token, endToken: token, type }, [])
 
           break
         case 'variable':
-          node = new UnprocessedASTNode("variable", null, { name: token.name, token, startToken: token, endToken: token }, [])
+          node = new UnprocessedASTNode("variable", { name: token.name, token, startToken: token, endToken: token }, [])
           break
         default:
           continue
@@ -528,7 +529,7 @@ function processParentheses (rootNode: UnprocessedASTNode) {
 
         let [ startIndex, endIndex, startToken, endToken ] = indices
 
-        let newNode = new UnprocessedASTNode("group", null,
+        let newNode = new UnprocessedASTNode("group",
             {}, [])
 
         let expr = node.children.splice(
@@ -553,13 +554,13 @@ function processFunctions (rootNode: UnprocessedASTNode) {
     for (let i = 0; i < children.length; ++i) {
       let token = children[i]
 
-      if (token.type === 'function') {
+      if (!(token instanceof UnprocessedASTNode) && token.type === 'function') {
         let nextNode = children[i + 1]
         if (!nextNode || !(nextNode instanceof UnprocessedASTNode)) {
           raiseUnknownParserError()
         }
 
-        let newNode = new UnprocessedASTNode("operator", null /* unknown type */,
+        let newNode = new UnprocessedASTNode("operator",
             { name: token.name, isFunction: true }, nextNode.children)
         children[i] = newNode
 
@@ -589,7 +590,7 @@ function combineBinaryOperator (node: UnprocessedASTNode, i: number) {
     raiseUnknownParserError()
   }
 
-  let newNode = new UnprocessedASTNode("operator", null,
+  let newNode = new UnprocessedASTNode("operator",
       { name: child.op }, [ prevChild, nextChild ])
 
   children.splice(i - 1, 3, newNode)
@@ -609,9 +610,10 @@ function processUnaryAndExponentiation (root: UnprocessedASTNode) {
 
       if (child.op === '-' || child.op === '+') {
         // If the preceding token is an unprocessed non-operator token, or node, then it's a binary expression
-        if (i !== 0 && children[i - 1].type !== 'operator') continue
+        let preceding = children[i-1]
+        if (i !== 0 && ('type' in preceding) && (preceding.type !== 'operator')) continue
 
-        let newNode = new UnprocessedASTNode("operator", null,
+        let newNode = new UnprocessedASTNode("operator",
             { name: child.op }, [ children[i + 1] ])
 
         children.splice(i, 2, newNode)
@@ -682,7 +684,7 @@ function processComparisonChains (root: UnprocessedASTNode) {
           // The nodes i, i+2, i+4, ..., j-4, j-2 are all comparison nodes. Thus, all nodes in the range i-1 ... j-1
           // should be included in the comparison chain
 
-          let comparisonChain = new UnprocessedASTNode("operator", null,
+          let comparisonChain = new UnprocessedASTNode("operator",
               { name: 'comparison_chain' }, [])
 
           // Looks something like [ ASTNode, '<', ASTNode, '<=', ASTNode ]
@@ -816,7 +818,7 @@ function parseTokens (tokens: Array<Token>, string: string): UnprocessedASTNode 
   processConstantsAndVariables(tokens)
 
   // Everything is done recursively within this root node
-  let root = new UnprocessedASTNode("group", null, {}, tokens)
+  let root = new UnprocessedASTNode("group", {}, tokens)
 
   processParentheses(root)
   processFunctions(root)

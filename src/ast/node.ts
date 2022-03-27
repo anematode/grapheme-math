@@ -397,6 +397,7 @@ export class ASTGroup extends ASTNode {
 
 export type ConstantNodeParams = ASTNodeParams & {
   value: string
+  type: MathematicalType | null // type required for constants
 }
 
 export class ConstantNode extends ASTNode {
@@ -407,6 +408,11 @@ export class ConstantNode extends ASTNode {
 
     // Generally a text rendition of the constant node; e.g., "0.3" or "50"
     this.value = params.value
+    if (!params.type) {
+      throw new EvaluationError(`ConstantNode must be constructed with a mathematical type (e.g., real)`)
+    }
+
+    this.type = params.type
   }
 
   nodeType () {
