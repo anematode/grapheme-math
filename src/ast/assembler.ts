@@ -18,18 +18,33 @@ interface AssemblerEnvironment {
 }
 
 export class Assembler {
+  preamble: PlainCodeFragment
   main: PlainCodeFragment
+
+  fragments: Map<string, PlainCodeFragment>
 
   // Array of input variables
   inputFormat: Array<string>
 
   constructor () {
-    this.main = new PlainCodeFragment()
+    let preamble = this.preamble = new PlainCodeFragment()
+    let main = this.main = new PlainCodeFragment()
+
+    let fs = this.fragments = new Map()
+    fs.set("main", main)
+    fs.set("preamble", preamble)  // special code fragment
+
     this.inputFormat = []
   }
 
-  add (f: string | CodeFragment) {
-    this.main.add(f)
+  add (f: string | CodeFragment, fragmentName: string = "main") {
+    let fragment = (fragmentName === "main") ? this.main : this.fragments.get(fragmentName)
+
+    if (!fragment) {
+      throw new CompilationError(`Unknown fragment name ${fragmentName}`)
+    }
+
+    fragment.add(f)
   }
 
   prepareConcreteGraph(cGraph: ConcreteAssignmentGraph, target: CompileTarget) {
@@ -47,6 +62,8 @@ export class Assembler {
           let f = new TypecheckFragment()
           f.name = name
           f.concreteType = node.type
+
+          // TODO
         }
       } else {
         if (usesScope) {
@@ -56,14 +73,66 @@ export class Assembler {
           f.verbatim = true
 
           this.add(f)
+        } else {
+          throw new CompilationError(`Can't find variable ${name}`)
         }
       }
     }
 
+    this.inputFormat = inputFormat
+
     // First fragment in main is to get the input variables out of the arguments
 
     for (let [ name, node ] of cGraph.nodesInOrder()) {
+      // Don't need to do anything if not input; everything taken care of above
+      if (!node.isInput) {
+        let ev = node.evaluator
+        if (ev) {
+          let loc = "main" // ev.isConstant ? "preamble" : "main" // put in preamble if it's a constant
+          let construct = ev.evalType === "new"
 
+          if (construct || loc === "preamble") {
+            let f = new VariableDefinitionCodeFragment()
+
+            f.name = name
+            f.func = ev.func
+            f.args = node.args!
+            f.construct = construct
+
+            this.add(f, loc)
+          } else {
+            // writes evaluator
+            let f = new InvokeVoidFunctionCodeFragment()
+
+            f.func = ev.func
+            f.args = [ ...node.args!, name ]  // writes to name
+
+            let cr = new VariableDefinitionCodeFragment()
+
+            cr.name = name
+            cr.args = []
+            cr.func = node.type.init  // create the variable in the preamble
+            cr.construct = true
+
+            this.add(f, "main")
+            this.add(cr, "preamble")
+          }
+        } else {
+          if (node.value) { // Constant
+            let n = new VariableDefinitionCodeFragment()
+
+            n.name = name
+            n.value = node.value
+            n.construct = true
+
+            this.add(n, "preamble")
+          }
+        }
+      }
+
+      if (name === "$ret") { // single return statement
+        this.add("return $ret;")
+      }
     }
   }
 
@@ -71,7 +140,7 @@ export class Assembler {
     type InternalFunction = { args: Array<string>, text: string }
 
     // Map of closure var names to imported objects to be passed into the closure
-    let imports = new Map<string, any>()
+    let imports = new Map<any, string>()
     let exports = new Map<string, string>()
     let internalFunctions = new Map<string, InternalFunction>()
 
@@ -81,9 +150,14 @@ export class Assembler {
     let writingTo: InternalFunction = internalFunctions.get("main")!
 
     function importObject (o: any): string {
+      let existing = imports.get(o)
+      if (existing !== undefined) {
+        return existing
+      }
+
       let name = "$import_" + genVariableName()
 
-      imports.set(name, o)
+      imports.set(o, name)
 
       return name
     }
@@ -104,12 +178,8 @@ export class Assembler {
 
     function add (s: string, fName: string = "") {
       if (fName) {
-        let tmp = writingTo
-
-        enterFunction("main")
-        write(s)
-
-        writingTo = tmp
+        // TODO undef check
+        internalFunctions.get(fName)!.text += s
       } else {
         write(s)
       }
@@ -172,7 +242,15 @@ export class Assembler {
       addExport
     }
 
+    enterFunction("main")
     this.main.compileToEnv(env)
+
+    // Preamble compilation should occur after all internal compilations
+    enterFunction("preamble")
+    this.preamble.compileToEnv(env)
+
+    let mainF = internalFunctions.get("main")!
+    let preambleF = internalFunctions.get("preamble")!
 
     // The closure has the following structure:
     // function ($import_$1, $import_$2, ...) {
@@ -188,21 +266,22 @@ export class Assembler {
     let importArray: Array<any> = []  // passed arguments to closure
     let importNames: Array<string> = [] // closure argument names
 
-    for (let [ name, o ] of imports.entries()) {
+    for (let [ o, name ] of imports.entries()) {
       importArray.push(o)
       importNames.push(name)
     }
 
-    let mainF = internalFunctions.get("main")!
-    let preambleF = internalFunctions.get("preamble")!
     mainF.args = this.inputFormat
     preambleF.args = importNames  // unused
 
     let fsText = ""
 
     for (let fName of internalFunctions.keys()) {
-      fsText += assembleInternalFunction(fName)
+      if (fName !== "preamble")
+        fsText += assembleInternalFunction(fName)
     }
+
+    addExport("evaluate", "main")
 
     // Build export text
     let exportText = "return {"
@@ -214,7 +293,7 @@ export class Assembler {
     let fBody = preambleF.text + fsText + exportText
 
     // Invoke the closure
-    let result = (new Function(...importNames, fBody))(importArray)
+    let result = (new Function(...importNames, fBody)).apply(null, importArray)
 
     return {
       result
@@ -223,9 +302,6 @@ export class Assembler {
 }
 
 abstract class CodeFragment {
-  preamble: PlainCodeFragment | null // code to be run in the closure, outside the function
-  // getContents: () => Array<string | CodeFragment>
-
   // Convert a fragment into an actual snippet of JS code by calling appropriate functions on env
   compileToEnv: (env: AssemblerEnvironment) => void
 }
@@ -257,7 +333,6 @@ class TypecheckFragment implements CodeFragment {
 
 // Just a group of code fragments
 export class PlainCodeFragment implements CodeFragment {
-  preamble: PlainCodeFragment | null
   contents: Array<string | CodeFragment>
 
   constructor () {
@@ -270,19 +345,11 @@ export class PlainCodeFragment implements CodeFragment {
 
   compileToEnv (env: AssemblerEnvironment) {
     // Just compile all children
-
-    env.enterPreamble()
-
-    this.preamble?.compileToEnv(env)
-
-    env.enterMain()
-
     this.contents.map(c => assembleFragment(env, c))
   }
 }
 
 export class InvokeVoidFunctionCodeFragment implements CodeFragment {
-  preamble: null
   func: Function
   args: Array<string>
 
@@ -291,9 +358,9 @@ export class InvokeVoidFunctionCodeFragment implements CodeFragment {
 
     args = args ?? []
 
-    let s = args.map(a => assembleFragment(env, a)).join(', ')
+    let s = args.join(', ')
 
-    env.add(`${env.importFunction(func)}(${s})`)
+    env.add(`${env.importFunction(func)}(${s});\n`)
   }
 }
 
@@ -302,7 +369,6 @@ function assembleFragment (env: AssemblerEnvironment, f: string | CodeFragment):
 }
 
 export class VariableDefinitionCodeFragment implements CodeFragment {
-  preamble: null
   name: string
 
   // If a JS primitive, the arity is implicit in the number of arguments
@@ -339,6 +405,6 @@ export class VariableDefinitionCodeFragment implements CodeFragment {
       v = verbatim ? (value + '') : env.importValue(value)
     }
 
-    env.add(`${construct ? "var " : ""}${name} = ${v};`)
+    env.add(`${construct ? "var " : ""}${name} = ${v};\n`)
   }
 }
