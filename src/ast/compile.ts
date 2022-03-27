@@ -1,7 +1,5 @@
-
-// @ts-nocheck
-import {ASTNode, EvaluationError} from "./node.js"
-import {toEvaluationMode} from "./eval_modes.js"
+import {ASTNode, EvaluationError, VariableDependencies} from "./node.js"
+import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
 
 
 export class CompilationError extends Error {
@@ -10,171 +8,6 @@ export class CompilationError extends Error {
 
     this.name = 'CompilationError'
   }
-}
-
-/**
- * An assignment graph is not exactly a graph... but whatever. It is a series of assignments, potentially with branches
- * (not yet implemented).
- *
- * Each element in the list of assignments defines exactly one variable. For example { type: "assignment", name: "$2",
- * operatorDefinition: OperatorDefinition, mathematicalType: MathematicalType, args: ["x", "$1"] } is an assignment
- */
-
-class AssignmentGraphNode {
-  constructor (parentGraph) {
-    this.parentGraph = parentGraph
-
-    this.mathematicalType = null
-    this.concreteType = null
-
-    this.operatorDefinition = null
-    this.evaluator = null
-    this.nodeType = "constant"
-
-    this.children = []
-    this.associatedASTNode = null
-  }
-
-  /**
-   * Apply a function to this node and all of its children, recursively.
-   * @param func {Function} The callback function. We call it each time with (node, depth) as arguments
-   * @param childrenFirst {boolean} Whether to call the callback function for each child first, or for the parent first.
-   */
-  applyAll (func, childrenFirst = false) {
-    if (!childrenFirst) func(this)
-
-    let children = this.children
-    for (let i = 0; i < children.length; ++i) {
-      let child = children[i]
-      child.applyAll(func, childrenFirst)
-    }
-
-    if (childrenFirst) func(this)
-
-    return this
-  }
-
-  /**
-   * Get children's mathematical types as an array
-   * @returns {MathematicalType[]}
-   */
-  getChildMathematicalTypes () {
-    return this.children.map(c => c.mathematicalType)
-  }
-
-  /**
-   * Get children's concrete types as an array
-   * @returns {ConcreteType[]}
-   */
-  getChildConcreteTypes () {
-    return this.children.map(c => c.concreteType)
-  }
-
-  buildChildrenFromASTNode (depth) {
-    if (depth > 500) // prevent infinite loop
-      throw new CompilationError(`Maximum node depth exceeded`)
-
-    let children = this.children = []
-    let associatedASTNode = this.associatedASTNode
-
-    if (!associatedASTNode) {
-      throw new CompilationError("?")
-    }
-
-    // Construct assignment nodes
-    let astChildren = associatedASTNode.children
-
-    if (astChildren)
-    for (let i = 0; i < astChildren.length; ++i) {
-      let astChild = astChildren[i]
-      let astCast = associatedASTNode.casts[i]
-
-      let fail = 0
-
-      // Descend down plain groups (which should only have one child each)
-      while (astChild.nodeType() === ASTNode.TYPES.ASTGroup) {
-        astChild = astChild.children[0]
-
-        if (!astChild)
-          throw new CompilationError(`ASTGroup contains no child??`)
-        if (fail++ > 500) // prevent infinite loop
-          throw new CompilationError(`Maximum node depth exceeded`)
-      }
-
-
-      // Reached a non-trivial node
-      let child = new AssignmentGraphNode(this.parentGraph)
-      let attachTo = this
-
-      if (!astCast.isIdentity()) {
-        attachTo = new AssignmentGraphNode(this.parentGraph)
-
-        attachTo.associatedASTNode = astChild
-        attachTo.mathematicalType = astCast.type
-        attachTo.nodeType = "operator"
-
-        children[i] = attachTo
-      }
-
-      let astType
-      switch (astType = astChild.nodeTypeAsString()) {
-        case "ConstantNode":
-          child.nodeType = "constant"
-          break
-        case "VariableNode":
-          child.nodeType = "variable"
-          break
-        case "OperatorNode":
-          child.nodeType = "operator"
-          child.operatorDefinition = astChild.operatorDefinition
-          break
-        case "ASTGroup":
-          break
-        default:
-          throw new CompilationError(`Unknown ASTChild type ${astType}`)
-      }
-
-      child.associatedASTNode = astChild
-      child.mathematicalType = astChild.type
-
-      attachTo.children.push(child)
-    }
-
-    for (let i = 0; i < children.length; ++i) {
-      children[i].buildChildrenFromASTNode(depth+1, variableLocations)
-    }
-  }
-}
-
-/**
- * Contains entirely assignment graph nodes. Assignments are not necessarily JS assignments per se,
- * but they occupy a much, much lower level of graph than the original AST. All casts are converted into assignments, so
- * that each assignment takes a concrete type to the same concrete type. Each assignment graph node is associated with
- * its original AST node.
- *
- * At first, each assignment is an OperatorDefinition or constant. Identity casts are elided immediately for efficiency.
- * Then concrete types and concrete evaluators are established. Finally, code fragments are generated and assembled into
- * a final closure, to be invoked.
- */
-class AssignmentGraph {
-  constructor () {
-    this.root = null
-  }
-}
-
-function generateAssignmentGraph(astRoot, opts) {
-  let g = new AssignmentGraph()
-  let root = new AssignmentGraphNode(g)
-
-  let variables = g.variables = new Map()   // varInfo -> AssignmentGraphNode
-
-  for (let [ varName, varInfo ] of maps) {
-    let assnNode = new AssignmentGraphNode(g)
-    assnNode.nodeType = "variable"
-    assnNode.
-    variables.set(varName, )
-  }
-
 }
 
 function analyzeNode (root, infoMap) {
@@ -519,62 +352,158 @@ function createInformationMap(root) {
 }
 
 /**
+ * Information about a function to compile
+ */
+export type CompileTargetOptions = {
+  /**
+   * Name of an evaluation mode or the mode itself (e.g., "normal", "fast_interval")
+   * @defaultValue "normal"
+   */
+  mode?: string | EvaluationMode,
+  /**
+   * Array of variable names of the inputs to the function, or a single variable name. "scope" is a special variable
+   * indicating an object with keys with the variables in them; any variables not specified to be somewhere else in
+   * the input format are expected to either be static (staticVariables) or in the scope.
+   * @defaultValue "scope"
+   */
+  inputFormat?: string | Array<string>
+  /**
+   * Whether to do typechecks on all inputted variables, incurring a slight runtime cost.
+   * @defaultValue true
+   */
+  typechecks?: boolean,
+  /**
+   * If returning a complex type, whether to return a new instance of that type each time, or a reused one (to avoid
+   * unnecessary allocations). For example, if a function returns a new Complex, it will allocate a new Complex each
+   * time, which the user can use freely without worrying its value will change. If it uses an existing Complex, no
+   * new allocation will be done and the value may change if the function is invoked again
+   * @defaultValue true
+   */
+  returnNew?: boolean
+}
+
+type CompileTarget = {
+  mode: EvaluationMode
+  inputFormat: Array<string>
+  typechecks: boolean
+  returnNew: boolean
+  staticVariables: Array<string>
+  usedVariables: VariableDependencies
+}
+
+type CompileNodeOptions = {
+  targets?: CompileTargetOptions | Array<CompileTargetOptions>
+  staticVariables?: Array<string>
+  typechecks?: boolean
+  returnNew?: boolean
+}
+
+type FilledCompileNodeOptions = {
+  targets: CompileTarget | Array<CompileTarget>
+  staticVariables: Array<string>
+}
+
+type RootNodeProperties = {
+  usedVariables: VariableDependencies
+}
+
+const defaultTarget = {
+  mode: "normal",
+  inputFormat: "scope",
+  typechecks: true,
+  returnNew: true
+}
+
+// -1 if fine, otherwise, index of problematic
+function checkStringArray (o: Array<any>): number {
+  for (let i = 0; i < o.length; ++i) {
+    if (typeof o[i] !== "string") {
+      return i
+    }
+  }
+
+  return -1
+}
+
+function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOptions, rootProperties: RootNodeProperties, index: number): CompileTarget {
+  if (typeof opts !== "object") {
+    throw new CompilationError(`Provided target option at index ${index} is not an object`)
+  }
+
+  let givenMode = opts.mode ?? "normal"
+  let mode = toEvaluationMode(givenMode, true /* throw on error */)!
+
+  let typechecks = opts.typechecks ?? nodeOpts.typechecks ?? true
+  let returnNew = opts.returnNew ?? nodeOpts.returnNew ?? true
+  let inputFormat = opts.inputFormat ?? "scope"
+  let staticVariables = nodeOpts.staticVariables ?? []
+
+  if (typeof inputFormat === "string") {
+    inputFormat = [ inputFormat ]
+  }
+
+  inputFormat = inputFormat as Array<string>
+  let p = checkStringArray(inputFormat)
+  if (p !== -1) {
+    throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`)
+  }
+  if (!Array.isArray(staticVariables)) {
+    throw new CompilationError(`Static variables must be an array`)
+  }
+  p = checkStringArray(staticVariables)
+  if (p !== -1) {
+    throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`)
+  }
+
+  return {
+    mode: mode,
+    typechecks,
+    returnNew,
+    inputFormat,
+    staticVariables,
+    usedVariables: rootProperties.usedVariables
+  }
+}
+
+/**
  * Compile an ASTNode into an evaluable function or functions. This should be preferred for any expression that will be
  * evaluated many times. This function needs to be pretty well optimized...
  * @param root
- * @param modes
+ * @param options
  */
-export function compileNode(root, {
-  targets =
-    {
-      // Evaluation mode
-      mode: "normal",
-      // Function call will accept arguments as such. Special values: "scope" is a plain JS object which contains
-      // variables as key–value pairs. "scope_map" is a JS Map which contains variables as key–value pairs.
-      inputFormat: [ "scope" ],
-      // Static variables are actually OperatorDefinitions, since we want them to be evaluable in different modes. For
-      // example, pi might be 3.14159... in normal mode, but [3.1415926535897927, 3.1415926535897936] in interval mode.
-      // The values of (non-constant) static variables may be explicitly set with the setStatic(name, value) function,
-      // which will be returned.... hm.
-      // Whether to do typechecks on all inputted variables (might be slightly slower)
-      typechecks: true,
-      returnMutable: true,  // Whether to allocate a new variable when returning
-      returns: "value"
-    },
-  staticVariables = []
-} = {}) {
-  if (!(root instanceof ASTNode)) {
+export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
+  if (!(root instanceof ASTNode))
     throw new CompilationError("First argument to compileNode must be an ASTNode")
+  if (!root.allResolved())
+    throw new CompilationError("Node types must be resolved with .resolveTypes() first")
+
+  let targetOpts = options.targets
+  if (!targetOpts) {
+    targetOpts = defaultTarget
   }
 
-  if (!root.allResolved()) {
-    throw new CompilationError("Node types must be resolved with .resolveTypes() first")
+  if (!Array.isArray(targetOpts)) {
+    targetOpts = [ targetOpts ]
   }
+
+  let rootProperties = {
+    usedVariables: root.getVariableDependencies()
+  }
+
+  targetOpts = targetOpts as Array<CompileTargetOptions>
+
+  // Convert each target to a full target
+  let targets: Array<CompileTarget> = []
+  for (let i = 0; i < targetOpts.length; ++i) {
+    let to = targetOpts[i]
+
+    targets.push(fillTargetOptions(options, to, rootProperties, i))
+  }
+
+  console.log(targets)
+
 
   let nodeInformation = createInformationMap(root)
   let usedVariables = root.getVariableDependencies()
 
-  analyzeNode(root, nodeInformation, {})
-
-  let opts = {
-    staticVariables,
-    nodeInformation,
-    usedVariables
-  }
-  let out = []
-
-  let targetIsArray = Array.isArray(targets)
-  if (!targetIsArray) {
-    targets = [ targets ]
-  }
-
-  for (let target of targets) {
-    out.push(compileTarget(root, target, opts))
-  }
-
-  if (!targetIsArray) {
-    out = out[0]
-  }
-
-  return out
 }

@@ -791,7 +791,7 @@ class BigFloat {
    * @param rm {number} Rounding mode to be used; only relevant if prec < 53
    * @returns {BigFloat}
    */
-  setFromNumber (n: number, rm: RoundingMode=WORKING_RM) {
+  setFromNumber (n: number, rm: RoundingMode=WORKING_RM): BigFloat {
     if (this.prec < 53) {
       // Weird and rare case. Rounding to a lower precision is needed
 

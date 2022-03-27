@@ -122,11 +122,13 @@ type FilledResolveTypesOptions = {
   vars: { [key: string]: string }
 }
 
-type VariableDependency = {
+export type VariableDependency = {
   type: MathematicalType
   operatorDefinition: null | OperatorDefinition
   count: number
 }
+
+export type VariableDependencies = Map<string, VariableDependency>
 
 // Dictionary between variable names and their values
 type VariableLookupObject = {
@@ -301,8 +303,8 @@ export class ASTNode {
   /**
    * Returns a Map of variable names to information about those variables.
    */
-  getVariableDependencies (): Map<string, VariableDependency> {
-    let knownVars: Map<string, VariableDependency> = new Map()
+  getVariableDependencies (): VariableDependencies {
+    let knownVars: VariableDependencies = new Map()
 
     this.applyAll((node: ASTNode) => {
       if (node.nodeType() === ASTNode.TYPES.VariableNode) {
