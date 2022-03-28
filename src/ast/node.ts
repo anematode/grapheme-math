@@ -117,9 +117,9 @@ export type ResolveTypesOptions = {
 }
 
 type FilledResolveTypesOptions = {
-  [key in keyof ResolveTypesOptions]: ResolveTypesOptions[key]
-} & {
-  vars: { [key: string]: string }
+  defaultType: MathematicalType
+  throwOnUnresolved: boolean
+  vars: { [key: string]: MathematicalType }
 }
 
 export type VariableDependency = {
@@ -137,6 +137,10 @@ type VariableLookupObject = {
 
 type EvaluationOptions = {
 
+}
+
+type ResolveTypesVariableInfo = {
+  [key: string]: string | MathematicalType
 }
 
 type NodeTypeEnum = 0 | 1 | 2 | 3 | 4
@@ -254,7 +258,7 @@ export class ASTNode {
    * @param vars {{}} Mapping from variable names to their types
    * @param opts
    */
-  resolveTypes (vars: { [key: string]: string }, opts: ResolveTypesOptions = {}): ASTNode {
+  resolveTypes (vars: ResolveTypesVariableInfo, opts: ResolveTypesOptions = {}): ASTNode {
     // Convert all arg values to mathematical types
 
     let { defaultType = "real", throwOnUnresolved = true } = opts
@@ -266,7 +270,27 @@ export class ASTNode {
       }
     }
 
-    this.applyAll(node => node._resolveTypes({ vars, throwOnUnresolved, defaultType }), false /* only groups */, true /* children first */)
+    let revisedVars: FilledResolveTypesOptions["vars"] = {}
+    for (let v in vars) {
+      if (!vars.hasOwnProperty(v)) continue
+      let n = revisedVars[v]
+      let mType = toMathematicalType(n)
+
+      if (!mType) {
+        throw new ResolutionError(`Invalid mathematical type ${n} for variable ${v}`)
+      }
+
+      revisedVars[v] = mType
+    }
+
+    let revisedType = toMathematicalType(defaultType)
+    if (!revisedType) {
+      throw new ResolutionError(`Invalid default mathematical type ${defaultType}`)
+    }
+
+    this.applyAll(node => node._resolveTypes({
+      vars: revisedVars, throwOnUnresolved, defaultType: revisedType!
+    }), false /* only groups */, true /* children first */)
 
     return this
   }
@@ -291,7 +315,7 @@ export class ASTNode {
    */
   evaluate (vars, { mode = "normal", typecheck = true } = {}) {
     if (!this.allResolved())
-      throw new EvaluationError("This node has not had its types fully resolved (call .resolveTypes())")
+      throw new EvaluationError(`This node has not had its types fully resolved (call .resolveTypes())`)
 
     let convertedMode = toEvaluationMode(mode ?? "normal", true) // throws on fail
 

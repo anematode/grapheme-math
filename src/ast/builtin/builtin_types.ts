@@ -101,13 +101,13 @@ let mathematicalComplex = new MathematicalType({
   name: "complex"
 })
 
-export function defineConcreteType (concreteType) {
+export function defineConcreteType (concreteType: ConcreteType) {
   let { name } = concreteType
 
   concreteTypes.set(name, concreteType)
 }
 
-export function defineMathematicalType (type) {
+export function defineMathematicalType (type: MathematicalType) {
   let { name } = type
 
   mathematicalTypes.set(name, type)
@@ -118,7 +118,7 @@ export function defineMathematicalType (type) {
  * @param o {any}
  * @returns {ConcreteType|null}
  */
-export function toConcreteType (o) {
+export function toConcreteType (o): ConcreteType | null {
   if (typeof o === "string") return concreteTypes.get(o) ?? null
 
   return (o instanceof ConcreteType) ? o : null
@@ -129,7 +129,7 @@ export function toConcreteType (o) {
  * @param o {*}
  * @returns {MathematicalType|null}
  */
-export function toMathematicalType (o) {
+export function toMathematicalType (o): MathematicalType | null {
   if (typeof o === "string") return mathematicalTypes.get(o) ?? null
 
   return (o instanceof MathematicalType) ? o : null

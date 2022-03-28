@@ -3,7 +3,7 @@ import {
   ASTNode,
   ConstantNode,
   EvaluationError,
-  OperatorNode,
+  OperatorNode, ResolveTypesOptions,
   VariableDependencies,
   VariableNode
 } from "./node.js"
@@ -17,7 +17,6 @@ import {
 import { MathematicalCast } from "./operator_definition.js";
 import { MathematicalType } from "./type.js";
 import { Assembler } from "./assembler.js";
-
 
 export class CompilationError extends Error {
   constructor (message) {
@@ -92,6 +91,8 @@ type CompileNodeOptions = {
   staticVariables?: string[]
   typechecks?: boolean
   returnNew?: boolean
+  variables?: {[key: string]: (string | MathematicalType)}
+  resolveTypes?: ResolveTypesOptions
 }
 
 type FilledCompileNodeOptions = {
@@ -406,11 +407,12 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
  * @param root
  * @param options
  */
-export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
+export function compileNode(root: ASTNode | string, options: CompileNodeOptions = {}) {
   if (!(root instanceof ASTNode))
     throw new CompilationError("First argument to compileNode must be an ASTNode")
-  if (!root.allResolved())
-    throw new CompilationError("Node types must be resolved with .resolveTypes() first")
+  if (!root.allResolved()) {
+    root.resolveTypes(options.variables ?? {}, { ...options.resolveTypes, throwOnUnresolved: true })
+  }
 
   let targetOpts = options.targets
   if (!targetOpts) {

@@ -8,7 +8,7 @@
     "http-server": "^14.1.0"
   },
   "scripts": {
-    "test": "ts-mocha --require esm",
+    "test": "mocha --require esm --grep",
     "start": "http-server -a localhost -p 8000 --ext js"
   },
   "type": "module",

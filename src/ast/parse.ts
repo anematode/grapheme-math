@@ -156,7 +156,7 @@ function raiseParserError (string: string, info: ParserErrorInfo, message: strin
   if (!noIndex) // can't use an index if we have no index information
     noIndex = index === -1
 
-  let spaces = ' '.repeat(index)
+  let spaces = noIndex ? '' : ' '.repeat(index)
   let errorLen = (endToken?.index ?? index) - index + 1
 
   throw new ParserError(
@@ -169,7 +169,7 @@ function raiseUnknownParserError (): never {
 }
 
 function checkParensBalanced (s: string) {
-  // TODO: Handle strings (tokens)
+  // TODO: Handle strings as tokens
 
   const parenStack: string[] = []
 

@@ -2,7 +2,7 @@
   try {
     let GMath = await import("../../build/index.js")
 
-    Object.assign(window, GMath)
+    Object.assign(window, { Grapheme: GMath })
   } catch (e) {
     if (!(e instanceof TypeError && e.message.includes("imported"))) {
       throw e

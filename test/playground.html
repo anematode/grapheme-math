@@ -10,15 +10,15 @@
 
 <script>
     // use global variables for convenience
-    function play () {
-      s = "e^(i*z)/(e^-z+e^z)"
-      n = parseString(s)
+      function play() {
+        s = "e^(i*z)/(e^-z+e^z)"
+        n = Grapheme.parseString(s)
 
-      n.resolveTypes({}, { defaultType: "complex" })
-      n.resolveTypes({}, { defaultType: "complex" })
-      n.resolveTypes({}, { defaultType: "complex" })
-      c = compileNode(n)
-    }
+        n.resolveTypes({}, {defaultType: "complex"})
+        n.resolveTypes({}, {defaultType: "complex"})
+        n.resolveTypes({}, {defaultType: "complex"})
+        c = Grapheme.compileNode(n)
+      }
 </script>
 
 </body>

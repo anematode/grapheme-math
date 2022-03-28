@@ -77,7 +77,7 @@
       let s = samples[i]
       let r = results[i]
 
-      geometry.vertices.push(new THREE.Vector3().set(s.re, Grapheme.Complex.abs(r), s.im))
+      geometry.vertices.push(new THREE.Vector3().set(s.re, Math.min(Grapheme.Complex.abs(r), 5), s.im))
 
       if (i % dim !== dim - 1 && i < samples.length - dim - 1) {
         addFace(i, i + dim + 1, i + 1)

@@ -30,8 +30,6 @@ export class EvaluationMode {
 
   fillTypeMap (m: AcceptableTypeMap) {
     for (let [ mathematical, concrete ] of Object.entries(m)) {
-      if (typeof mathematical !== "string") throw new TypeError("unimplemented")
-
       this.typeMap.set(mathematical, toConcreteType(concrete))
     }
   }
