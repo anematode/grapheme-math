@@ -3,6 +3,7 @@
     typeof define === 'function' && define.amd ? define(['exports'], factory) :
     (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.Grapheme = {}));
 }(this, (function (exports) { 'use strict';
+                             
     // Used for bit-level manipulation of floats
     const floatStore = new Float64Array(1);
     const intView = new Uint32Array(floatStore.buffer);
