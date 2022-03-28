@@ -28,6 +28,12 @@
 
     .code-snippet {
         margin-bottom: 10px;
+        overflow-wrap: normal;
+    }
+
+    .code-snippet-wrapper {
+        max-width: 400px;
+        overflow: auto;
     }
 
     button {
@@ -78,13 +84,16 @@
       testCase.className = "test-case"
       testCase.innerHTML = `<h3>${name}</h3>`
 
+      let c = document.createElement("div")
       let m = document.createElement("code")
-
       m.classList.add("code-snippet")
 
       // highlight code
       m.innerHTML = hljs.highlight(code, {language: "javascript"}).value.replace(/\n/g, "<br>").replaceAll("$expr", `"${$expr}"`)
-      testCase.appendChild(m)
+      c.appendChild(m)
+      testCase.appendChild(c)
+
+      c.className = "code-snippet-wrapper"
 
       // add br element
       let br = document.createElement("br")
@@ -151,12 +160,12 @@
       return s.substring(i + 1, j)
     }
 
-    let $expr = "gamma(x / y)"
+    $expr = `(x-2)^5+(x-2)^4+(x-2)^3+(x-2)^2+(x-2)^1+(x-2)+(x-2)^5+(x-2)^4+(x-2)^3+(x-2)^2+(x-2)^1+(x-2)`
 
     function compileExample() {
       timeStart("parse")
       s = $expr
-      n = parseString(s)
+      n = Grapheme.parseString(s)
       timeEnd("parse")
 
       timeStart("resolve")
@@ -164,18 +173,18 @@
       timeEnd("resolve")
 
       timeStart("compile")
-      e = compileNode(n, {targets: {inputFormat: ['x', 'y']}})
+      e = Grapheme.compileNode(n, {targets: {inputFormat: ['x', 'y']}})
       timeEnd("compile")
 
       let sum = 0
 
-      /*timeStart("evaluate")
+      timeStart("evaluate")
       for (let i = 0; i < testCases.length; i += 2) {
         let x = testCases[i], y = testCases[i + 1]
 
         sum += e.evaluate(x, y)
       }
-      timeEnd("evaluate")*/
+      timeEnd("evaluate")
 
       log("Sum: ", sum)
     }
@@ -183,7 +192,7 @@
     function evaluateExample() {
       timeStart("parse")
       s = $expr
-      n = parseString(s)
+      n = Grapheme.parseString(s)
       timeEnd("parse")
 
       timeStart("resolve")
@@ -232,18 +241,18 @@
 
     // warmup
 
-    /*s = $expr
-    n = parseString(s)
-    n = parseString(s)
+    s = $expr
+    n = Grapheme.parseString(s)
+    n = Grapheme.parseString(s)
 
     n.resolveTypes({}, {defaultType: "real"})
     n.resolveTypes({}, {defaultType: "real"})
 
-    e = compileNode(n, {targets: {inputFormat: ['x', 'y']}})
-    e = compileNode(n, {targets: {inputFormat: ['x', 'y']}})
+    e = Grapheme.compileNode(n, {targets: {inputFormat: ['x', 'y']}})
+    e = Grapheme.compileNode(n, {targets: {inputFormat: ['x', 'y']}})
 
     math.parse(s).compile()
-    math.parse(s).compile()*/
+    math.parse(s).compile()
   }
 </script>
 

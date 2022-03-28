@@ -1,5 +1,3 @@
-import {EvaluationMode} from "./eval_modes.js";
-
 type ConcreteTypeParams = {
   // Required
   name: string

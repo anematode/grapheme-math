@@ -13,10 +13,10 @@ import {
   ConcreteGraphNode,
   MathematicalAssignmentGraph,
   MathematicalGraphNode
-} from "./assignment_graph";
-import { MathematicalCast } from "./operator_definition";
-import { MathematicalType } from "./type";
-import { Assembler } from "./assembler";
+} from "./assignment_graph.js";
+import { MathematicalCast } from "./operator_definition.js";
+import { MathematicalType } from "./type.js";
+import { Assembler } from "./assembler.js";
 
 
 export class CompilationError extends Error {
@@ -62,7 +62,7 @@ export type CompileTargetOptions = {
    * the input format are expected to either be static (staticVariables) or in the scope.
    * @defaultValue "scope"
    */
-  inputFormat?: string | Array<string>
+  inputFormat?: string | string[]
   /**
    * Whether to do typechecks on all inputted variables, incurring a slight runtime cost.
    * @defaultValue true
@@ -80,23 +80,23 @@ export type CompileTargetOptions = {
 
 export type CompileTarget = {
   mode: EvaluationMode
-  inputFormat: Array<string>
+  inputFormat: string[]
   typechecks: boolean
   returnNew: boolean
-  staticVariables: Array<string>
+  staticVariables: string[]
   usedVariables: VariableDependencies
 }
 
 type CompileNodeOptions = {
-  targets?: CompileTargetOptions | Array<CompileTargetOptions>
-  staticVariables?: Array<string>
+  targets?: CompileTargetOptions | CompileTargetOptions[]
+  staticVariables?: string[]
   typechecks?: boolean
   returnNew?: boolean
 }
 
 type FilledCompileNodeOptions = {
-  targets: CompileTarget | Array<CompileTarget>
-  staticVariables: Array<string>
+  targets: CompileTarget | CompileTarget[]
+  staticVariables: string[]
 }
 
 type RootNodeProperties = {
@@ -111,7 +111,7 @@ const defaultTarget = {
 }
 
 // -1 if fine, otherwise, index of problematic
-function checkStringArray (o: Array<any>): number {
+function checkStringArray (o: any[]): number {
   for (let i = 0; i < o.length; ++i) {
     if (typeof o[i] !== "string") {
       return i
@@ -122,7 +122,7 @@ function checkStringArray (o: Array<any>): number {
 }
 
 // Throws if an input format is invalid (i.e., if there are two arguments with the same name)
-function checkInputFormat(inputFormat: Array<string>) {
+function checkInputFormat(inputFormat: string[]) {
   let p = checkStringArray(inputFormat)
   if (p !== -1) {
     throw new CompilationError(`Provided variable name at index ${p} in input format is not a string`)
@@ -157,7 +157,7 @@ function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOpti
     inputFormat = [ inputFormat ]
   }
 
-  inputFormat = inputFormat as Array<string>
+  inputFormat = inputFormat as string[]
   checkInputFormat(inputFormat)
 
   if (!Array.isArray(staticVariables)) {
@@ -227,9 +227,9 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
         let n = astNode as (OperatorNode | VariableNode)
 
         // @ts-ignore
-        let args: Array<ASTNode> = n.children ?? []
+        let args: ASTNode[] = n.children ?? []
         // @ts-ignore
-        let casts: Array<MathematicalCast> = (args.length === 0) ? [] : n.casts
+        let casts: MathematicalCast[] = (args.length === 0) ? [] : n.casts
 
         let castedArgs = casts.map((cast, i) => {
           let arg = args[i]
@@ -425,10 +425,10 @@ export function compileNode(root: ASTNode, options: CompileNodeOptions = {}) {
     usedVariables: root.getVariableDependencies()
   }
 
-  targetOpts = targetOpts as Array<CompileTargetOptions>
+  targetOpts = targetOpts as CompileTargetOptions[]
 
   // Convert each target to a full target
-  let targets: Array<CompileTarget> = []
+  let targets: CompileTarget[] = []
   for (let i = 0; i < targetOpts.length; ++i) {
     let to = targetOpts[i]
 

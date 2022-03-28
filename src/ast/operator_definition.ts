@@ -8,7 +8,7 @@ import {EvaluationMode, EvaluationModes} from "./eval_modes.js"
  * @param args {any}
  * @returns MathematicalType[]
  */
-function convertArgumentTypes(args: any): Array<MathematicalType> {
+function convertArgumentTypes(args: any): MathematicalType[] {
   if (args == null) return []
   if (!Array.isArray(args)) throw new TypeError("Expected argument type list to be an array")
 
@@ -26,7 +26,7 @@ function convertArgumentTypes(args: any): Array<MathematicalType> {
 }
 
 type CastOperatorDefinitionBaseParams = {
-  evaluators: Array<ConcreteEvaluator>
+  evaluators: ConcreteEvaluator[]
 
   tags?: OperatorDefinitionTags
   builtin?: boolean
@@ -35,7 +35,7 @@ type CastOperatorDefinitionBaseParams = {
 
 type OperatorDefinitionParams = CastOperatorDefinitionBaseParams & {
   name: string
-  args: Array<MathematicalType|string>
+  args: (MathematicalType|string)[]
   returns: MathematicalType|string
 }
 
@@ -55,9 +55,9 @@ type EvaluatorPreferences = {
 
 export class OperatorDefinition {
   name: string
-  args: Array<MathematicalType>
+  args: MathematicalType[]
   returns: MathematicalType
-  evaluators: Array<ConcreteEvaluator>
+  evaluators: ConcreteEvaluator[]
   tags: OperatorDefinitionTags
 
   /**
@@ -150,7 +150,7 @@ export class OperatorDefinition {
     return this.defaultEvaluators.get(mode.name) ?? null
   }
 
-  findEvaluator (args: Array<ConcreteType>, preferences: EvaluatorPreferences): ConcreteEvaluator | null {
+  findEvaluator (args: ConcreteType[], preferences: EvaluatorPreferences): ConcreteEvaluator | null {
     let evaluators = this.evaluators
 
     let { evalType } = preferences
@@ -177,7 +177,7 @@ export class OperatorDefinition {
    * @param args
    * @returns -1 if it cannot be called, a nonnegative integer giving the number of necessary implicit casts to call it
    */
-  canCallWith (args: Array<MathematicalType>): number {
+  canCallWith (args: MathematicalType[]): number {
     let casts = this.getCasts(args)
 
     if (!casts) return -1
@@ -188,10 +188,10 @@ export class OperatorDefinition {
    * Get a list of mathematical casts from source types to the required types for this operator.
    * @param args
    */
-  getCasts (args: Array<MathematicalType>): Array<MathematicalCast> | null {
+  getCasts (args: MathematicalType[]): MathematicalCast[] | null {
     if (this.args.length !== args.length) return null
 
-    let casts: Array<MathematicalCast> = []
+    let casts: MathematicalCast[] = []
     for (let i = 0; i < args.length; ++i) {
       let cast = getMathematicalCast(args[i] /* src */, this.args[i])
 
@@ -267,8 +267,8 @@ const CachedIdentityCasts = new Map()
  * @param srcType
  * @returns
  */
-function generateIdentityEvaluators(srcType: MathematicalType): Array<ConcreteCast> {
-  let evaluators: Array<ConcreteCast> = []
+function generateIdentityEvaluators(srcType: MathematicalType): ConcreteCast[] {
+  let evaluators: ConcreteCast[] = []
 
   for (let mode of EvaluationModes.values()) {
     let concreteType = mode.getConcreteType(srcType)

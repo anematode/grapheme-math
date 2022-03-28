@@ -31,7 +31,7 @@
 
 import { toConcreteType } from './builtin/builtin_types.js'
 import {ConcreteType} from "./type.js"
-import { MathematicalCast } from "./operator_definition";
+import { MathematicalCast } from "./operator_definition.js";
 
 const jsPrimitives = Object.freeze(['+', '-', '/', '*', '&&', '||', '==', '!=', '<=', '>=', '<', '>'] as const)
 const unaryPrimitives = {
@@ -48,7 +48,7 @@ const binaryPrimitives: { [key in typeof jsPrimitives[number]]: Function } = {}
 export type AllowedJSPrimitive = (typeof jsPrimitives)[number] | ""
 
 type ConcreteEvaluatorParams = {
-  args: Array<string|ConcreteType>
+  args: (string|ConcreteType)[]
   returns: string|ConcreteType
   func?: Function // required if primitive is not specified
 
@@ -67,7 +67,7 @@ type ConcreteEvaluatorParams = {
 
 export class ConcreteEvaluator {
   // Argument types
-  args: Array<ConcreteType>
+  args: ConcreteType[]
   // Return type
   returns: ConcreteType
   // Number of arguments (calculated automatically)
@@ -141,17 +141,17 @@ export class ConcreteEvaluator {
    * needed, >0 for the number of needed casts
    * @param args
    */
-  castDistance (args: Array<ConcreteType>): number {
+  castDistance (args: ConcreteType[]): number {
     let casts = this.getCasts(args)
     if (!casts) return -1
 
     return castDistance(casts)
   }
 
-  getCasts (args: Array<ConcreteType>): Array<ConcreteCast> | null {
+  getCasts (args: ConcreteType[]): ConcreteCast[] | null {
     if (this.args.length !== args.length) return null
 
-    let casts: Array<ConcreteCast> = []
+    let casts: ConcreteCast[] = []
     for (let i = 0; i < args.length; ++i) {
       let cast = getConcreteCast(args[i] /* src */, this.args[i])
 
@@ -166,7 +166,7 @@ export class ConcreteEvaluator {
    * Call an evaluator as if it were new (creating a new value if it's a writes evaluator)
    * @param args
    */
-  callNew (args: Array<any>): any {
+  callNew (args: any[]): any {
     if (this.evalType === "new") {
       return this.func(...args)
     }
@@ -268,8 +268,8 @@ export function canConcreteCast (srcType: ConcreteType, dstType: ConcreteType): 
   return !!getConcreteCast(srcType, dstType)
 }
 
-export function getConcreteCasts (): Array<ConcreteCast> {
-  let casts: Array<ConcreteCast> = []
+export function getConcreteCasts (): ConcreteCast[] {
+  let casts: ConcreteCast[] = []
   for (let castList of BUILTIN_CONCRETE_CASTS.values()) {
     casts.push(...castList.values())
   }
@@ -281,7 +281,7 @@ export function getConcreteCasts (): Array<ConcreteCast> {
  * @param casts
  * @returns {number}
  */
-export function castDistance (casts: Array<ConcreteCast> | Array<MathematicalCast>): number {
+export function castDistance (casts: ConcreteCast[] | MathematicalCast[]): number {
   let count = 0
 
   for (let cast of casts) {

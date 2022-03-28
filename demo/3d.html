@@ -27,9 +27,9 @@
 
   function getGraph () {
     s = "cos(z)/(1+z^2)"
-    n = parseString(s)
+    n = Grapheme.parseString(s)
 
-    n.resolveTypes({ defaultType: "complex" })
+    n.resolveTypes({}, { defaultType: "complex" })
 
     let samples = []
     colors = []
@@ -42,10 +42,10 @@
       for (let j = 0; j < dim; ++j) {
         let b = (j / dim - 0.5) * 10
 
-        let z = new Complex(b, a)
+        let z = new Grapheme.Complex(b, a)
         let v = n.evaluate({ z })
 
-        let color = complexToRGB(v)
+        let color = Grapheme.complexToRGB(v)
 
         colors.push(color[0] / 255)
         colors.push(color[1] / 255)
@@ -77,7 +77,7 @@
       let s = samples[i]
       let r = results[i]
 
-      geometry.vertices.push(new THREE.Vector3().set(s.re, Complex.abs(r), s.im))
+      geometry.vertices.push(new THREE.Vector3().set(s.re, Grapheme.Complex.abs(r), s.im))
 
       if (i % dim !== dim - 1 && i < samples.length - dim - 1) {
         addFace(i, i + dim + 1, i + 1)
@@ -124,7 +124,7 @@
 
     window.onload = play
 </script>
-<script type="module" src="perf/perf.js"></script>
+<script src="/build/main.js"></script>
 
 </body>
 </html>

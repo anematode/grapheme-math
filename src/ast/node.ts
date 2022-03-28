@@ -2,9 +2,9 @@ import {resolveOperatorDefinition} from './builtin/builtin_operators.js'
 import {toMathematicalType} from "./builtin/builtin_types.js"
 import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
 import {MathematicalConstants} from "./builtin/globals.js"
-import {localWarn} from "../../grapheme_shared";
-import {MathematicalType} from "./type";
-import {MathematicalCast, OperatorDefinition} from "./operator_definition";
+import {localWarn} from "../../grapheme_shared.js";
+import {MathematicalType} from "./type.js";
+import {MathematicalCast, OperatorDefinition} from "./operator_definition.js";
 
 /**
  * To evaluate a given node whose operators and types have been identified, we provide the following:
@@ -69,8 +69,8 @@ const reservedVariableNames = [
  * Helper function (doesn't need to be fast)
  * @returns {string}
  */
-function prettyPrintNode(node: ASTNode, name: string, keys: Array<string>, params: any) {
-  let out: Array<string> = []
+function prettyPrintNode(node: ASTNode, name: string, keys: string[], params: any) {
+  let out: string[] = []
 
   for (let key of keys) {
     let value = node[key]
@@ -336,12 +336,12 @@ export class ASTNode {
 }
 
 export type ASTGroupParams = ASTNodeParams & {
-  children?: Array<ASTNode>
+  children?: ASTNode[]
 }
 
 // Node with children. A plain ASTGroup is usually just a parenthesized thing
 export class ASTGroup extends ASTNode {
-  children: Array<ASTNode>
+  children: ASTNode[]
 
   constructor (params: ASTGroupParams = {}) {
     super(params)
@@ -353,6 +353,8 @@ export class ASTGroup extends ASTNode {
 
   applyAll (func, onlyGroups = false, childrenFirst = false, depth = 0) {
     if (!childrenFirst) func(this, depth)
+
+    //let stack: Array<ASTNode> = [ this ]
 
     let children = this.children
     for (let i = 0; i < children.length; ++i) {
@@ -520,12 +522,12 @@ export class VariableNode extends ASTNode {
 export type OperatorNodeParams = ASTGroupParams & {
   name: string
   extraArgs?: { [key: string]: string },
-  casts: Array<MathematicalCast> | null
+  casts: MathematicalCast[] | null
 }
 
 export class OperatorNode extends ASTGroup {
   name: string
-  casts: Array<MathematicalCast> | null  // null when casts are not known
+  casts: MathematicalCast[] | null  // null when casts are not known
 
   // Extra arguments that have an effect on the operator's mathematical meaning, but which are unwieldy to represent
   // directly as an argment. Current use: comparison chain, where the arguments are the comparisons to be done and
@@ -553,7 +555,7 @@ export class OperatorNode extends ASTGroup {
     return new OperatorNode(this)
   }
 
-  childArgTypes (): Array<MathematicalType|null> {
+  childArgTypes (): (MathematicalType|null)[] {
     return this.children.map(c => c.type)
   }
 
@@ -561,7 +563,7 @@ export class OperatorNode extends ASTGroup {
     let childArgTypes = this.childArgTypes()
 
     if (!childArgTypes.some(t => t === null)) { // null check done
-      let [ definition, casts ] = resolveOperatorDefinition(this.name, childArgTypes as Array<MathematicalType>)
+      let [ definition, casts ] = resolveOperatorDefinition(this.name, childArgTypes as MathematicalType[])
 
       if (definition !== null && casts!.every(cast => cast !== null)) {
         this.type = definition.returns

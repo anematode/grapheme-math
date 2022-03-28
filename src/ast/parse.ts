@@ -76,13 +76,13 @@ type ASTNodeInfo = {
   // Variables, operators, functions
   name?: string
   // Comparison chains
-  comparisons?: Array<string>
+  comparisons?: string[]
   // For root nodes: which string this was generated from, if any
   parsedFrom?: string
 }
 type UnprocessedASTNodeType = "generic" | "constant" | "variable" | "operator" | "group"
 type UnprocessedChild = UnprocessedASTNode | Token
-type UnprocessedChildren = Array<UnprocessedChild>
+type UnprocessedChildren = UnprocessedChild[]
 
 // ASTNode that might still have tokens in it
 class UnprocessedASTNode {
@@ -171,7 +171,7 @@ function raiseUnknownParserError (): never {
 function checkParensBalanced (s: string) {
   // TODO: Handle strings (tokens)
 
-  const parenStack: Array<string> = []
+  const parenStack: string[] = []
 
   let i = 0
   let err = false
@@ -223,14 +223,14 @@ const trimRight = ('trimRight' in String.prototype) ? (s: string): string => (s 
   return s.replace(/\s+$/, '')
 }
 
-function getTokens (s: string): Array<Token> {
+function getTokens (s: string): Token[] {
   let i = 0
   let original_string = s
 
   s = trimRight(s)
   let prev_len = s.length
 
-  let tokens: Array<Token> = []
+  let tokens: Token[] = []
 
   while (s) {
     s = s.trim() // repeatedly trim off whitespace and grab the next token TODO: optimize to simply iterate
@@ -411,7 +411,7 @@ function checkValid (tokens, string) {
  * Find a pair of parentheses in a list of tokens, namely the first one as indexed by the closing paren/bracket. For
  * example, in (x(y(z)(w))) it will find (z), returning [ paren1 index, paren2 index, paren1 token, paren2 token ]
  */
-function findParenIndices (children: Array<UnprocessedChild>): [ number, number, Token, Token ] | null {
+function findParenIndices (children: UnprocessedChild[]): [ number, number, Token, Token ] | null {
   let startIndex = -1
   let startToken: Token | null = null
 
@@ -487,7 +487,7 @@ function isStringInteger (s: string): boolean {
 /**
  * Convert constants and variables to their ASTNode counterparts
  */
-function processConstantsAndVariables (tokens: Array<Token|ASTNode>) {
+function processConstantsAndVariables (tokens: (Token|ASTNode)[]) {
   for (let i = 0; i < tokens.length; ++i) {
     let token = tokens[i]
     let node
@@ -627,7 +627,7 @@ function processUnaryAndExponentiation (root: UnprocessedASTNode) {
 }
 
 // Combine binary operators, going from left to right, with equal precedence for all
-function processOperators (root: UnprocessedASTNode, operators: Array<string>) {
+function processOperators (root: UnprocessedASTNode, operators: string[]) {
   root.applyAll(node => {
     if (!(node instanceof UnprocessedASTNode)) return
     let children = node.children
@@ -697,7 +697,7 @@ function processComparisonChains (root: UnprocessedASTNode) {
           // [ ASTNode, ASTNode, ASTNode ]
           let cchainChildren: UnprocessedChildren = (comparisonChain.children = [])
 
-          let comparisons: Array<string> = [] // [ '<', '<=' ]
+          let comparisons: string[] = [] // [ '<', '<=' ]
           for (let i = 1; i < removedChildren.length - 2; i += 2) {
             let child = removedChildren[i]
             if (!('op' in child)) raiseUnknownParserError()
@@ -809,7 +809,7 @@ function attachInformation (root: UnprocessedASTNode) {
  * @param tokens
  * @param string String where tokens ultimately came from (used for descriptive error messages)
  */
-function parseTokens (tokens: Array<Token>, string: string): UnprocessedASTNode {
+function parseTokens (tokens: Token[], string: string): UnprocessedASTNode {
   // This is somewhat of a recursive descent parser because the grammar is nontrivial, but really isn't that
   // crazy. At intermediate steps, the node is a tree of both processed nodes and unprocessed tokens—a bit odd, but it
   // works.
@@ -876,7 +876,7 @@ function convertToASTNode(string: string, n: UnprocessedASTNode): ASTNode {
   }
 
   if (isGroup) {
-    let children: Array<ASTNode> = []
+    let children: ASTNode[] = []
 
     for (let i = 0; i < n.children.length; ++i) {
       let child = n.children[i]

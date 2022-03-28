@@ -15,7 +15,7 @@ import { ConcreteType, MathematicalType } from "./type.js";
 import { ConcreteEvaluator } from "./evaluator.js";
 import { OperatorDefinition } from "./operator_definition.js";
 import { ASTNode } from "./node.js";
-import { CompilationError } from "./compile";
+import { CompilationError } from "./compile.js";
 
 type NodeBase = {
   // Technically duplicates the information in the Map, but makes things a bit easier. Each node has a unique name,
@@ -31,7 +31,7 @@ type NodeBase = {
   isCast: boolean
 
   // Names of variable arguments
-  args?: Array<string>
+  args?: string[]
 
   // Corresponding AST node, if applicable
   astNode?: ASTNode

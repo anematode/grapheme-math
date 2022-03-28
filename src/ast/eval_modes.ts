@@ -1,15 +1,15 @@
 import {toConcreteType} from "./builtin/builtin_types.js"
-import {ConcreteType, MathematicalType} from "./type";
+import {ConcreteType, MathematicalType} from "./type.js";
 
 type AcceptableTypeMap = Map<string, ConcreteType> | { [key: string]: string }
 type EvaluationModeParams = {
-  args?: Array<any>  // default is []
+  args?: any[]  // default is []
   typeMap: AcceptableTypeMap
 }
 
 export class EvaluationMode {
   name: string
-  args: Array<any>
+  args: any[]
   argCount: number
   typeMap: Map<string, ConcreteType>
 

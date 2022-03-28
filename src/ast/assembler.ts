@@ -1,7 +1,7 @@
 import { AllowedJSPrimitive } from "./evaluator.js";
 import { CompilationError, CompileTarget, genVariableName } from "./compile.js";
 import { ConcreteAssignmentGraph } from "./assignment_graph.js";
-import { ConcreteType } from "./type";
+import { ConcreteType } from "./type.js";
 
 interface AssemblerEnvironment {
   assembler: Assembler
@@ -14,7 +14,7 @@ interface AssemblerEnvironment {
   enterMain: () => void
   enterFunction: (fName: string) => void
   addExport: (exportName: string, internalName: string) => void,
-  addInternalFunction: (args?: Array<string>) => void
+  addInternalFunction: (args?: string[]) => void
 }
 
 export class Assembler {
@@ -24,7 +24,7 @@ export class Assembler {
   fragments: Map<string, PlainCodeFragment>
 
   // Array of input variables
-  inputFormat: Array<string>
+  inputFormat: string[]
 
   constructor () {
     let preamble = this.preamble = new PlainCodeFragment()
@@ -142,7 +142,7 @@ export class Assembler {
   }
 
   compile (): any {
-    type InternalFunction = { args: Array<string>, text: string }
+    type InternalFunction = { args: string[], text: string }
 
     // Map of closure var names to imported objects to be passed into the closure
     let imports = new Map<any, string>()
@@ -198,7 +198,7 @@ export class Assembler {
       add (s, "preamble")
     }
 
-    function addInternalFunction (args?: Array<string>, forcedName: string = ""): string {
+    function addInternalFunction (args?: string[], forcedName: string = ""): string {
       let name = forcedName || ("$function_" + genVariableName())
 
       internalFunctions.set(name, {
@@ -268,8 +268,8 @@ export class Assembler {
     //   return { evaluate: main }  // exports
     // }
 
-    let importArray: Array<any> = []  // passed arguments to closure
-    let importNames: Array<string> = [] // closure argument names
+    let importArray: any[] = []  // passed arguments to closure
+    let importNames: string[] = [] // closure argument names
 
     for (let [ o, name ] of imports.entries()) {
       importArray.push(o)
@@ -339,7 +339,7 @@ class TypecheckFragment implements CodeFragment {
 
 // Just a group of code fragments
 export class PlainCodeFragment implements CodeFragment {
-  contents: Array<string | CodeFragment>
+  contents: (string | CodeFragment)[]
 
   constructor () {
     this.contents = []
@@ -357,7 +357,7 @@ export class PlainCodeFragment implements CodeFragment {
 
 export class InvokeVoidFunctionCodeFragment implements CodeFragment {
   func: Function
-  args: Array<string>
+  args: string[]
 
   compileToEnv (env: AssemblerEnvironment) {
     let { func, args } = this
@@ -379,7 +379,7 @@ export class VariableDefinitionCodeFragment implements CodeFragment {
 
   // If a JS primitive, the arity is implicit in the number of arguments
   func?: Function | AllowedJSPrimitive
-  args?: Array<string>  // arguments to the function, to be copied verbatim as JS code
+  args?: string[]  // arguments to the function, to be copied verbatim as JS code
 
   value?: any
   verbatim?: boolean  // Whether to copy
