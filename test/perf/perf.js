@@ -1,6 +1,6 @@
 (async () => {
   try {
-    let GMath = await import("/build/index.js")
+    let GMath = await import("../../build/index.js")
 
     Object.assign(window, GMath)
   } catch (e) {
@@ -11,7 +11,7 @@
     console.log("Not local; importing from build")
 
     let scriptTag = document.createElement("script")
-    scriptTag.src = "/build/main.js"
+    scriptTag.src = "../../build/main.js"
     document.head.appendChild(scriptTag)
   }
 
