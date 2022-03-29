@@ -19,20 +19,27 @@
     return {
       next () {
         if (finished) return { value: undefined, done: true }
+        let s = sum
 
         for (let j = 0; j <= 1e5; ++i, ++j) {
           // Sum at most 10000 values
-          sum += i
+          s += i
 
           if (i === n) {
             finished = true
-            return { value: sum, done: true }
+            return { value: s, done: true }
           }
         }
+
+        sum = s
 
         return { value: i / n, done: false }
       }
     }
+  }
+
+  function onProgress(f) {
+    console.log("Progress:", f, "Time", Date.now())
   }
 
     // use global variables for convenience

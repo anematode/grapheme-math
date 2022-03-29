@@ -38,9 +38,14 @@
  * expensive updates.
  */
 
-type BolusResult<T> = {
+type BolusReturn<T> = {
   value: number | T  // if done is false, a value between 0 and 1 may be returned. If done is true, the result is returned.
   done: boolean
+}
+
+type BolusResult<T> = {
+  result: T
+  timeElapsed: number
 }
 
 /**
@@ -50,7 +55,7 @@ type BolusResult<T> = {
  * is canceled, or throws. value is a number between 0 and 1 representing the progress so far.
  */
 interface Bolus<T> {
-  next: () => BolusResult<T>
+  next: () => BolusReturn<T>
   cleanup?: () => void
 }
 
@@ -79,11 +84,15 @@ class BolusCancellationError extends Error {
  * @param bolus The bolus to evaluate
  * @param timeout Timeout length in milliseconds (-1 if no timeout)
  */
-export function syncDigest<T> (bolus: Bolus<T>, timeout = -1): T {
-  if (typeof bolus?.next !== 'function') {
+export function syncDigest<T> (bolus: T | Bolus<T>, timeout = -1): BolusResult<T> {
+  // @ts-ignore
+  if (bolus == null || typeof bolus?.next !== 'function') {
     // Forward non-boluses
-    return bolus as unknown as T
+    return { result: bolus as T, timeElapsed: 0 }
   }
+
+  bolus = bolus as Bolus<T>
+  const startTime = Date.now()
 
   try {
     // Allow timeouts between one ms and one day
@@ -94,19 +103,15 @@ export function syncDigest<T> (bolus: Bolus<T>, timeout = -1): T {
        * the Date.now() and performance.now() values. Indeed, their accuracy is never guaranteed. That is unfortunately
        * a fundamental limitation.
        */
-
-      const startTime = Date.now()
-
       while (true) {
         // Iterate through the bolus
         const next = bolus.next()
+        const delta = Date.now() - startTime
 
         if (next.done) {
           // return the result if done
-          return next.value as T
+          return { result: next.value as T, timeElapsed: delta }
         }
-
-        const delta = Date.now() - startTime
 
         if (delta > timeout) {
           // Clean up if needed
@@ -127,7 +132,8 @@ export function syncDigest<T> (bolus: Bolus<T>, timeout = -1): T {
     while (true) {
       const next = bolus.next()
 
-      if (next.done) return next.value as T
+      if (next.done)
+        return { result: next.value as T, timeElapsed: Date.now() - startTime }
     }
   } finally {
     // Potentially clean up
@@ -138,7 +144,7 @@ export function syncDigest<T> (bolus: Bolus<T>, timeout = -1): T {
 type BolusProgressCallback = (progress: number) => void
 
 class BolusPromise<T> {
-  _executor: Promise<T>
+  _executor: Promise<BolusResult<T>>
   _bolus: Bolus<T> | null
 
   _startTime: number
@@ -149,7 +155,14 @@ class BolusPromise<T> {
   _onCleanup: Function | null
   _cancelled: boolean
 
-  constructor (executor: Promise<T> | null, bolus: Bolus<T> | null, st: number, timeout: number, timeStep: number, onProgress: BolusProgressCallback | null, onCleanup: Function | null) {
+  constructor (executor: Promise<BolusResult<T>> | null,
+               bolus: Bolus<T> | null,
+               st: number,
+               timeout: number,
+               timeStep: number,
+               onProgress: BolusProgressCallback | null,
+               onCleanup: Function | null,
+               usePostMessage: boolean) {
     this._bolus = bolus
     this._startTime = st
     this._timeout = timeout
@@ -159,7 +172,7 @@ class BolusPromise<T> {
     this._cancelled = false
 
     if (!executor) {
-      this._executor = this.constructExecutor()
+      this._executor = this.constructExecutor(usePostMessage)
     } else {
       this._executor = executor
     }
@@ -175,35 +188,64 @@ class BolusPromise<T> {
     return e.catch.apply(e, arguments)
   }
 
-  constructExecutor (): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      let that = this // old school
-      setTimeout(function () {
-        if (that._cancelled) {
-          throw new BolusCancellationError("Bolus was cancelled")
-        }
+  constructExecutor (usePostMessage: boolean): Promise<BolusResult<T>> {
+    let id = usePostMessage ? Math.random() : 0
+    let msgData = { asyncBolusId: id }  // posting this object will cause the corresponding bolus to step
+    let tm
+
+    let attachCallback = usePostMessage ? () => {
+      window.addEventListener("message", tm)
+      window.postMessage(msgData, location.origin)
+    } : () => {
+      id = setTimeout(tm, 0)
+    }
+
+    let scheduleCallback = usePostMessage ? () => {
+      window.postMessage(msgData, tm)
+    } : () => id = setTimeout(tm, 0)
+
+    let cleanupCallback = usePostMessage ? () => {
+      window.removeEventListener("message", tm)
+    } : () => clearTimeout(id)
+
+    return new Promise<BolusResult<T>>((resolve, reject) => {
+      tm = (e: MessageEvent) => {
+        if (e.data?.asyncBolusId !== id) return
 
         try {
-          let stepResult = that._step()
+          if (this._cancelled) {
+            throw new BolusCancellationError("Bolus was cancelled")
+          }
+
+          let stepResult = this._step()
 
           if (stepResult.done) {
-            resolve(stepResult.value as T)
-            that._onProgress?.(1)
+            cleanupCallback()
+
+            resolve({ result: stepResult.value as T, timeElapsed: Date.now() - this._startTime })
+            this._onProgress?.(1)
+
             return
           } else {
-            that._onProgress?.(stepResult.value as number)
+            this._onProgress?.(stepResult.value as number)
           }
           // timeouts/errors will call reject implicitly
 
-          setTimeout(this, 0)
-        } finally {
-          that._onCleanup?.()
+          // Post message to itself
+          scheduleCallback()
+        } catch (e) {
+          this._onCleanup?.()
+          cleanupCallback()
+
+          reject(e)
         }
-      })
+      }
+
+      attachCallback()
     })
   }
 
-  _step () {
+  _step (): BolusReturn<T> {
     let begin = Date.now()
     let startTime = this._startTime
     let step = this._timeStep
@@ -246,6 +288,7 @@ type AsyncDigestOptions = {
   timeStep?: number
   onProgress?: BolusProgressCallback
   cleanup?: () => void
+  usePostMessage?: boolean
 }
 
 /**
@@ -256,7 +299,8 @@ type AsyncDigestOptions = {
 export function asyncDigest<T> (bolus: Bolus<T>, opts: AsyncDigestOptions = {}): BolusPromise<T> {
   if (typeof bolus?.next !== 'function') {
     // Forward non-boluses
-    return new BolusPromise<T>(Promise.resolve(bolus as unknown as T), null, 0, 0, 0, null, null)
+    return new BolusPromise<T>(Promise.resolve({ result: bolus as unknown as T, timeElapsed: 0 }),
+      null, 0, 0, 0, null, null, false)
   }
 
   let startTime = Date.now()
@@ -265,6 +309,7 @@ export function asyncDigest<T> (bolus: Bolus<T>, opts: AsyncDigestOptions = {}):
   let timeStep = opts.timeStep ?? 10 // ms
   let onProgress = opts.onProgress ?? null
   let onCleanup = opts.cleanup ?? null
+  let usePostMessage = opts.usePostMessage ?? true
 
-  return new BolusPromise<T>(null, bolus, startTime, timeout, timeStep, onProgress, onCleanup)
+  return new BolusPromise<T>(null, bolus, startTime, timeout, timeStep, onProgress, onCleanup, usePostMessage)
 }

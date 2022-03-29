@@ -283,10 +283,7 @@ export class ASTNode {
       revisedVars[v] = mType
     }
 
-    let revisedType = toMathematicalType(defaultType)
-    if (!revisedType) {
-      throw new ResolutionError(`Invalid default mathematical type ${defaultType}`)
-    }
+    let revisedType = toMathematicalType(defaultType, true)
 
     this.applyAll(node => node._resolveTypes({
       vars: revisedVars, throwOnUnresolved, defaultType: revisedType!

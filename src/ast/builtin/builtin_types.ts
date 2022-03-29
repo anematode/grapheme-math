@@ -139,7 +139,7 @@ export function toConcreteType (o, throwOnError=false): ConcreteType | null {
  */
 export function toMathematicalType (o, throwOnError=false): MathematicalType | null {
   let r: MathematicalType | null = null
-  if (typeof o === "string") r = concreteTypes.get(o) ?? null
+  if (typeof o === "string") r = mathematicalTypes.get(o) ?? null
   else r = (o instanceof MathematicalType) ? o : null
 
   if (!r && throwOnError) {
@@ -149,8 +149,8 @@ export function toMathematicalType (o, throwOnError=false): MathematicalType | n
   return r
 }
 
-let concreteTypes = new Map()
-let mathematicalTypes = new Map()
+let concreteTypes = new Map<string, ConcreteType>()
+let mathematicalTypes = new Map<string, MathematicalType>()
 
   // Concrete types
 ;[concreteBoolean, concreteInt, concreteReal, concreteIntervalBoolean, concreteIntervalInt, concreteIntervalReal, concreteComplex].forEach(defineConcreteType)
