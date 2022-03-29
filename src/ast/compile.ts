@@ -17,6 +17,7 @@ import {
 import { MathematicalCast } from "./operator_definition.js";
 import { MathematicalType } from "./type.js";
 import { Assembler } from "./assembler.js";
+import { parseString } from "./parse.js";
 
 export class CompilationError extends Error {
   constructor (message) {
@@ -140,7 +141,6 @@ function checkInputFormat(inputFormat: string[]) {
   }
 }
 
-
 function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOptions, rootProperties: RootNodeProperties, index: number): CompileTarget {
   if (typeof opts !== "object") {
     throw new CompilationError(`Provided target option at index ${index} is not an object`)
@@ -186,7 +186,7 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
   // ASTNode -> graph node name
   let astToGraphMap = new Map<ASTNode, string>()
 
-  astToGraphMap.set(root, "$ret")
+  //astToGraphMap.set(root, "$ret")
 
   function defineGraphNode(name: string, astNode: ASTNode | null, inf: MathematicalGraphNode) {
     if (astNode) {
@@ -303,6 +303,13 @@ function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
 
   graph.nodes = assnMap
 
+  let graphRoot = astToGraphMap.get(root)
+  if (!graphRoot) {
+    throw new CompilationError("?")
+  }
+
+  graph.root = graphRoot
+
   return graph
 }
 
@@ -397,6 +404,7 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
 
   let graph = new ConcreteAssignmentGraph()
   graph.nodes = cNodes
+  graph.root = mGraph.root
 
   return graph
 }
@@ -408,8 +416,13 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
  * @param options
  */
 export function compileNode(root: ASTNode | string, options: CompileNodeOptions = {}) {
-  if (!(root instanceof ASTNode))
-    throw new CompilationError("First argument to compileNode must be an ASTNode")
+  if (!(root instanceof ASTNode)) {
+    if (!(typeof root === "string"))
+      throw new CompilationError("First argument to compileNode must be an ASTNode or string")
+
+    root = parseString(root)
+  }
+
   if (!root.allResolved()) {
     root.resolveTypes(options.variables ?? {}, { ...options.resolveTypes, throwOnUnresolved: true })
   }

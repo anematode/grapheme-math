@@ -135,8 +135,8 @@ export class Assembler {
         }
       }
 
-      if (name === "$ret") { // single return statement
-        this.add("return $ret;")
+      if (name === cGraph.root) { // single return statement
+        this.add(`return ${cGraph.root}`)
       }
     }
   }
@@ -152,7 +152,14 @@ export class Assembler {
     addInternalFunction([], "preamble")
     addInternalFunction([], "main")
 
-    let writingTo: InternalFunction = internalFunctions.get("main")!
+    let writingTo: InternalFunction = internalFunctions.get("preamble")!
+    write("'use strict';")
+
+    let tagImports = false
+
+    function numberToTag (n: number): string {
+      return (n + '').replace(/[.+-]/, '_')
+    }
 
     function importObject (o: any): string {
       let existing = imports.get(o)
@@ -161,6 +168,10 @@ export class Assembler {
       }
 
       let name = "$import_" + genVariableName()
+      if (tagImports) {
+        let tag = (typeof o === "function") ? (o.tag ?? o.name) : (typeof o === "number" ? numberToTag(o) : "unknown")
+        name += "_" + tag
+      }
 
       imports.set(o, name)
 

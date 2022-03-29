@@ -73,6 +73,7 @@ class AssignmentGraph<NodeType extends NodeBase> {
 
   // Map node name -> reference
   nodes: Map<string, NodeType>
+  root: string  // name of root node
 
 
   /**
@@ -93,7 +94,7 @@ class AssignmentGraph<NodeType extends NodeBase> {
 
     let nodes = this.nodes
     let enteredNodes = new Set<string>()
-    let stack = ["$ret"] // last element in stack is the element we will recurse into
+    let stack = [ this.root ] // last element in stack is the element we will recurse into
 
     let iters = 0
     const MAX_ITERS = 10000 // prevent infinite loopage

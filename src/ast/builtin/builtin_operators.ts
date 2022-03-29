@@ -567,3 +567,30 @@ registerOperator(new OperatorDefinition({
     })
   ]
 }))
+
+registerOperator(new OperatorDefinition({
+  name: 'exp',
+  args: ["real"],
+  returns: "real",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: ["real"],
+      returns: "real",
+      func: Math.exp
+    })
+  ]
+}))
+
+registerOperator(new OperatorDefinition({
+  name: 'exp',
+  args: ["complex"],
+  returns: "complex",
+  evaluators: [
+    new ConcreteEvaluator({
+      args: ["complex"],
+      returns: "complex",
+      evalType: "write",
+      func: (z, dst) => dst.exp(z)
+    })
+  ]
+}))

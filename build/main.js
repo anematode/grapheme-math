@@ -3,7 +3,7 @@
     typeof define === 'function' && define.amd ? define(['exports'], factory) :
     (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.Grapheme = {}));
 }(this, (function (exports) { 'use strict';
-                             
+
     // Used for bit-level manipulation of floats
     const floatStore = new Float64Array(1);
     const intView = new Uint32Array(floatStore.buffer);
@@ -2330,10 +2330,11 @@
             if (!Number.isFinite(x) || !Number.isFinite(y)) {
                 return Math.atan2(y, x); // will probably be fast bc of special handlers within atan2
             }
-            let a = Math.min(x, y) / Math.max(x, y);
+            let absX = Math.abs(x), absY = Math.abs(y);
+            let a = (absX > absY) ? (absY / absX) : (absX / absY);
             let s = a * a;
             let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
-            if (Math.abs(y) > Math.abs(x))
+            if (absY > absX)
                 r = Math.PI / 2 - r;
             if (x < 0)
                 r = Math.PI - r;
@@ -2509,12 +2510,14 @@
     class ConcreteEvaluator {
         constructor(params) {
             var _a, _b, _c, _d, _e;
+            // @ts-ignore (check occurs immediately)
             this.args = ((_a = params.args) !== null && _a !== void 0 ? _a : []).map(toConcreteType);
             if (!this.args.every(arg => !!arg))
                 throw new Error("Unknown argument type");
-            this.returns = toConcreteType((_b = params.returns) !== null && _b !== void 0 ? _b : "void");
-            if (!this.returns)
+            let returns = toConcreteType((_b = params.returns) !== null && _b !== void 0 ? _b : "void");
+            if (!returns)
                 throw new Error("Unknown return type");
+            this.returns = returns;
             this.argCount = this.args.length;
             this.identity = !!params.identity;
             this.evalType = (_c = params.evalType) !== null && _c !== void 0 ? _c : "new";
@@ -2525,6 +2528,7 @@
             this.primitive = (_d = params.primitive) !== null && _d !== void 0 ? _d : "";
             this.func = (_e = params.func) !== null && _e !== void 0 ? _e : this.getDefaultFunc();
             this.isConstant = !!params.isConstant;
+            this.applyTag();
         }
         getDefaultFunc() {
             if (this.returns.isPrimitive && this.evalType === "write")
@@ -2553,6 +2557,8 @@
             if (!func)
                 throw new Error("Unable to generate evaluation function");
             return func;
+        }
+        applyTag() {
         }
         /**
          * Given a list of concrete types, whether the evaluator can be called with those types. -1 if not, 0 if no casts are
@@ -2695,8 +2701,6 @@
         }
         fillTypeMap(m) {
             for (let [mathematical, concrete] of Object.entries(m)) {
-                if (typeof mathematical !== "string")
-                    throw new TypeError("unimplemented");
                 this.typeMap.set(mathematical, toConcreteType(concrete));
             }
         }
@@ -3522,6 +3526,31 @@
             })
         ]
     }));
+    registerOperator(new OperatorDefinition({
+        name: 'exp',
+        args: ["real"],
+        returns: "real",
+        evaluators: [
+            new ConcreteEvaluator({
+                args: ["real"],
+                returns: "real",
+                func: Math.exp
+            })
+        ]
+    }));
+    registerOperator(new OperatorDefinition({
+        name: 'exp',
+        args: ["complex"],
+        returns: "complex",
+        evaluators: [
+            new ConcreteEvaluator({
+                args: ["complex"],
+                returns: "complex",
+                evalType: "write",
+                func: (z, dst) => dst.exp(z)
+            })
+        ]
+    }));
 
     // Constants are treated as operators, since they are mathematical in nature and may have any number of concrete impls.
     const MathematicalConstants = {
@@ -3730,7 +3759,24 @@
                     localWarn(`Option ${sus} found in first argument to resolveTypes(vars, opts). Note that vars is a dictionary of variables, so ${sus} will be treated as a variable.`, `unusual variable name in resolveTypes()`, 3);
                 }
             }
-            this.applyAll(node => node._resolveTypes({ vars, throwOnUnresolved, defaultType }), false /* only groups */, true /* children first */);
+            let revisedVars = {};
+            for (let v in vars) {
+                if (!vars.hasOwnProperty(v))
+                    continue;
+                let n = revisedVars[v];
+                let mType = toMathematicalType(n);
+                if (!mType) {
+                    throw new ResolutionError(`Invalid mathematical type ${n} for variable ${v}`);
+                }
+                revisedVars[v] = mType;
+            }
+            let revisedType = toMathematicalType(defaultType);
+            if (!revisedType) {
+                throw new ResolutionError(`Invalid default mathematical type ${defaultType}`);
+            }
+            this.applyAll(node => node._resolveTypes({
+                vars: revisedVars, throwOnUnresolved, defaultType: revisedType
+            }), false /* only groups */, true /* children first */);
             return this;
         }
         /**
@@ -3750,7 +3796,7 @@
          */
         evaluate(vars, { mode = "normal", typecheck = true } = {}) {
             if (!this.allResolved())
-                throw new EvaluationError("This node has not had its types fully resolved (call .resolveTypes())");
+                throw new EvaluationError(`This node has not had its types fully resolved (call .resolveTypes())`);
             let convertedMode = toEvaluationMode(mode !== null && mode !== void 0 ? mode : "normal", true); // throws on fail
             return this._evaluate(vars, convertedMode, { mode, typecheck });
         }
@@ -4048,7 +4094,7 @@
         }
         if (!noIndex) // can't use an index if we have no index information
             noIndex = index === -1;
-        let spaces = ' '.repeat(index);
+        let spaces = noIndex ? '' : ' '.repeat(index);
         let errorLen = ((_a = endToken === null || endToken === void 0 ? void 0 : endToken.index) !== null && _a !== void 0 ? _a : index) - index + 1;
         throw new ParserError('Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen)));
     }
@@ -4056,7 +4102,7 @@
         throw new ParserError("?"); // hi
     }
     function checkParensBalanced(s) {
-        // TODO: Handle strings (tokens)
+        // TODO: Handle strings as tokens
         const parenStack = [];
         let i = 0;
         let err = false;
@@ -4667,7 +4713,7 @@
             // Starting at $ret, yield notes from left to right in the order they are needed
             let nodes = this.nodes;
             let enteredNodes = new Set();
-            let stack = ["$ret"]; // last element in stack is the element we will recurse into
+            let stack = [this.root]; // last element in stack is the element we will recurse into
             let iters = 0;
             const MAX_ITERS = 10000; // prevent infinite loopage
             while (iters < MAX_ITERS && stack.length !== 0) {
@@ -4795,8 +4841,8 @@
                         }
                     }
                 }
-                if (name === "$ret") { // single return statement
-                    this.add("return $ret;");
+                if (name === cGraph.root) { // single return statement
+                    this.add(`return ${cGraph.root}`);
                 }
             }
         }
@@ -4807,7 +4853,8 @@
             let internalFunctions = new Map();
             addInternalFunction([], "preamble");
             addInternalFunction([], "main");
-            let writingTo = internalFunctions.get("main");
+            let writingTo = internalFunctions.get("preamble");
+            write("'use strict';");
             function importObject(o) {
                 let existing = imports.get(o);
                 if (existing !== undefined) {
@@ -5077,7 +5124,7 @@
         let assnMap = new Map();
         // ASTNode -> graph node name
         let astToGraphMap = new Map();
-        astToGraphMap.set(root, "$ret");
+        //astToGraphMap.set(root, "$ret")
         function defineGraphNode(name, astNode, inf) {
             if (astNode) {
                 astToGraphMap.set(astNode, name);
@@ -5174,6 +5221,11 @@
             defineGraphNode(name, astNode, gNode);
         }, false /* all children */, true /* children first */);
         graph.nodes = assnMap;
+        let graphRoot = astToGraphMap.get(root);
+        if (!graphRoot) {
+            throw new CompilationError("?");
+        }
+        graph.root = graphRoot;
         return graph;
     }
     /**
@@ -5254,6 +5306,7 @@
         }
         let graph = new ConcreteAssignmentGraph();
         graph.nodes = cNodes;
+        graph.root = mGraph.root;
         return graph;
     }
     /**
@@ -5263,10 +5316,15 @@
      * @param options
      */
     function compileNode(root, options = {}) {
-        if (!(root instanceof ASTNode))
-            throw new CompilationError("First argument to compileNode must be an ASTNode");
-        if (!root.allResolved())
-            throw new CompilationError("Node types must be resolved with .resolveTypes() first");
+        var _a;
+        if (!(root instanceof ASTNode)) {
+            if (!(typeof root === "string"))
+                throw new CompilationError("First argument to compileNode must be an ASTNode or string");
+            root = parseString(root);
+        }
+        if (!root.allResolved()) {
+            root.resolveTypes((_a = options.variables) !== null && _a !== void 0 ? _a : {}, Object.assign(Object.assign({}, options.resolveTypes), { throwOnUnresolved: true }));
+        }
         let targetOpts = options.targets;
         if (!targetOpts) {
             targetOpts = defaultTarget;
@@ -5351,25 +5409,25 @@
         }));
     }
 
+    function hue2rgb(p, q, t) {
+        if (t < 0)
+            t += 1;
+        else if (t > 1)
+            t -= 1;
+        if (t < 1 / 6)
+            return p + (q - p) * 6 * t;
+        if (t < 1 / 2)
+            return q;
+        if (t < 2 / 3)
+            return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    }
     function hslToRGB(h, s, l) {
         let r, g, b;
         if (s === 0) {
             r = g = b = l; // achromatic
         }
         else {
-            function hue2rgb(p, q, t) {
-                if (t < 0)
-                    t += 1;
-                if (t > 1)
-                    t -= 1;
-                if (t < 1 / 6)
-                    return p + (q - p) * 6 * t;
-                if (t < 1 / 2)
-                    return q;
-                if (t < 2 / 3)
-                    return p + (q - p) * (2 / 3 - t) * 6;
-                return p;
-            }
             let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
             let p = 2 * l - q;
             r = hue2rgb(p, q, h + 1 / 3);
@@ -5383,6 +5441,78 @@
         let s = 1;
         let l = 2 / Math.PI * Math.atan(Complex.abs(c));
         return hslToRGB(h, s, l);
+    }
+    function fastAtan(x) {
+        if (x > 1)
+            return (Math.PI / 2 - fastAtan(1 / x));
+        return (Math.PI / 4) * x - x * (x - 1) * (0.2447 + 0.0663 * x);
+    }
+    function writeComplexToRGBA(c, arr, index) {
+        // Somewhat optimized
+        let re = c.re, im = c.im;
+        const TWO_PI_OVER_3 = 2 * Math.PI / 3;
+        const TWO_OVER_PI = 2 / Math.PI;
+        let arg = 0; // argument
+        if (!Number.isFinite(re) || !Number.isFinite(im)) {
+            arg = Math.atan2(im, re);
+        }
+        else {
+            let absX = Math.abs(re), absY = Math.abs(im);
+            let a = (absX > absY) ? (absY / absX) : (absX / absY);
+            let s = a * a;
+            arg = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+            if (absY > absX)
+                arg = Math.PI / 2 - arg;
+            if (re < 0)
+                arg = Math.PI - arg;
+            if (im < 0)
+                arg = -arg;
+        }
+        let h = (arg + TWO_PI_OVER_3) * (1 / (2 * Math.PI));
+        let l = TWO_OVER_PI * fastAtan(Math.sqrt(re * re + im * im));
+        let q = l < 0.5 ? l * 2 : 1;
+        let p = 2 * l - q;
+        h -= 1 / 3;
+        if (h < 0)
+            h += 1;
+        if (h > 1)
+            h -= 1;
+        let r = 0, g = 0, b = 0, d = (q - p) * 6;
+        // h is between 0 and 1
+        if (h < 1 / 6) {
+            b = p + d * h;
+            g = q;
+            r = p;
+        }
+        else if (h < 1 / 3) {
+            b = q;
+            g = p + d * (1 / 3 - h);
+            r = p;
+        }
+        else if (h < 1 / 2) {
+            b = q;
+            g = p;
+            r = p + d * (h - 1 / 3);
+        }
+        else if (h < 2 / 3) {
+            b = p + d * (2 / 3 - h);
+            g = p;
+            r = q;
+        }
+        else if (h < 5 / 6) {
+            b = p;
+            g = p + d * (h - 2 / 3);
+            r = q;
+        }
+        else {
+            b = p;
+            g = q;
+            r = p + d * (1 - h);
+        }
+        arr[index] = (r * 255) | 0;
+        arr[index + 1] = (g * 255) | 0;
+        arr[index + 2] = (b * 255) | 0;
+        arr[index + 3] = 255;
     }
 
     exports.BigFloat = BigFloat;
@@ -5434,6 +5564,7 @@
     exports.ulpError = ulpError;
     exports.validateBigFloat = validateBigFloat;
     exports.validateMantissa = validateMantissa;
+    exports.writeComplexToRGBA = writeComplexToRGBA;
 
     Object.defineProperty(exports, '__esModule', { value: true });
 

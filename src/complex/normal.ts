@@ -185,13 +185,16 @@ class Complex {
       return Math.atan2(y, x) // will probably be fast bc of special handlers within atan2
     }
 
-    let a = Math.min(x, y) / Math.max(x, y)
+    let absX = Math.abs(x), absY = Math.abs(y)
+
+    let a = (absX > absY) ? (absY / absX) : (absX / absY)
     let s = a * a
     let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a
 
-    if (Math.abs(y) > Math.abs(x)) r = Math.PI / 2 - r
+    if (absY > absX) r = Math.PI / 2 - r
     if (x < 0) r = Math.PI - r
     if (y < 0) r = -r
+
     return r
   }
 

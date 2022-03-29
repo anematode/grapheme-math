@@ -88,11 +88,14 @@ export class ConcreteEvaluator {
   isConstant: boolean
 
   constructor (params: ConcreteEvaluatorParams) {
+    // @ts-ignore (check occurs immediately)
     this.args = (params.args ?? []).map(toConcreteType)
     if (!this.args.every(arg => !!arg)) throw new Error("Unknown argument type")
 
-    this.returns = toConcreteType(params.returns ?? "void")
-    if (!this.returns) throw new Error("Unknown return type")
+    let returns = toConcreteType(params.returns ?? "void")
+    if (!returns) throw new Error("Unknown return type")
+
+    this.returns = returns
 
     this.argCount = this.args.length
     this.identity = !!params.identity
@@ -106,6 +109,8 @@ export class ConcreteEvaluator {
     this.primitive = params.primitive ?? ""
     this.func = params.func ?? this.getDefaultFunc()
     this.isConstant = !!params.isConstant
+
+    this.applyTag()
   }
 
   getDefaultFunc(): Function {
@@ -134,6 +139,10 @@ export class ConcreteEvaluator {
     if (!func) throw new Error("Unable to generate evaluation function")
 
     return func
+  }
+
+  applyTag () {
+
   }
 
   /**
