@@ -54,7 +54,7 @@ type BolusResult<T> = {
  * next() returns { value: ..., done: false/true }. cleanup() is optional, and will be called if the generator finishes,
  * is canceled, or throws. value is a number between 0 and 1 representing the progress so far.
  */
-interface Bolus<T> {
+export interface Bolus<T> {
   next: () => BolusReturn<T>
   cleanup?: () => void
 }
@@ -279,6 +279,7 @@ class BolusPromise<T> {
 
   cancel () {
     this._cancelled = true
+    return this
   }
 }
 

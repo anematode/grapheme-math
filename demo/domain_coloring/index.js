@@ -17,16 +17,22 @@ function play () {
     } })
 }
 
-function draw() {
-  console.time("draw")
+function draw () {
+  let b = Grapheme.asyncDigest(drawBolus)
+}
 
+function * drawBolus () {
   let z = new Grapheme.Complex(0, 0)
 
   for (let i = 0; i < dim; ++i) {
     let a = (0.5 - i / dim) * 20
     z.im = a
 
-    if (i % 50 === 0) console.log(i)
+    // Progress report
+    if (i % 50 === 0) {
+      yield i / dim
+    }
+
     for (let j = 0; j < dim; ++j) {
       let b = (j / dim - 0.5) * 20
       z.re = b
@@ -38,5 +44,4 @@ function draw() {
   }
 
   ctx.putImageData(new ImageData(colors, dim, dim), 0, 0)
-  console.timeEnd("draw")
 }

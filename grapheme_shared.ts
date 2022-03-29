@@ -31,7 +31,7 @@ export function getStringID () {
  * @param lookForEqualsMethod {boolean} Whether to look for a method "equals()" on x to use instead of the standard method of comparison
  * @returns {boolean}
  */
-export function deepEquals (x, y, lookForEqualsMethod=false) {
+export function deepEquals (x, y, lookForEqualsMethod=false): boolean {
   if (typeof x !== 'object' || x === null) return Object.is(x, y)
 
   if (lookForEqualsMethod && x.equals) return x.equals(y)
@@ -91,7 +91,7 @@ export function deepEquals (x, y, lookForEqualsMethod=false) {
  * @param b
  * @returns {number}
  */
-export function gcd (a, b) {
+export function gcd (a: number, b: number): number {
   a = Math.abs(a)
   b = Math.abs(b)
 
@@ -109,21 +109,39 @@ export function gcd (a, b) {
   }
 }
 
+type DeepAssignOptions = {
+  // Whether to deep clone arrays
+  cloneArrays?: boolean
+  // Whether to copy undefined options
+  assignUndefined?: boolean
+}
+
+type DeepAssignFilledOptions = {
+  cloneArrays: boolean
+  assignUndefined: boolean
+}
+
 /**
  * Merge two objects, not checking for circularity, not merging arrays, modifying the first object
  * @param target {{}}
  * @param source {{}}
  * @param opts
  */
-export function deepAssign (target, source, opts = {}) {
-  opts.cloneArrays = opts.cloneArrays ?? true
-  opts.assignUndefined = opts.assignUndefined ?? false
+export function deepAssign (target: unknown, source: unknown, opts: DeepAssignOptions = {}) {
+  if (typeof target !== "object" || target === null) {
+    throw new TypeError("deepAssign must take in a (non-null) object")
+  }
 
-  return deepAssignInternal(target, source, opts)
+  let filledOpts = {
+    cloneArrays: opts.cloneArrays ?? true,
+    assignUndefined: opts.assignUndefined ?? false
+  }
+
+  return deepAssignInternal(target, source, filledOpts)
 }
 
-function deepAssignInternal (target, source, opts) {
-  if (typeof source !== 'object')
+function deepAssignInternal (target: object, source: unknown, opts: DeepAssignFilledOptions) {
+  if (typeof source !== 'object' || source === null)
     return source !== undefined || opts.assignUndefined ? source : target
 
   if (Array.isArray(target) || isTypedArray(target))
@@ -145,7 +163,7 @@ function deepAssignInternal (target, source, opts) {
         }
 
         target[key] =
-          sourceIsArray && opts.cloneArrays ? deepClone(sourceVal) : sourceVal
+          (sourceIsArray && opts.cloneArrays) ? deepClone(sourceVal) : sourceVal
       }
     }
   }
@@ -154,13 +172,13 @@ function deepAssignInternal (target, source, opts) {
 }
 
 /**
- * Same as deepAssign, but creating a copy of the object. Arrays are optionally copied.
- * @param target {{}}
- * @param source {{}}
+ * Same as deepAssign, but creating a copy of the target object.
+ * @param target
+ * @param source
  * @param opts
  */
-export function deepMerge (target, source, opts = {}) {
-  if (target === undefined) return deepClone(source, opts)
+export function deepMerge (target: unknown, source: unknown, opts : DeepAssignOptions) {
+  if (typeof target !== "object" || target === null) return deepClone(source, opts)
 
   return deepAssign(deepClone(target, opts), source, opts)
 }
@@ -170,38 +188,39 @@ export function deepMerge (target, source, opts = {}) {
  * @param object
  * @param opts
  */
-export function deepClone (object, opts = {}) {
+export function deepClone (object: unknown, opts: { cloneArrays?: boolean } = {}) {
   opts.cloneArrays = opts.cloneArrays ?? true
 
-  return deepCloneInternal(object, opts)
+  return deepCloneInternal(object, opts.cloneArrays ?? true)
 }
 
-function deepCloneInternal (object, opts = {}) {
+function deepCloneInternal (object: unknown, cloneArrays: boolean) {
   if (typeof object !== 'object') return object
 
   if (Array.isArray(object)) {
-    return opts.cloneArrays
-      ? object.map(val => deepCloneInternal(val, opts))
+    return cloneArrays
+      ? object.map(val => deepCloneInternal(val, cloneArrays))
       : object
   } else if (isTypedArray(object)) {
-    return opts.cloneArrays ? new object.constructor(object) : object
+    // @ts-ignore
+    return cloneArrays ? new object.constructor(object) : object  // object.constructor is okay for typedarrays
   }
 
   let ret = {}
   for (let key in object) {
     if (object.hasOwnProperty(key)) {
-      ret[key] = deepClone(object[key], opts)
+      ret[key] = deepCloneInternal(object[key], cloneArrays)
     }
   }
 
   return ret
 }
 
-export function isTypedArray (arr) {
+export function isTypedArray (arr: unknown): boolean {
   return ArrayBuffer.isView(arr) && !(arr instanceof DataView)
 }
 
-export function isFloatArray (arr) {
+export function isFloatArray (arr: unknown): boolean {
   let type = getTypedArrayType(arr)
 
   return type === "f32" || type === "f64"
@@ -220,43 +239,51 @@ export function getTypedArrayConstructor (type) {
 }
 
 /**
- * Arithmetic mod function that works for negative numbers (let's be honest, who hasn't done this)
+ * Arithmetic mod function instead of remainder
  * @param n {number}
  * @param m {number}
  * @returns {number}
  */
-export function mod (n, m) {
-  return ((n % m) + m) % m
+export function mod (n: number, m: number): number {
+  let r = n % m
+  return (r >= 0) ? r : (r + m)
 }
 
 /**
  * Freeze an object and all its children. Does not account for cycles
  * @param obj
  */
-export function deepFreeze (obj) {
+export function deepFreeze<T> (obj: T): T {
   Object.freeze(obj)
 
-  Object.values(obj).forEach(value => {
-    if (typeof value === 'function' || typeof value === 'object')
-      deepFreeze(value)
-  })
+  if (typeof obj === "object" && obj !== null) {
+    Object.values(obj).forEach(value => {
+      if (typeof value === 'function' || typeof value === 'object')
+        deepFreeze(value)
+    })
+  }
 
   return obj
 }
 
-export function leftZeroPad (str, len, char = '0') {
+// Remember left-pad?
+export function leftZeroPad (str: string, len: number, char: string = '0') {
   if (str.length >= len) return str
+  char = char[0] ?? '0'
 
   return char.repeat(len - str.length) + str
 }
 
-export function rightZeroPad (str, len, char = '0') {
+export function rightZeroPad (str: string, len: number, char: string = '0') {
   if (str.length >= len) return str
+  char = char[0] ?? '0'
 
   return str + char.repeat(len - str.length)
 }
 
-export function trimLeft (str, char) {
+export function trimLeft (str: string, char: string): string {
+  char = char[0] ?? ' '
+
   let i = 0
   for (; i < str.length; ++i) {
     if (str.charAt(i) !== char)
@@ -281,26 +308,26 @@ export const levenshtein = (function () {
         : d1 + 1
   }
 
-  return function (a, b) {
+  return function (a: string, b: string): number {
     if (a === b) {
       return 0
     }
 
     if (a.length > b.length) {
-      var tmp = a
+      let tmp = a
       a = b
       b = tmp
     }
 
-    var la = a.length
-    var lb = b.length
+    let la = a.length
+    let lb = b.length
 
     while (la > 0 && a.charCodeAt(la - 1) === b.charCodeAt(lb - 1)) {
       la--
       lb--
     }
 
-    var offset = 0
+    let offset = 0
 
     while (offset < la && a.charCodeAt(offset) === b.charCodeAt(offset)) {
       offset++
@@ -313,17 +340,17 @@ export const levenshtein = (function () {
       return lb
     }
 
-    var x = 0
-    var y, d0, d1, d2, d3, dd, dy, ay, bx0, bx1, bx2, bx3
+    let x = 0
+    let y, d0, d1, d2, d3, dd, dy, ay, bx0, bx1, bx2, bx3
 
-    var vector = []
+    let vector: Array<number | string> = []
 
     for (y = 0; y < la; y++) {
       vector.push(y + 1)
       vector.push(a.charCodeAt(offset + y))
     }
 
-    var len = vector.length - 1
+    let len = vector.length - 1
 
     for (; x < lb - 3; ) {
       bx0 = b.charCodeAt(offset + (d0 = x))
@@ -360,12 +387,12 @@ export const levenshtein = (function () {
   }
 })()
 
-const warnings = new Map()
+const warnings = new Map<any, number>()
 
-export function localWarn (s, id, maxCount=2) {
+export function localWarn (s: string, id: any, maxCount: number=2) {
   let count = warnings.get(id)
 
-  if (count >= maxCount) return
+  if (count as number >= maxCount) return  // undefined casts to 0
 
   if (!count) {
     count = 0
