@@ -5,7 +5,7 @@ export * from './ast/compile.js'
 export * from './ast/builtin/builtin_casts.js'
 export * from './ast/builtin/builtin_operators.js'
 
-import { ROUNDING_MODE } from './rounding_modes.js'
+import { ROUNDING_MODE } from './other/rounding_modes.js'
 export { ROUNDING_MODE }
 
 export * from './real/normal.js'

@@ -200,11 +200,11 @@ class Complex {
 
   gamma (z: Complex) {
     let zi = z.im, zr = z.re
-    if (zi < 1e-15) {
+    if (Math.abs(zi) < 1e-15) {
       this.re = gammaReal(zr)
       this.im = 0
 
-      //return
+      return
     }
 
     if (!Number.isFinite(zi) || !Number.isFinite(zr)) {
@@ -221,14 +221,16 @@ class Complex {
     if (zr < 0.5) {
       // Reflection formula
 
-      let c = new Complex(1 - this.re, -this.im)
+      let c = new Complex(1 - zr, -zi)
       let sz = new Complex()
       sz.multiplyReal(z, Math.PI)
       sz.sin(sz)
 
+      c.gamma(c)
       c.multiply(c, sz)
 
       this.divide(new Complex(Math.PI, 0), c)
+      return
     }
 
     zr -= 1

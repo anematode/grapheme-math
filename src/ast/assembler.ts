@@ -25,6 +25,8 @@ export class Assembler {
 
   // Array of input variables
   inputFormat: string[]
+  inputTypes: (string | ConcreteType)[]
+  returns: ConcreteType
 
   constructor () {
     let preamble = this.preamble = new PlainCodeFragment()
@@ -139,9 +141,20 @@ export class Assembler {
         this.add(`return ${cGraph.root}`)
       }
     }
+
+    let inputCTypes = this.inputFormat.map(varName => {
+      if (varName === "scope") {
+        return "scope"
+      }
+
+      return cGraph.nodes.get(varName)!.type
+    })
+
+    this.inputTypes = inputCTypes
+    this.returns = cGraph.nodes.get(cGraph.root)!.type
   }
 
-  compile (): any {
+  compile () {
     type InternalFunction = { args: string[], text: string }
 
     // Map of closure var names to imported objects to be passed into the closure
@@ -310,10 +323,13 @@ export class Assembler {
     //console.log(fBody)
 
     // Invoke the closure
-    let result = (new Function(...importNames, fBody)).apply(null, importArray)
+    let result = (new Function(...importNames, fBody)).apply(null, importArray) as Function
 
     return {
-      result
+      result,
+      inputFormat: this.inputFormat,
+      inputTypes: this.inputTypes,
+      returns: this.returns
     }
   }
 }

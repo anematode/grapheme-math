@@ -1,16 +1,16 @@
 import { Bolus } from "../bolus/bolus.js";
+import { LinearPlot2DTransform } from "../other/linear_plot_transform.js";
+import { CompileNodeResult } from "../ast/compile.js";
 
-type DomainColoringOptions = {
-  width: 500
-  height: 500
+type ComplexDomainColoringOptions = {
+  node: CompileNodeResult
+  transform: LinearPlot2DTransform
+}
 
+type ComplexDomainColoringResult = {
 
 }
 
-type DomainColoringResult = {
+/*export const complexDomainColoring: Bolus<never> = function * () {
 
-}
-
-export const domainColoring: Bolus<> = function * () {
-
-}
+}*/

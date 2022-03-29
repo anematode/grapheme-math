@@ -1,4 +1,4 @@
-import {rightZeroPad} from "../grapheme_shared.js"
+import {rightZeroPad} from "../src/grapheme_shared.ts"
 import {ROUNDING_MODE} from "../build/rounding_modes.js"
 
 export const NONFINITE_NUMBERS = [ NaN, Infinity, -Infinity ]

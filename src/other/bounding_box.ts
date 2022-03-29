@@ -1,6 +1,6 @@
 // TODO
 import { Vec2 } from '../vec/vec2.js'
-import { isTypedArray } from "../../grapheme_shared";
+import { isTypedArray, NumericArray } from "../grapheme_shared.js";
 
 /**
  * Given some parameters describing a line segment, find a line segment that is consistent with at least two of them.
@@ -184,86 +184,94 @@ export class BoundingBox {
   tl () {
     return new Vec2(this.x, this.y)
   }
+
+  static Transform = Object.freeze({
+    X: (x: number | NumericArray, box1: BoundingBox, box2: BoundingBox, flipX: boolean) => {
+      if (Array.isArray(x) || isTypedArray(x)) {
+        x = x as NumericArray
+
+        for (let i = 0; i < x.length; ++i) {
+          let fractionAlong = (x[i] - box1.x) / box1.w
+          if (flipX) fractionAlong = 1 - fractionAlong
+          x[i] = fractionAlong * box2.w + box2.x
+        }
+        return x
+      } else {
+        x = x as number
+        return BoundingBox.Transform.X([ x ], box1, box2, flipX)[0]
+      }
+    },
+    Y: (y: number | NumericArray, box1: BoundingBox, box2: BoundingBox, flipY: boolean) => {
+      if (Array.isArray(y) || isTypedArray(y)) {
+        y = y as NumericArray
+        for (let i = 0; i < y.length; ++i) {
+          let fractionAlong = (y[i] - box1.y) / box1.h
+          if (flipY) fractionAlong = 1 - fractionAlong
+          y[i] = fractionAlong * box2.h + box2.y
+        }
+        return y
+      } else {
+        y = y as number
+        return BoundingBox.Transform.Y([y], box1, box2, flipY)[0]
+      }
+    },
+    XY: (xy: NumericArray, box1: BoundingBox, box2: BoundingBox, flipX: boolean, flipY: boolean) => {
+      if (Array.isArray(xy) || isTypedArray(xy)) {
+        xy = xy as NumericArray
+        for (let i = 0; i < xy.length; i += 2) {
+          let fractionAlong = (xy[i] - box1.x) / box1.w
+
+          if (flipX) fractionAlong = 1 - fractionAlong
+
+          xy[i] = fractionAlong * box2.w + box2.x
+
+          fractionAlong = (xy[i + 1] - box1.y) / box1.h
+
+          if (flipY) fractionAlong = 1 - fractionAlong
+
+          xy[i + 1] = fractionAlong * box2.h + box2.y
+        }
+        return xy
+      } else {
+        throw new TypeError("BoundingBox.Transform.XY only accepts numeric arrays (Arrays of numbers and typed arrays)")
+      }
+    },
+    getReducedTransform (box1: BoundingBox, box2: BoundingBox, flipX: boolean, flipY: boolean): Reduced2DBoundingBoxTransform {
+      let xm = 1 / box1.w
+      let xb = -box1.x / box1.w
+
+      if (flipX) {
+        xm *= -1
+        xb = 1 - xb
+      }
+
+      xm *= box2.w
+      xb *= box2.w
+      xb += box2.x
+
+      let ym = 1 / box1.h
+      let yb = -box1.y / box1.h
+
+      if (flipY) {
+        ym *= -1
+        yb = 1 - yb
+      }
+
+      ym *= box2.h
+      yb *= box2.h
+      yb += box2.y
+
+      return { xm, xb, ym, yb }
+    }
+  })
 }
 
-const boundingBoxTransform = {
-  X: (x: Array<number>, box1, box2, flipX) => {
-    if (Array.isArray(x) || isTypedArray(x)) {
-      for (let i = 0; i < x.length; ++i) {
-        let fractionAlong = (x[i] - box1.x) / box1.width
-        if (flipX) fractionAlong = 1 - fractionAlong
-        x[i] = fractionAlong * box2.width + box2.x
-      }
-      return x
-    } else {
-      return boundingBoxTransform.X([x], box1, box2, flipX)[0]
-    }
-  },
-  Y: (y, box1, box2, flipY) => {
-    if (Array.isArray(y) || isTypedArray(y)) {
-      for (let i = 0; i < y.length; ++i) {
-        let fractionAlong = (y[i] - box1.y) / box1.height
-        if (flipY) fractionAlong = 1 - fractionAlong
-        y[i] = fractionAlong * box2.height + box2.y
-      }
-      return y
-    } else {
-      return boundingBoxTransform.Y([y], box1, box2, flipY)[0]
-    }
-  },
-  XY: (xy, box1, box2, flipX, flipY) => {
-    if (Array.isArray(xy) || utils.isTypedArray(x)) {
-      for (let i = 0; i < xy.length; i += 2) {
-        let fractionAlong = (xy[i] - box1.x) / box1.width
+// Simplified 2D transform. The formula to transform a point (x, y) is R^2 -> R^2: (xm * x + xb, ym * y + yb).
+export type Reduced2DBoundingBoxTransform = { xm: number, xb: number, ym: number, yb: number }
 
-        if (flipX) fractionAlong = 1 - fractionAlong
+const EMPTY = new BoundingBox(0, 0, 0, 0)
 
-        xy[i] = fractionAlong * box2.width + box2.x
-
-        fractionAlong = (xy[i + 1] - box1.y) / box1.height
-
-        if (flipY) fractionAlong = 1 - fractionAlong
-
-        xy[i + 1] = fractionAlong * box2.height + box2.y
-      }
-      return xy
-    } else {
-      throw new Error('No')
-    }
-  },
-  getReducedTransform (box1, box2, flipX, flipY) {
-    let x_m = 1 / box1.width
-    let x_b = -box1.x / box1.width
-
-    if (flipX) {
-      x_m *= -1
-      x_b = 1 - x_b
-    }
-
-    x_m *= box2.width
-    x_b *= box2.width
-    x_b += box2.x
-
-    let y_m = 1 / box1.height
-    let y_b = -box1.y / box1.height
-
-    if (flipY) {
-      y_m *= -1
-      y_b = 1 - y_b
-    }
-
-    y_m *= box2.height
-    y_b *= box2.height
-    y_b += box2.y
-
-    return { x_m, x_b, y_m, y_b }
-  }
-}
-
-export { boundingBoxTransform }
-
-const EMPTY = new BoundingBox(new Vec2(0, 0), 0, 0)
-
+// TODO fix
 function intersectBoundingBoxes (box1, box2) {
   let x1 = Math.max(box1.x, box2.x)
   let y1 = Math.max(box1.y, box2.y)
@@ -281,7 +289,5 @@ function intersectBoundingBoxes (box1, box2) {
   let width = x2 - x1
   let height = y2 - y1
 
-  return new BoundingBox(new Vec2(x1, y1), width, height)
+  return new BoundingBox(x1, y1, width, height)
 }
-
-export { intersectBoundingBoxes }

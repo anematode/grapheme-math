@@ -25,13 +25,6 @@
 
 /* Monospace stuff */
 
-.major-error {
-    font-family: "Consolas", Monaco, monospace;
-    white-space: pre;
-    font-size: 12px;
-    overflow: scroll;
-}
-
 .plot-container canvas {
     width: calc(max(min(100%, 750px), 500px));
     aspect-ratio: 1;
@@ -42,12 +35,34 @@
 }
 
 .controls {
+    width: 400px;
     display: flex;
-    justify-content: center;
+    justify-content: start;
     flex-direction: column;
+}
+
+.code-output, .major-error {
+    background-color: #f2f2f2;
+    font-family: "Consolas", Monaco, monospace;
+    white-space: pre;
+    font-size: 12px;
+    overflow: scroll;
+}
+
+button {
+    margin: 0 auto 0 0;
 }
 
 .major-error {
     padding: 10px;
     background-color: #ffe0e0;
+}
+
+.narrow {
+    width: 100%;
+    overflow-y: hidden;
+}
+
+.expression-wrapper {
+
 }

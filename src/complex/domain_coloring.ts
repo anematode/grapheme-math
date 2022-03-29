@@ -42,7 +42,7 @@ function fastAtan (x: number): number { // positive x only
     return (Math.PI / 4) * x - x * (x - 1) * (0.2447 + 0.0663 * x);
 }
 
-export function writeComplexToRGBA (c: Complex, arr: Uint8ClampedArray, index: number) {
+export function writeComplexToRGBA (c: Complex, arr: Uint8ClampedArray, index: number, colorScale: number) {
     // Somewhat optimized
     let re = c.re, im = c.im
 
@@ -66,7 +66,7 @@ export function writeComplexToRGBA (c: Complex, arr: Uint8ClampedArray, index: n
     }
 
     let h = (arg + TWO_PI_OVER_3) * (1 / (2 * Math.PI))
-    let l = TWO_OVER_PI * fastAtan(Math.sqrt(re * re + im * im))
+    let l = TWO_OVER_PI * fastAtan(Math.sqrt(re * re + im * im) / colorScale)
 
     let q = l < 0.5 ? l * 2 : 1;
     let p = 2 * l - q;

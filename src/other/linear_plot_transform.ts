@@ -1,4 +1,5 @@
 import { Vec2 } from '../vec/vec2.js';
+import { BoundingBox, Reduced2DBoundingBoxTransform } from "./bounding_box.js";
 
 export class LinearPlot2DTransform {
   px1: number
@@ -127,7 +128,7 @@ export class LinearPlot2DTransform {
   /**
    * Return {xm, ym, xb, yb} where xm * x + xb is the transformation from graph x to pixel x, etc.
    */
-  getReducedGraphToPixelTransform () {
+  getReducedGraphToPixelTransform (): Reduced2DBoundingBoxTransform {
     const { px1, py1, pw, ph, gx1, gy1, gw, gh } = this
 
     return {

@@ -11,6 +11,22 @@ function escapeHtml(unsafe) {
     .replace(/'/g, "&#039;")
 }
 
+function setCodeOutput (s, isError=false) {
+  let o = document.getElementById("main-code-output")
+  if (!o) return
+
+  o.innerHTML = escapeHtml(s)
+  if (isError) {
+    o.classList.add("major-error")
+  } else {
+    o.classList.remove("major-error")
+  }
+}
+
+function errToString (err) {
+  return (err.stack ?? err.toString()) + ''
+}
+
 let DemoContainer = document.getElementById("demo-container")
 if (!DemoContainer) {
   displayError = () => {}
@@ -43,7 +59,7 @@ document.getElementById("header").appendChild(logo)
         try {
           window.play()
         } catch (e) {
-          displayError((e.stack ?? e.toString()) + '')  // try to make it look nice
+          displayError(errToString(e))  // try to make it look nice
         }
       } else {
         displayError("window.play is not a function")

@@ -6,8 +6,8 @@
 // super optimized, even if that means dealing with JS's interesting behaviors.
 
 import { flrLog2, frExp, getExponentAndMantissa, isDenormal, pow2 } from '../fp/manip.js'
-import { ROUNDING_MODE } from '../rounding_modes.js'
-import {leftZeroPad, trimLeft} from "../../grapheme_shared.js"
+import { ROUNDING_MODE } from '../other/rounding_modes.js'
+import {leftZeroPad, trimLeft} from "../grapheme_shared.js"
 
 const BIGFLOAT_WORD_BITS = 30
 const RECIP_BIGFLOAT_WORD_BITS = 1 / BIGFLOAT_WORD_BITS

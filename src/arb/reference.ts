@@ -2,7 +2,7 @@
 // Reference functions. Slow but (hopefully) accurate
 import {compareMantissas, leftShiftMantissa, prettyPrintMantissa, rightShiftMantissa} from "./old.js"
 import {roundMantissaToPrecision} from "./bigfloat.js";
-import {ROUNDING_MODE} from "../rounding_modes.js"
+import {ROUNDING_MODE} from "../other/rounding_modes.js"
 
 const BIGFLOAT_WORD_BITS = 30
 const RECIP_BIGFLOAT_WORD_BITS = 1 / BIGFLOAT_WORD_BITS

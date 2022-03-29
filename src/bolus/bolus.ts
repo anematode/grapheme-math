@@ -37,6 +37,7 @@
  * terminate the function (and call reject()) before it actually ends. This is useful for things like cancelling
  * expensive updates.
  */
+import { localWarn } from "../grapheme_shared";
 
 type BolusReturn<T> = {
   value: number | T  // if done is false, a value between 0 and 1 may be returned. If done is true, the result is returned.
@@ -299,6 +300,8 @@ type AsyncDigestOptions = {
  */
 export function asyncDigest<T> (bolus: Bolus<T>, opts: AsyncDigestOptions = {}): BolusPromise<T> {
   if (typeof bolus?.next !== 'function') {
+    localWarn("Nonbolus passed to asyncDigest (.next is either not a property or not a function", "asyncDigest nonbolus", 1)
+
     // Forward non-boluses
     return new BolusPromise<T>(Promise.resolve({ result: bolus as unknown as T, timeElapsed: 0 }),
       null, 0, 0, 0, null, null, false)

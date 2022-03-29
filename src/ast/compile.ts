@@ -15,7 +15,7 @@ import {
   MathematicalGraphNode
 } from "./assignment_graph.js";
 import { MathematicalCast } from "./operator_definition.js";
-import { MathematicalType } from "./type.js";
+import { ConcreteType, MathematicalType } from "./type.js";
 import { Assembler } from "./assembler.js";
 import { parseString } from "./parse.js";
 
@@ -36,15 +36,6 @@ let id = 0
  */
 export function genVariableName (): string {
   return "$" + (++id)
-}
-
-function createInformationMap(root) {
-  let m = new Map()
-  root.applyAll(node => {
-    m.set(node, {})
-  })
-
-  return m
 }
 
 /**
@@ -87,7 +78,7 @@ export type CompileTarget = {
   usedVariables: VariableDependencies
 }
 
-type CompileNodeOptions = {
+export type CompileNodeOptions = {
   targets?: CompileTargetOptions | CompileTargetOptions[]
   staticVariables?: string[]
   typechecks?: boolean
@@ -103,6 +94,19 @@ type FilledCompileNodeOptions = {
 
 type RootNodeProperties = {
   usedVariables: VariableDependencies
+}
+
+export type CompileTargetResult = {
+  evaluate: Function
+  inputFormat: Array<string>
+  inputTypes: Array<ConcreteType | string>  // TODO make scope a special concrete type
+  returns: ConcreteType
+
+  targetOptions: CompileTarget
+}
+
+export type CompileNodeResult = {
+  targets: CompileTargetResult | CompileTargetResult[]
 }
 
 const defaultTarget = {
@@ -415,7 +419,7 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
  * @param root
  * @param options
  */
-export function compileNode(root: ASTNode | string, options: CompileNodeOptions = {}) {
+export function compileNode(root: ASTNode | string, options: CompileNodeOptions = {}): CompileNodeResult {
   if (!(root instanceof ASTNode)) {
     if (!(typeof root === "string"))
       throw new CompilationError("First argument to compileNode must be an ASTNode or string")
@@ -451,6 +455,7 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
   }
 
   let mAssignmentGraph = createAssnGraph(root)
+  let compiledResults: CompileTargetResult | CompileTargetResult[] = []
 
   for (let i = 0; i < targets.length; ++i) {
     let target = targets[i]
@@ -468,8 +473,24 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
     let assembler = new Assembler()
     assembler.prepareConcreteGraph(cAssignmentGraph, target)
 
-    return assembler.compile().result
+    let compiled = assembler.compile()
+
+    compiledResults.push({
+      evaluate: (compiled.result as any).evaluate,
+      returns: compiled.returns,
+      inputFormat: compiled.inputFormat,
+      inputTypes: compiled.inputTypes,
+      targetOptions: target
+    })
   }
 
-  return mAssignmentGraph
+  if (!Array.isArray(targetOpts)) {
+    compiledResults = compiledResults[0]
+  }
+
+  return {
+    targets: compiledResults
+  }
 }
+
+// grep "from [^.]\+'$" -r src

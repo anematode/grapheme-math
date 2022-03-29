@@ -1,5 +1,5 @@
-import {isRoundingMode, ROUNDING_MODE, RoundingMode} from "../rounding_modes.js"
-import {leftZeroPad} from "../../grapheme_shared.js"
+import {isRoundingMode, ROUNDING_MODE, RoundingMode} from "../other/rounding_modes.js"
+import {leftZeroPad} from "../grapheme_shared.js"
 import { flrLog2, getFloatStoreExponent, getFloatStoreMantissa, isDenormal, pow2, setFloatStore } from "../fp/manip.js"
 
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of

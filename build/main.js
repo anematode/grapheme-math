@@ -320,30 +320,27 @@
     }
 
     // File shared between all modules of Grapheme
-
-    function leftZeroPad (str, len, char = '0') {
-      if (str.length >= len) return str
-
-      return char.repeat(len - str.length) + str
+    // Remember left-pad?
+    function leftZeroPad(str, len, char = '0') {
+        var _a;
+        if (str.length >= len)
+            return str;
+        char = (_a = char[0]) !== null && _a !== void 0 ? _a : '0';
+        return char.repeat(len - str.length) + str;
     }
-
     const warnings = new Map();
-
-    function localWarn (s, id, maxCount=2) {
-      let count = warnings.get(id);
-
-      if (count >= maxCount) return
-
-      if (!count) {
-        count = 0;
-      }
-
-      console.warn(`Warning ${id}: ${s}`);
-
-      warnings.set(id, count + 1);
-      if (count >= maxCount - 1) {
-        console.warn(`Warning ${id} raised ${maxCount} times; no longer being reported`);
-      }
+    function localWarn(s, id, maxCount = 2) {
+        let count = warnings.get(id);
+        if (count >= maxCount)
+            return; // undefined casts to 0
+        if (!count) {
+            count = 0;
+        }
+        console.warn(`Warning ${id}: ${s}`);
+        warnings.set(id, count + 1);
+        if (count >= maxCount - 1) {
+            console.warn(`Warning ${id} raised ${maxCount} times; no longer being reported`);
+        }
     }
 
     // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
@@ -2344,10 +2341,10 @@
         }
         gamma(z) {
             let zi = z.im, zr = z.re;
-            if (zi < 1e-15) {
+            if (Math.abs(zi) < 1e-15) {
                 this.re = gammaReal(zr);
                 this.im = 0;
-                //return
+                return;
             }
             if (!Number.isFinite(zi) || !Number.isFinite(zr)) {
                 if (zi !== zi || zr !== zr) {
@@ -2360,12 +2357,14 @@
             }
             if (zr < 0.5) {
                 // Reflection formula
-                let c = new Complex(1 - this.re, -this.im);
+                let c = new Complex(1 - zr, -zi);
                 let sz = new Complex();
                 sz.multiplyReal(z, Math.PI);
                 sz.sin(sz);
+                c.gamma(c);
                 c.multiply(c, sz);
                 this.divide(new Complex(Math.PI, 0), c);
+                return;
             }
             zr -= 1;
             let sr = 0.99999999999980993, si = 0;
@@ -2473,24 +2472,38 @@
     /**
      * "Intelligently" convert an object to the corresponding concrete type object. Returns null if no such type is found
      * @param o {any}
+     * @param throwOnError
      * @returns {ConcreteType|null}
      */
-    function toConcreteType(o) {
+    function toConcreteType(o, throwOnError = false) {
         var _a;
+        let r = null;
         if (typeof o === "string")
-            return (_a = concreteTypes.get(o)) !== null && _a !== void 0 ? _a : null;
-        return (o instanceof ConcreteType) ? o : null;
+            r = (_a = concreteTypes.get(o)) !== null && _a !== void 0 ? _a : null;
+        else
+            r = (o instanceof ConcreteType) ? o : null;
+        if (!r && throwOnError) {
+            throw new Error("No concrete type found for " + o);
+        }
+        return r;
     }
     /**
      * "Intelligently" convert an object to the corresponding mathematical type object
      * @param o {*}
+     * @param throwOnError
      * @returns {MathematicalType|null}
      */
-    function toMathematicalType(o) {
+    function toMathematicalType(o, throwOnError = false) {
         var _a;
+        let r = null;
         if (typeof o === "string")
-            return (_a = mathematicalTypes.get(o)) !== null && _a !== void 0 ? _a : null;
-        return (o instanceof MathematicalType) ? o : null;
+            r = (_a = mathematicalTypes.get(o)) !== null && _a !== void 0 ? _a : null;
+        else
+            r = (o instanceof MathematicalType) ? o : null;
+        if (!r && throwOnError) {
+            throw new Error("No mathematical type found for " + o);
+        }
+        return r;
     }
     let concreteTypes = new Map();
     let mathematicalTypes = new Map();
@@ -2701,7 +2714,7 @@
         }
         fillTypeMap(m) {
             for (let [mathematical, concrete] of Object.entries(m)) {
-                this.typeMap.set(mathematical, toConcreteType(concrete));
+                this.typeMap.set(mathematical, toConcreteType(concrete, true));
             }
         }
         /**
@@ -2725,9 +2738,9 @@
     });
     const fastInterval = new EvaluationMode("fast_interval", {
         typeMap: {
-            "int": "fast_int_interval",
-            "real": "fast_real_interval",
-            "bool": "fast_bool_interval"
+        //"int": "fast_int_interval",
+        //"real": "fast_real_interval",
+        //"bool": "fast_bool_interval"
         }
     });
     const EvaluationModes = new Map();
@@ -2764,15 +2777,8 @@
             return [];
         if (!Array.isArray(args))
             throw new TypeError("Expected argument type list to be an array");
-        let converted = args.map(toMathematicalType);
-        // Validate arguments
-        for (let i = 0; i < args.length; ++i) {
-            let arg = converted[i];
-            if (!arg) {
-                throw new Error(`Unknown argument type at index ${i} (attempted conversion from ${args[i]})`);
-            }
-        }
-        return converted;
+        let converted = args.map(a => toMathematicalType(a, true));
+        return converted; // null checks done
     }
     class OperatorDefinition {
         constructor(params) {
@@ -2791,7 +2797,7 @@
              * Return type (void type if nothing)
              * @type {MathematicalType}
              */
-            this.returns = toMathematicalType((_a = params.returns) !== null && _a !== void 0 ? _a : "void");
+            this.returns = toMathematicalType((_a = params.returns) !== null && _a !== void 0 ? _a : "void", true);
             if (!this.returns) {
                 throw new Error(`Unknown return type (attempted conversion from ${params.returns})`);
             }
@@ -3770,10 +3776,7 @@
                 }
                 revisedVars[v] = mType;
             }
-            let revisedType = toMathematicalType(defaultType);
-            if (!revisedType) {
-                throw new ResolutionError(`Invalid default mathematical type ${defaultType}`);
-            }
+            let revisedType = toMathematicalType(defaultType, true);
             this.applyAll(node => node._resolveTypes({
                 vars: revisedVars, throwOnUnresolved, defaultType: revisedType
             }), false /* only groups */, true /* children first */);
@@ -4357,7 +4360,7 @@
             if ('type' in token) {
                 switch (token.type) {
                     case 'constant':
-                        let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real');
+                        let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real', true /* throw on error */);
                         node = new UnprocessedASTNode("constant", { value: token.value, token, startToken: token, endToken: token, type }, []);
                         break;
                     case 'variable':
@@ -4845,6 +4848,14 @@
                     this.add(`return ${cGraph.root}`);
                 }
             }
+            let inputCTypes = this.inputFormat.map(varName => {
+                if (varName === "scope") {
+                    return "scope";
+                }
+                return cGraph.nodes.get(varName).type;
+            });
+            this.inputTypes = inputCTypes;
+            this.returns = cGraph.nodes.get(cGraph.root).type;
         }
         compile() {
             // Map of closure var names to imported objects to be passed into the closure
@@ -4971,7 +4982,10 @@
             // Invoke the closure
             let result = (new Function(...importNames, fBody)).apply(null, importArray);
             return {
-                result
+                result,
+                inputFormat: this.inputFormat,
+                inputTypes: this.inputTypes,
+                returns: this.returns
             };
         }
     }
@@ -5343,6 +5357,7 @@
             targets.push(fillTargetOptions(options, to, rootProperties, i));
         }
         let mAssignmentGraph = createAssnGraph(root);
+        let compiledResults = [];
         for (let i = 0; i < targets.length; ++i) {
             let target = targets[i];
             let cAssignmentGraph = concretizeAssnGraph(mAssignmentGraph, target);
@@ -5354,10 +5369,23 @@
             // - Return $ret
             let assembler = new Assembler();
             assembler.prepareConcreteGraph(cAssignmentGraph, target);
-            return assembler.compile().result;
+            let compiled = assembler.compile();
+            compiledResults.push({
+                evaluate: compiled.result.evaluate,
+                returns: compiled.returns,
+                inputFormat: compiled.inputFormat,
+                inputTypes: compiled.inputTypes,
+                targetOptions: target
+            });
         }
-        return mAssignmentGraph;
+        if (!Array.isArray(targetOpts)) {
+            compiledResults = compiledResults[0];
+        }
+        return {
+            targets: compiledResults
+        };
     }
+    // grep "from [^.]\+'$" -r src
 
     let intToReal = [
         registerConcreteCast(new ConcreteCast({
@@ -5447,7 +5475,7 @@
             return (Math.PI / 2 - fastAtan(1 / x));
         return (Math.PI / 4) * x - x * (x - 1) * (0.2447 + 0.0663 * x);
     }
-    function writeComplexToRGBA(c, arr, index) {
+    function writeComplexToRGBA(c, arr, index, colorScale) {
         // Somewhat optimized
         let re = c.re, im = c.im;
         const TWO_PI_OVER_3 = 2 * Math.PI / 3;
@@ -5469,7 +5497,7 @@
                 arg = -arg;
         }
         let h = (arg + TWO_PI_OVER_3) * (1 / (2 * Math.PI));
-        let l = TWO_OVER_PI * fastAtan(Math.sqrt(re * re + im * im));
+        let l = TWO_OVER_PI * fastAtan(Math.sqrt(re * re + im * im) / colorScale);
         let q = l < 0.5 ? l * 2 : 1;
         let p = 2 * l - q;
         h -= 1 / 3;
@@ -5515,12 +5543,245 @@
         arr[index + 3] = 255;
     }
 
+    /**
+     * The concept here is to allow the execution of expensive functions both synchronously and asynchronously, without the
+     * need for a web worker or other heavyweight techniques. There are benefits to both synchronous and asynchronous
+     * execution; some functions are so oft-executed and take such a short time that there is no point to using setTimeout
+     * and making it asynchronous. I fear that the proliferation of asynchronous APIs all over the Internet discourages
+     * simple, effective code. Also, the current asynchronous APIs aren't the most versatile. For example, how could we
+     * track the progress of a render, or cancel the render, via Promises alone?
+     *
+     * Web workers, while useful (I plan to eventually implement them), are difficult. They can't really do rendering work,
+     * and if the function in question takes an absurdly long amount of time to execute, it cannot be terminated gracefully;
+     * the entire worker needs to be terminated and then restarted.
+     *
+     * We use a generator-like object called a "bolus". Why? Because I like that word. Also, it makes it feel
+     * like the evaluation of these expensive functions is like digestion. We consume a bolus and digest it asynchronously;
+     * it's not like while we're digesting, we can't do anything else. We do get periodic interruptions—stomach cramps,
+     * defecation—but it does not control our life. If digestion is taking too long, we can go to the doctor and get a
+     * laxative. Using a Web Worker is like giving the bolus to a chemical digester (or another person), and then eating the
+     * digested remains; not appetizing, and the process of transferring a disgusting bolus soup is not pleasant. If we find
+     * out the bolus is poisonous (aka, we don't want to fully digest it), we can vomit up the bolus, but this is not
+     * guaranteed. If this bolus is extremely poisonous, we may die; similarly, if a Grapheme bolus is poorly made, it may
+     * still crash the webpage. (Okay, henceforth every "bolus" is a Grapheme bolus.)
+     *
+     * The bolus may accept any number of arguments. If it is detected to be a normal function (that is, one whose return
+     * value does not have a "next" function), its result is given if it's synchronously evaluated, or given as a Promise if
+     * asynchronously evaluated. If it is a generator, then during its execution it may periodically yield. If synchronously
+     * evaluated, the wrapper will simply keep calling .next() (digestion) until it returns, and then return this value.
+     * If asynchronously evaluated, the wrapper will keep calling .next() until some amount of time has elapsed (default is
+     * 8 ms, since a frame is 1/60 s) since the function call, or the function returns; in the former case, a timeout will
+     * be called to unblock, and in the latter case, the result of the function resolves the Promise.
+     *
+     * There are additional things that may be given to the wrapper functions for convenience. For example, both sync and
+     * asyncEvaluate can be told to throw an error (and thus in the latter case, reject the Promise) if too much time has
+     * elapsed. Note that this won't prevent an errant function which enters an infinite loop and NEVER yields from crashing
+     * the browser, but in the case of syncEvaluate, it can prevent crashes. Furthermore, asyncEvaluate may be given an
+     * additional "onProgress" callback function along with the bolus, which is called based on the estimated time for a
+     * bolus to finish, and the Promise it returns is equipped with a special function .cancel() which may be called to
+     * terminate the function (and call reject()) before it actually ends. This is useful for things like cancelling
+     * expensive updates.
+     */
+    class BolusTimeoutError extends Error {
+        constructor(message) {
+            super(message);
+            this.name = 'BolusTimeoutError';
+        }
+    }
+    class BolusCancellationError extends Error {
+        constructor(message) {
+            super(message);
+            this.name = 'BolusCancellationError';
+        }
+    }
+    /**
+     * Digest a bolus directly, which is ideal for some quickly evaluated boluses. A timeout may also be provided which will
+     * terminate the bolus early if necessary. Note that if the bolus finishes and more than timeout ms have elapsed, an
+     * error will not be thrown, but if the bolus has yielded without finishing and more than timeout ms have elapsed, it
+     * will throw a BolusTimeoutError.
+     *
+     * Functions may return a bolus or, if they are exceedingly cheap, may return the value. Thus, syncDigest forwards non-
+     * boluses directly.
+     * @param bolus The bolus to evaluate
+     * @param timeout Timeout length in milliseconds (-1 if no timeout)
+     */
+    function syncDigest(bolus, timeout = -1) {
+        var _a, _b;
+        // @ts-ignore
+        if (bolus == null || typeof (bolus === null || bolus === void 0 ? void 0 : bolus.next) !== 'function') {
+            // Forward non-boluses
+            return { result: bolus, timeElapsed: 0 };
+        }
+        bolus = bolus;
+        const startTime = Date.now();
+        try {
+            // Allow timeouts between one ms and one day
+            if (timeout >= 1 && timeout <= 8.64e7) {
+                /**
+                 * Note: this code is not safe for time changes, which perhaps we can fix at some point.
+                 * Also, there are some browser features (notably Firefox's privacy.resistFingerprinting) that artificially rounds
+                 * the Date.now() and performance.now() values. Indeed, their accuracy is never guaranteed. That is unfortunately
+                 * a fundamental limitation.
+                 */
+                while (true) {
+                    // Iterate through the bolus
+                    const next = bolus.next();
+                    const delta = Date.now() - startTime;
+                    if (next.done) {
+                        // return the result if done
+                        return { result: next.value, timeElapsed: delta };
+                    }
+                    if (delta > timeout) {
+                        // Clean up if needed
+                        (_a = bolus.cleanup) === null || _a === void 0 ? void 0 : _a.call(bolus);
+                        throw new BolusTimeoutError('Bolus did not digest within ' + timeout + ' ms.');
+                    }
+                }
+            }
+            else if (timeout !== -1) {
+                throw new RangeError('Invalid timeout, which must be between 1 and 86,400,000 ms, or -1 to signify no timeout.');
+            }
+            // timeout is -1
+            while (true) {
+                const next = bolus.next();
+                if (next.done)
+                    return { result: next.value, timeElapsed: Date.now() - startTime };
+            }
+        }
+        finally {
+            // Potentially clean up
+            (_b = bolus.cleanup) === null || _b === void 0 ? void 0 : _b.call(bolus);
+        }
+    }
+    class BolusPromise {
+        constructor(executor, bolus, st, timeout, timeStep, onProgress, onCleanup, usePostMessage) {
+            this._bolus = bolus;
+            this._startTime = st;
+            this._timeout = timeout;
+            this._timeStep = timeStep;
+            this._onProgress = onProgress;
+            this._onCleanup = onCleanup;
+            this._cancelled = false;
+            if (!executor) {
+                this._executor = this.constructExecutor(usePostMessage);
+            }
+            else {
+                this._executor = executor;
+            }
+        }
+        then() {
+            let e = this._executor;
+            return e.then.apply(e, arguments);
+        }
+        catch() {
+            let e = this._executor;
+            return e.catch.apply(e, arguments);
+        }
+        constructExecutor(usePostMessage) {
+            let id = usePostMessage ? Math.random() : 0;
+            let msgData = { asyncBolusId: id }; // posting this object will cause the corresponding bolus to step
+            let tm;
+            let attachCallback = usePostMessage ? () => {
+                window.addEventListener("message", tm);
+                window.postMessage(msgData, location.origin);
+            } : () => {
+                id = setTimeout(tm, 0);
+            };
+            let scheduleCallback = usePostMessage ? () => {
+                window.postMessage(msgData, tm);
+            } : () => id = setTimeout(tm, 0);
+            let cleanupCallback = usePostMessage ? () => {
+                window.removeEventListener("message", tm);
+            } : () => clearTimeout(id);
+            return new Promise((resolve, reject) => {
+                tm = (e) => {
+                    var _a, _b, _c, _d;
+                    if (((_a = e.data) === null || _a === void 0 ? void 0 : _a.asyncBolusId) !== id)
+                        return;
+                    try {
+                        if (this._cancelled) {
+                            throw new BolusCancellationError("Bolus was cancelled");
+                        }
+                        let stepResult = this._step();
+                        if (stepResult.done) {
+                            cleanupCallback();
+                            resolve({ result: stepResult.value, timeElapsed: Date.now() - this._startTime });
+                            (_b = this._onProgress) === null || _b === void 0 ? void 0 : _b.call(this, 1);
+                            return;
+                        }
+                        else {
+                            (_c = this._onProgress) === null || _c === void 0 ? void 0 : _c.call(this, stepResult.value);
+                        }
+                        // timeouts/errors will call reject implicitly
+                        // Post message to itself
+                        scheduleCallback();
+                    }
+                    catch (e) {
+                        (_d = this._onCleanup) === null || _d === void 0 ? void 0 : _d.call(this);
+                        cleanupCallback();
+                        reject(e);
+                    }
+                };
+                attachCallback();
+            });
+        }
+        _step() {
+            var _a;
+            let begin = Date.now();
+            let startTime = this._startTime;
+            let step = this._timeStep;
+            let bolus = this._bolus;
+            let timeout = this._timeout;
+            while (true) {
+                const next = bolus.next();
+                if (next.done) {
+                    // return the result if done
+                    return next;
+                }
+                const delta = Date.now() - startTime;
+                if (timeout !== -1 && delta > timeout) {
+                    (_a = bolus.cleanup) === null || _a === void 0 ? void 0 : _a.call(bolus);
+                    throw new BolusTimeoutError('Bolus did not digest within ' + timeout + ' ms.');
+                }
+                const stepDelta = Date.now() - begin;
+                if (stepDelta > step) {
+                    return next;
+                }
+            }
+        }
+        cancel() {
+            this._cancelled = true;
+            return this;
+        }
+    }
+    /**
+     * Digest a bolus asynchronously.
+     * @param bolus
+     * @param opts
+     */
+    function asyncDigest(bolus, opts = {}) {
+        var _a, _b, _c, _d, _e;
+        if (typeof (bolus === null || bolus === void 0 ? void 0 : bolus.next) !== 'function') {
+            localWarn("Nonbolus passed to asyncDigest (.next is either not a property or not a function", "asyncDigest nonbolus", 1);
+            // Forward non-boluses
+            return new BolusPromise(Promise.resolve({ result: bolus, timeElapsed: 0 }), null, 0, 0, 0, null, null, false);
+        }
+        let startTime = Date.now();
+        let timeout = (_a = opts.timeout) !== null && _a !== void 0 ? _a : -1;
+        let timeStep = (_b = opts.timeStep) !== null && _b !== void 0 ? _b : 10; // ms
+        let onProgress = (_c = opts.onProgress) !== null && _c !== void 0 ? _c : null;
+        let onCleanup = (_d = opts.cleanup) !== null && _d !== void 0 ? _d : null;
+        let usePostMessage = (_e = opts.usePostMessage) !== null && _e !== void 0 ? _e : true;
+        return new BolusPromise(null, bolus, startTime, timeout, timeStep, onProgress, onCleanup, usePostMessage);
+    }
+
     exports.BigFloat = BigFloat;
     exports.CompilationError = CompilationError;
     exports.Complex = Complex;
     exports.ParserError = ParserError;
     exports.ROUNDING_MODE = ROUNDING_MODE;
     exports.addMantissas = addMantissas;
+    exports.asyncDigest = asyncDigest;
     exports.compileNode = compileNode;
     exports.complexToRGB = complexToRGB;
     exports.countFloatsBetween = countFloatsBetween;
@@ -5558,6 +5819,7 @@
     exports.setWorkingPrecision = setWorkingPrecision;
     exports.setWorkingRM = setWorkingRM;
     exports.subtractMantissas = subtractMantissas;
+    exports.syncDigest = syncDigest;
     exports.toBinary = toBinary;
     exports.toHex = toHex;
     exports.ulp = ulp;

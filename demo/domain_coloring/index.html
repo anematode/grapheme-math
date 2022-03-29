@@ -24,10 +24,31 @@
         </div>
 
         <div id="controls" class="controls">
-            <button id="Render">Render</button>
-            <p id="render-time">Render time: </p>
+            <div>
+                <label for="expr-input">Expression</label>
+                <input type="text" id="expr-input" oninput="updateExpression()">
+            </div>
+
+            <div>
+                <label for="zoom-input">Zoom</label>
+                <input type="range" id="zoom-input" min="1" max="100" step="0.1" value="5" oninput="updateExpression()">
+            </div>
+
+            <!-- color scale -->
+            <div>
+                <label for="color-input">Color scale</label>
+                <input type="range" id="color-input" min="1" max="100" step="0.1" value="5" oninput="updateExpression()">
+            </div>
+
+            <button id="Render" onclick="draw()">Render</button>
+            <p>Render time: <span id="render-time"></span></p>
+            <p>Progress: <span id="render-progress"></span></p>
             <div class="progress-bar-container">
                 <div id="progress-bar"></div>
+            </div>
+
+            <div class="narrow code-output" id="main-code-output">
+
             </div>
         </div>
     </div>
