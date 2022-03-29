@@ -11,3 +11,4 @@ export { ROUNDING_MODE }
 export * from './real/normal.js'
 export * from './complex/normal.js'
 export * from './complex/domain_coloring.js'
+export * from './bolus/bolus.js'
