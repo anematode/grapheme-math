@@ -30,7 +30,7 @@ export class EvaluationMode {
 
   fillTypeMap (m: AcceptableTypeMap) {
     for (let [ mathematical, concrete ] of Object.entries(m)) {
-      this.typeMap.set(mathematical, toConcreteType(concrete))
+      this.typeMap.set(mathematical, toConcreteType(concrete, true)!)
     }
   }
 

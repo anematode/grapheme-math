@@ -12,17 +12,9 @@ function convertArgumentTypes(args: any): MathematicalType[] {
   if (args == null) return []
   if (!Array.isArray(args)) throw new TypeError("Expected argument type list to be an array")
 
-  let converted = args.map(toMathematicalType)
+  let converted = args.map(a => toMathematicalType(a, true))
 
-  // Validate arguments
-  for (let i = 0; i < args.length; ++i) {
-    let arg = converted[i]
-    if (!arg) {
-      throw new Error(`Unknown argument type at index ${i} (attempted conversion from ${args[i]})`)
-    }
-  }
-
-  return converted
+  return converted as MathematicalType[] // null checks done
 }
 
 type CastOperatorDefinitionBaseParams = {
@@ -85,7 +77,7 @@ export class OperatorDefinition {
      * Return type (void type if nothing)
      * @type {MathematicalType}
      */
-    this.returns = toMathematicalType(params.returns ?? "void")
+    this.returns = toMathematicalType(params.returns ?? "void", true)!
     if (!this.returns) {
       throw new Error(`Unknown return type (attempted conversion from ${params.returns})`)
     }

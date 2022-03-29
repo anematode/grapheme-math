@@ -116,23 +116,37 @@ export function defineMathematicalType (type: MathematicalType) {
 /**
  * "Intelligently" convert an object to the corresponding concrete type object. Returns null if no such type is found
  * @param o {any}
+ * @param throwOnError
  * @returns {ConcreteType|null}
  */
-export function toConcreteType (o): ConcreteType | null {
-  if (typeof o === "string") return concreteTypes.get(o) ?? null
+export function toConcreteType (o, throwOnError=false): ConcreteType | null {
+  let r: ConcreteType | null = null
+  if (typeof o === "string") r = concreteTypes.get(o) ?? null
+  else r = (o instanceof ConcreteType) ? o : null
 
-  return (o instanceof ConcreteType) ? o : null
+  if (!r && throwOnError) {
+    throw new Error("No concrete type found for " + o)
+  }
+
+  return r
 }
 
 /**
  * "Intelligently" convert an object to the corresponding mathematical type object
  * @param o {*}
+ * @param throwOnError
  * @returns {MathematicalType|null}
  */
-export function toMathematicalType (o): MathematicalType | null {
-  if (typeof o === "string") return mathematicalTypes.get(o) ?? null
+export function toMathematicalType (o, throwOnError=false): MathematicalType | null {
+  let r: MathematicalType | null = null
+  if (typeof o === "string") r = concreteTypes.get(o) ?? null
+  else r = (o instanceof MathematicalType) ? o : null
 
-  return (o instanceof MathematicalType) ? o : null
+  if (!r && throwOnError) {
+    throw new Error("No mathematical type found for " + o)
+  }
+
+  return r
 }
 
 let concreteTypes = new Map()

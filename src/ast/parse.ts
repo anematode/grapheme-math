@@ -495,7 +495,7 @@ function processConstantsAndVariables (tokens: (Token|ASTNode)[]) {
     if ('type' in token) {
       switch (token.type) {
         case 'constant':
-          let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real')
+          let type = toMathematicalType(isStringInteger(token.value) ? 'int' : 'real', true /* throw on error */)!
           node = new UnprocessedASTNode("constant", { value: token.value, token, startToken: token, endToken: token, type }, [])
 
           break
