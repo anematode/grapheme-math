@@ -9,6 +9,32 @@
 <script type="module" src="perf/perf.js"></script>
 
 <script>
+
+  // Find the sum of integers from 1 to n in bolus form
+  function testBolus (n) {
+    let i = 0
+    let sum = 0
+    let finished = false
+
+    return {
+      next () {
+        if (finished) return { value: undefined, done: true }
+
+        for (let j = 0; j <= 1e5; ++i, ++j) {
+          // Sum at most 10000 values
+          sum += i
+
+          if (i === n) {
+            finished = true
+            return { value: sum, done: true }
+          }
+        }
+
+        return { value: i / n, done: false }
+      }
+    }
+  }
+
     // use global variables for convenience
       function play() {
         s = "e^(i*z)/(e^-z+e^z)"

@@ -19,6 +19,11 @@ if (!DemoContainer) {
 // Get logo as dom element
 let logo = document.createElement("img")
 logo.src = "../logo.svg"
+logo.onclick = () => {
+  console.log ("hi")
+  document.location.href = "https://github.com/anematode/grapheme-math"
+}
+
 logo.classList.add("logo")
 
 document.getElementById("header").appendChild(logo)
