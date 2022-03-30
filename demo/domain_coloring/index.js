@@ -73,7 +73,7 @@ let zoom = 1
 let colorScale = 1
 
 function setExpression (s) {
-  exprInput.value = s
+  if (exprInput.value !== s) exprInput.value = s
 
   try {
     let result = Grapheme.compileNode(s, {
