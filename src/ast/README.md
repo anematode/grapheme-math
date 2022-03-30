@@ -224,3 +224,13 @@ Integer between `-2 ** 53 = -9007199254740992` and `2 ** 53 - 1 = 90071992547409
 ### Images
 
 Theory: https://imgur.com/a/U0UjIeu
+
+
+### Goals
+
+* Piecewise primitive by Mar 30
+* Fast interval by Apr 1
+* Parametric plot by Apr 2
+* Autodiff by Apr 4
+* Equation plot by Apr 6
+* Optimizer framework by Apr 10
