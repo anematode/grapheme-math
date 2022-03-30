@@ -45,10 +45,6 @@ logo.classList.add("logo")
 document.getElementById("header").appendChild(logo)
 
 {
-  function clearHandler () {
-    clearInterval(intervalHandler)
-  }
-
   // Wait for Grapheme to load, then call play()
   let intervalHandler = setInterval(() => {
     let Grapheme = window.Grapheme
@@ -68,6 +64,10 @@ document.getElementById("header").appendChild(logo)
       clearHandler()
     }
   }, 200)
+  
+  function clearHandler () {
+    clearInterval(intervalHandler)
+  }
 
   setTimeout(() => {
     if (!window.Grapheme) {
