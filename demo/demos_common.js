@@ -44,7 +44,7 @@ logo.classList.add("logo")
 
 document.getElementById("header").appendChild(logo)
 
-{
+
   // Wait for Grapheme to load, then call play()
   let intervalHandler = setInterval(() => {
     let Grapheme = window.Grapheme
@@ -76,4 +76,3 @@ document.getElementById("header").appendChild(logo)
       clearHandler()
     }
   }, 3000)
-}
