@@ -1,3 +1,5 @@
 
 import { gammaReal, lnGammaReal } from "./gamma.js"
-export { gammaReal, lnGammaReal }
+import { riemannZetaReal } from "./zeta.js";
+
+export { gammaReal, lnGammaReal, riemannZetaReal }
