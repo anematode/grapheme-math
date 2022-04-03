@@ -8,7 +8,7 @@ import {EvaluationMode, EvaluationModes} from "./eval_modes.js"
  * @param args {any}
  * @returns MathematicalType[]
  */
-function convertArgumentTypes(args: any): MathematicalType[] {
+function convertArgumentTypes(args: unknown): MathematicalType[] {
   if (args == null) return []
   if (!Array.isArray(args)) throw new TypeError("Expected argument type list to be an array")
 
@@ -200,8 +200,6 @@ export class OperatorDefinition {
   }
 }
 
-
-
 /**
  * A mathematical cast is just a special operator that converts one type to another, accepting a single argument and
  * returning the destination type
@@ -246,6 +244,44 @@ export class IdentityMathematicalCast extends MathematicalCast {
   isIdentity() {
     return true
   }
+}
+
+type TemplateTypeRestrictions = {
+  // ?
+}
+
+
+type TemplateTypeBase = {
+  name: string    // Generic name
+  restrictions: TemplateTypeRestrictions
+}
+
+type VariadicTemplateType = {
+  isVariadic: true
+  variadicCountMin: number
+  variadicCountMax: number
+}
+
+type TemplateType = {  // Either variadic or not
+  isVariadic: false
+} & VariadicTemplateType
+
+type TemplateTypes = {
+  types: TemplateType[]
+}
+
+/**
+ * An operator definition template *generates* OperatorDefinitions based off of various templates. It is not an
+ * OperatorDefinition itself, but does try to check for satisfiability: does a given set of arguments have an
+ * appropriate specialization? In the future, template arguments will also be able to be explicitly specified.
+ */
+class OperatorDefinitionTemplate {
+  templateTypes: TemplateType[]  // Types that the template extends from
+  returnType: TemplateType[]
+
+  isVariadic: boolean
+  variadicCountMin: number
+  variadicCountMax: number
 }
 
 /**

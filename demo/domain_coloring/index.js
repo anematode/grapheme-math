@@ -39,8 +39,8 @@ function * drawBolus () {
       z.re = b
 
       let v = ev(z)
-
       Grapheme.writeComplexToRGBA(v, colors, 4 * (dim * i + j), 1 / colorScale)
+
     }
   }
 }
