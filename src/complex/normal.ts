@@ -1,6 +1,8 @@
 import {gammaReal} from "../real/normal.js"
 import {lanczosCoefficients} from "../real/gamma.js"
 
+
+
 /**
  * Normal-precision complex number.
  */
@@ -37,6 +39,31 @@ class Complex {
     }
 
     return new Complex(re, im)
+  }
+
+  /**
+   * See Complex.approxArg
+   * @param re
+   * @param im
+   */
+  static approxArgComponents (re: number, im: number) {
+    let arg = 0
+
+    if (!Number.isFinite(re) || !Number.isFinite(im)) {
+      arg = Math.atan2(im, re)
+    } else {
+      let absX = Math.abs(re), absY = Math.abs(im)
+
+      let a = (absX > absY) ? (absY / absX) : (absX / absY)
+      let s = a * a
+      arg = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a
+
+      if (absY > absX) arg = Math.PI / 2 - arg
+      if (re < 0) arg = Math.PI - arg
+      if (im < 0) arg = -arg
+    }
+
+    return arg
   }
 
   /**
@@ -179,23 +206,7 @@ class Complex {
    */
   static approxArg (c: Complex): number {
     // Credit to https://math.stackexchange.com/a/1105038/677124
-    let x = c.im, y = c.re
-
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return Math.atan2(y, x) // will probably be fast bc of special handlers within atan2
-    }
-
-    let absX = Math.abs(x), absY = Math.abs(y)
-
-    let a = (absX > absY) ? (absY / absX) : (absX / absY)
-    let s = a * a
-    let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a
-
-    if (absY > absX) r = Math.PI / 2 - r
-    if (x < 0) r = Math.PI - r
-    if (y < 0) r = -r
-
-    return r
+    return Complex.approxArgComponents(c.re, c.im)
   }
 
   gamma (z: Complex) {

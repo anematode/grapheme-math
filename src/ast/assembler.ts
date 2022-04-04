@@ -147,7 +147,12 @@ export class Assembler {
         return "scope"
       }
 
-      return cGraph.nodes.get(varName)!.type
+      let n = cGraph.nodes.get(varName)
+      if (!n)  { // Unused input node
+        return "any"
+      }
+
+      return n.type
     })
 
     this.inputTypes = inputCTypes

@@ -401,7 +401,8 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
         isCast: mNode.isCast,
         isInput: mNode.isInput,
         astNode: mNode.astNode,
-        value: mNode.value
+        stringValue: mNode.value,  // string value is kept for cases like multiprecision
+        value: cType.castPermissive(mNode.value)
       })
     }
   }

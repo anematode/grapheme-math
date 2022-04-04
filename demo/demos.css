@@ -26,7 +26,7 @@
 /* Monospace stuff */
 
 .plot-container canvas {
-    width: calc(max(min(100%, 750px), 500px));
+    width: calc(min(100%, 750px));
     aspect-ratio: 1;
 }
 
@@ -39,6 +39,7 @@
     display: flex;
     justify-content: start;
     flex-direction: column;
+    margin-left: 10px;
 }
 
 .code-output, .major-error {

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "mocha --require esm --grep",
-    "start": "http-server -a localhost -p 8000 --ext js"
+    "start": "http-server -a localhost -p 8000 --ext js -c-1"
   },
   "type": "module"
 }

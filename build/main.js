@@ -2179,6 +2179,67 @@
         return 0.9189385332046728 + Math.log(t) * (x + 0.5) - t + Math.log(s);
     }
 
+    // Series acceleration terms (see Python code)
+    const coeffs = [
+        30122754096401.0,
+        30122754096400.0,
+        -30122754095752.0,
+        30122754025984.0,
+        -30122751049216.0,
+        30122684071936.0,
+        -30121767227392.0,
+        30113460060160.0,
+        -30060878430208.0,
+        29819879292928.0,
+        -29000797257728.0,
+        26905671630848.0,
+        -22842397687808.0,
+        16865262829568.0,
+        -10244436525056.0,
+        4814658338816.0,
+        -1619202670592.0,
+        343597383680.0,
+        -34359738368.0
+    ];
+    const n = 18;
+    // [...new Array(18).keys()].map(i => i+1).map(Math.log)
+    let precomputedLogs = [
+        NaN,
+        0,
+        0.6931471805599453,
+        1.0986122886681096,
+        1.3862943611198906,
+        1.6094379124341003,
+        1.791759469228055,
+        1.9459101490553132,
+        2.0794415416798357,
+        2.1972245773362196,
+        2.302585092994046,
+        2.3978952727983707,
+        2.4849066497880004,
+        2.5649493574615367,
+        2.6390573296152584,
+        2.70805020110221,
+        2.772588722239781,
+        2.833213344056216,
+        2.8903717578961645
+    ];
+    function riemannZetaReal(x) {
+        let s = 0;
+        if (x > 12) {
+            // extremely close to 1, use the canonical series definition
+            for (let k = 1; k <= n; ++k) {
+                s += Math.exp(precomputedLogs[k] * -x);
+            }
+            return s;
+        }
+        for (let k = 1; k <= n; ++k) {
+            let term = coeffs[k] * Math.exp(precomputedLogs[k] * -x);
+            s += term;
+        }
+        return s / (coeffs[0] * (1 - Math.exp(precomputedLogs[2] * (1 - x))));
+    }
+
     /**
      * Normal-precision complex number.
      */
@@ -2213,6 +2274,30 @@
                 }
             }
             return new Complex(re, im);
+        }
+        /**
+         * See Complex.approxArg
+         * @param re
+         * @param im
+         */
+        static approxArgComponents(re, im) {
+            let arg = 0;
+            if (!Number.isFinite(re) || !Number.isFinite(im)) {
+                arg = Math.atan2(im, re);
+            }
+            else {
+                let absX = Math.abs(re), absY = Math.abs(im);
+                let a = (absX > absY) ? (absY / absX) : (absX / absY);
+                let s = a * a;
+                arg = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+                if (absY > absX)
+                    arg = Math.PI / 2 - arg;
+                if (re < 0)
+                    arg = Math.PI - arg;
+                if (im < 0)
+                    arg = -arg;
+            }
+            return arg;
         }
         /**
          * Add two complex numbers and write the result to this complex number.
@@ -2323,21 +2408,7 @@
          */
         static approxArg(c) {
             // Credit to https://math.stackexchange.com/a/1105038/677124
-            let x = c.im, y = c.re;
-            if (!Number.isFinite(x) || !Number.isFinite(y)) {
-                return Math.atan2(y, x); // will probably be fast bc of special handlers within atan2
-            }
-            let absX = Math.abs(x), absY = Math.abs(y);
-            let a = (absX > absY) ? (absY / absX) : (absX / absY);
-            let s = a * a;
-            let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
-            if (absY > absX)
-                r = Math.PI / 2 - r;
-            if (x < 0)
-                r = Math.PI - r;
-            if (y < 0)
-                r = -r;
-            return r;
+            return Complex.approxArgComponents(c.re, c.im);
         }
         gamma(z) {
             let zi = z.im, zr = z.re;
@@ -4852,7 +4923,11 @@
                 if (varName === "scope") {
                     return "scope";
                 }
-                return cGraph.nodes.get(varName).type;
+                let n = cGraph.nodes.get(varName);
+                if (!n) { // Unused input node
+                    return "any";
+                }
+                return n.type;
             });
             this.inputTypes = inputCTypes;
             this.returns = cGraph.nodes.get(cGraph.root).type;
@@ -5314,7 +5389,8 @@
                     isCast: mNode.isCast,
                     isInput: mNode.isInput,
                     astNode: mNode.astNode,
-                    value: mNode.value
+                    stringValue: mNode.value,
+                    value: cType.castPermissive(mNode.value)
                 });
             }
         }
@@ -5437,10 +5513,140 @@
         }));
     }
 
-    function hue2rgb(p, q, t) {
+    class Color {
+        constructor(r, g, b, a) {
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.a = a;
+        }
+        rounded() {
+            return {
+                r: Math.round(this.r),
+                g: Math.round(this.g),
+                b: Math.round(this.b),
+                a: Math.round(this.a)
+            };
+        }
+        toJSON() {
+            return {
+                r: this.r,
+                g: this.g,
+                b: this.b,
+                a: this.a
+            };
+        }
+        hex() {
+            const rnd = this.rounded();
+            return `#${[rnd.r, rnd.g, rnd.b, rnd.a]
+            .map(x => leftZeroPad(x.toString(16), 2))
+            .join('')}`;
+        }
+        toNumber() {
+            return this.r * 0x1000000 + this.g * 0x10000 + this.b * 0x100 + this.a;
+        }
+        clone() {
+            return new Color(this.r, this.g, this.b, this.a);
+        }
+        static rgb(r, g, b) {
+            return new Color(r, g, b, 255);
+        }
+        static rgba(r, g, b, a = 255) {
+            return new Color(r, g, b, a);
+        }
+        static hsl(h, s, l) {
+            let [r, g, b] = hslToRgb(h, s, l);
+            return new Color(r, g, b, 255);
+        }
+        static hsla(h, s, l, a) {
+            let color = Color.hsl(h, s, l);
+            color.a = 255 * a;
+            return color;
+        }
+        static fromHex(s) {
+            let c = hexToRgb(s);
+            return new Color(c.r, c.g, c.b, c.a);
+        }
+        static fromCss(cssColorString) {
+            function throwBadColor() {
+                throw new Error('Unrecognized colour ' + cssColorString);
+            }
+            cssColorString = cssColorString.toLowerCase().replace(/\s+/g, '');
+            if (cssColorString.startsWith('#')) {
+                return Color.fromHex(cssColorString);
+            }
+            let argsMatch = /\((.+)\)/g.exec(cssColorString);
+            if (!argsMatch) {
+                let color = Colors[cssColorString.toUpperCase()];
+                return color ? color : throwBadColor();
+            }
+            let args = argsMatch[1].split(',').map(parseFloat);
+            if (cssColorString.startsWith('rgb')) {
+                let values = args.map(s => s * 255);
+                return Color.rgba(values[0], values[1], values[2], cssColorString.startsWith('rgba') ? values[3] : 255);
+            }
+            else if (cssColorString.startsWith('hsl')) {
+                let [r, g, b] = hslToRgb(args[0], args[1], args[2]);
+                return Color.rgba(r, g, b, cssColorString.startsWith('hsla') ? args[3] : 255);
+            }
+            else {
+                throwBadColor();
+            }
+        }
+        /**
+         * Permissively convert an object to a color; returns black if conversion failed
+         */
+        static fromObj(obj) {
+            var _a;
+            if (typeof obj === 'string') {
+                return Color.fromCss(obj);
+            }
+            // @ts-ignore
+            if (obj && typeof obj.r === 'number' && typeof obj.g === 'number' && typeof obj.b === 'number') {
+                // @ts-ignore
+                return Color.rgba(obj.r, obj.g, obj.b, (_a = obj.a) !== null && _a !== void 0 ? _a : 255);
+            }
+            return Color.default();
+        }
+        static default() {
+            return Color.rgba(0, 0, 0, 255);
+        }
+    }
+    function hexToRgb(hex) {
+        hex = hex.replace(/#/g, '').trim();
+        let r = 0, g = 0, b = 0, a = 255;
+        if (hex.length === 3) {
+            r = Number.parseInt(hex[0], 16);
+            g = Number.parseInt(hex[1], 16);
+            b = Number.parseInt(hex[2], 16);
+        }
+        else if (hex.length === 4) {
+            r = Number.parseInt(hex[0], 16);
+            g = Number.parseInt(hex[1], 16);
+            b = Number.parseInt(hex[2], 16);
+            a = Number.parseInt(hex[3], 16);
+        }
+        else if (hex.length === 6) {
+            r = Number.parseInt(hex.slice(0, 2), 16);
+            g = Number.parseInt(hex.slice(2, 4), 16);
+            b = Number.parseInt(hex.slice(4, 6), 16);
+        }
+        else if (hex.length === 8) {
+            r = Number.parseInt(hex.slice(0, 2), 16);
+            g = Number.parseInt(hex.slice(2, 4), 16);
+            b = Number.parseInt(hex.slice(4, 6), 16);
+            a = Number.parseInt(hex.slice(6, 8), 16);
+        }
+        else {
+            throw new Error('Unrecognized color ' + hex);
+        }
+        return { r, g, b, a };
+    }
+    // Credit to https://stackoverflow.com/a/9493060/13458117
+    function hue2Rgb(p, q, t) {
         if (t < 0)
             t += 1;
-        else if (t > 1)
+        if (t > 1)
             t -= 1;
         if (t < 1 / 6)
             return p + (q - p) * 6 * t;
@@ -5450,54 +5656,466 @@
             return p + (q - p) * (2 / 3 - t) * 6;
         return p;
     }
-    function hslToRGB(h, s, l) {
+    function hslToRgb(h, s, l) {
         let r, g, b;
         if (s === 0) {
             r = g = b = l; // achromatic
         }
         else {
-            let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-            let p = 2 * l - q;
-            r = hue2rgb(p, q, h + 1 / 3);
-            g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h - 1 / 3);
+            var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            var p = 2 * l - q;
+            r = hue2Rgb(p, q, h + 1 / 3);
+            g = hue2Rgb(p, q, h);
+            b = hue2Rgb(p, q, h - 1 / 3);
         }
-        return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+        return [255 * r, 255 * g, 255 * b];
     }
-    function complexToRGB(c) {
-        let h = (Complex.arg(c) + 2 * Math.PI / 3) / (2 * Math.PI);
-        let s = 1;
-        let l = 2 / Math.PI * Math.atan(Complex.abs(c));
-        return hslToRGB(h, s, l);
-    }
-    function fastAtan(x) {
+    const rgb = Color.rgb;
+    const Colors = {
+        get LIGHTSALMON() {
+            return rgb(255, 160, 122);
+        },
+        get SALMON() {
+            return rgb(250, 128, 114);
+        },
+        get DARKSALMON() {
+            return rgb(233, 150, 122);
+        },
+        get LIGHTCORAL() {
+            return rgb(240, 128, 128);
+        },
+        get INDIANRED() {
+            return rgb(205, 92, 92);
+        },
+        get CRIMSON() {
+            return rgb(220, 20, 60);
+        },
+        get FIREBRICK() {
+            return rgb(178, 34, 34);
+        },
+        get RED() {
+            return rgb(255, 0, 0);
+        },
+        get DARKRED() {
+            return rgb(139, 0, 0);
+        },
+        get CORAL() {
+            return rgb(255, 127, 80);
+        },
+        get TOMATO() {
+            return rgb(255, 99, 71);
+        },
+        get ORANGERED() {
+            return rgb(255, 69, 0);
+        },
+        get GOLD() {
+            return rgb(255, 215, 0);
+        },
+        get ORANGE() {
+            return rgb(255, 165, 0);
+        },
+        get DARKORANGE() {
+            return rgb(255, 140, 0);
+        },
+        get LIGHTYELLOW() {
+            return rgb(255, 255, 224);
+        },
+        get LEMONCHIFFON() {
+            return rgb(255, 250, 205);
+        },
+        get LIGHTGOLDENRODYELLOW() {
+            return rgb(250, 250, 210);
+        },
+        get PAPAYAWHIP() {
+            return rgb(255, 239, 213);
+        },
+        get MOCCASIN() {
+            return rgb(255, 228, 181);
+        },
+        get PEACHPUFF() {
+            return rgb(255, 218, 185);
+        },
+        get PALEGOLDENROD() {
+            return rgb(238, 232, 170);
+        },
+        get KHAKI() {
+            return rgb(240, 230, 140);
+        },
+        get DARKKHAKI() {
+            return rgb(189, 183, 107);
+        },
+        get YELLOW() {
+            return rgb(255, 255, 0);
+        },
+        get LAWNGREEN() {
+            return rgb(124, 252, 0);
+        },
+        get CHARTREUSE() {
+            return rgb(127, 255, 0);
+        },
+        get LIMEGREEN() {
+            return rgb(50, 205, 50);
+        },
+        get LIME() {
+            return rgb(0, 255, 0);
+        },
+        get FORESTGREEN() {
+            return rgb(34, 139, 34);
+        },
+        get GREEN() {
+            return rgb(0, 128, 0);
+        },
+        get DARKGREEN() {
+            return rgb(0, 100, 0);
+        },
+        get GREENYELLOW() {
+            return rgb(173, 255, 47);
+        },
+        get YELLOWGREEN() {
+            return rgb(154, 205, 50);
+        },
+        get SPRINGGREEN() {
+            return rgb(0, 255, 127);
+        },
+        get MEDIUMSPRINGGREEN() {
+            return rgb(0, 250, 154);
+        },
+        get LIGHTGREEN() {
+            return rgb(144, 238, 144);
+        },
+        get PALEGREEN() {
+            return rgb(152, 251, 152);
+        },
+        get DARKSEAGREEN() {
+            return rgb(143, 188, 143);
+        },
+        get MEDIUMSEAGREEN() {
+            return rgb(60, 179, 113);
+        },
+        get SEAGREEN() {
+            return rgb(46, 139, 87);
+        },
+        get OLIVE() {
+            return rgb(128, 128, 0);
+        },
+        get DARKOLIVEGREEN() {
+            return rgb(85, 107, 47);
+        },
+        get OLIVEDRAB() {
+            return rgb(107, 142, 35);
+        },
+        get LIGHTCYAN() {
+            return rgb(224, 255, 255);
+        },
+        get CYAN() {
+            return rgb(0, 255, 255);
+        },
+        get AQUA() {
+            return rgb(0, 255, 255);
+        },
+        get AQUAMARINE() {
+            return rgb(127, 255, 212);
+        },
+        get MEDIUMAQUAMARINE() {
+            return rgb(102, 205, 170);
+        },
+        get PALETURQUOISE() {
+            return rgb(175, 238, 238);
+        },
+        get TURQUOISE() {
+            return rgb(64, 224, 208);
+        },
+        get MEDIUMTURQUOISE() {
+            return rgb(72, 209, 204);
+        },
+        get DARKTURQUOISE() {
+            return rgb(0, 206, 209);
+        },
+        get LIGHTSEAGREEN() {
+            return rgb(32, 178, 170);
+        },
+        get CADETBLUE() {
+            return rgb(95, 158, 160);
+        },
+        get DARKCYAN() {
+            return rgb(0, 139, 139);
+        },
+        get TEAL() {
+            return rgb(0, 128, 128);
+        },
+        get POWDERBLUE() {
+            return rgb(176, 224, 230);
+        },
+        get LIGHTBLUE() {
+            return rgb(173, 216, 230);
+        },
+        get LIGHTSKYBLUE() {
+            return rgb(135, 206, 250);
+        },
+        get SKYBLUE() {
+            return rgb(135, 206, 235);
+        },
+        get DEEPSKYBLUE() {
+            return rgb(0, 191, 255);
+        },
+        get LIGHTSTEELBLUE() {
+            return rgb(176, 196, 222);
+        },
+        get DODGERBLUE() {
+            return rgb(30, 144, 255);
+        },
+        get CORNFLOWERBLUE() {
+            return rgb(100, 149, 237);
+        },
+        get STEELBLUE() {
+            return rgb(70, 130, 180);
+        },
+        get ROYALBLUE() {
+            return rgb(65, 105, 225);
+        },
+        get BLUE() {
+            return rgb(0, 0, 255);
+        },
+        get MEDIUMBLUE() {
+            return rgb(0, 0, 205);
+        },
+        get DARKBLUE() {
+            return rgb(0, 0, 139);
+        },
+        get NAVY() {
+            return rgb(0, 0, 128);
+        },
+        get MIDNIGHTBLUE() {
+            return rgb(25, 25, 112);
+        },
+        get MEDIUMSLATEBLUE() {
+            return rgb(123, 104, 238);
+        },
+        get SLATEBLUE() {
+            return rgb(106, 90, 205);
+        },
+        get DARKSLATEBLUE() {
+            return rgb(72, 61, 139);
+        },
+        get LAVENDER() {
+            return rgb(230, 230, 250);
+        },
+        get THISTLE() {
+            return rgb(216, 191, 216);
+        },
+        get PLUM() {
+            return rgb(221, 160, 221);
+        },
+        get VIOLET() {
+            return rgb(238, 130, 238);
+        },
+        get ORCHID() {
+            return rgb(218, 112, 214);
+        },
+        get FUCHSIA() {
+            return rgb(255, 0, 255);
+        },
+        get MAGENTA() {
+            return rgb(255, 0, 255);
+        },
+        get MEDIUMORCHID() {
+            return rgb(186, 85, 211);
+        },
+        get MEDIUMPURPLE() {
+            return rgb(147, 112, 219);
+        },
+        get BLUEVIOLET() {
+            return rgb(138, 43, 226);
+        },
+        get DARKVIOLET() {
+            return rgb(148, 0, 211);
+        },
+        get DARKORCHID() {
+            return rgb(153, 50, 204);
+        },
+        get DARKMAGENTA() {
+            return rgb(139, 0, 139);
+        },
+        get PURPLE() {
+            return rgb(128, 0, 128);
+        },
+        get INDIGO() {
+            return rgb(75, 0, 130);
+        },
+        get PINK() {
+            return rgb(255, 192, 203);
+        },
+        get LIGHTPINK() {
+            return rgb(255, 182, 193);
+        },
+        get HOTPINK() {
+            return rgb(255, 105, 180);
+        },
+        get DEEPPINK() {
+            return rgb(255, 20, 147);
+        },
+        get PALEVIOLETRED() {
+            return rgb(219, 112, 147);
+        },
+        get MEDIUMVIOLETRED() {
+            return rgb(199, 21, 133);
+        },
+        get WHITE() {
+            return rgb(255, 255, 255);
+        },
+        get SNOW() {
+            return rgb(255, 250, 250);
+        },
+        get HONEYDEW() {
+            return rgb(240, 255, 240);
+        },
+        get MINTCREAM() {
+            return rgb(245, 255, 250);
+        },
+        get AZURE() {
+            return rgb(240, 255, 255);
+        },
+        get ALICEBLUE() {
+            return rgb(240, 248, 255);
+        },
+        get GHOSTWHITE() {
+            return rgb(248, 248, 255);
+        },
+        get WHITESMOKE() {
+            return rgb(245, 245, 245);
+        },
+        get SEASHELL() {
+            return rgb(255, 245, 238);
+        },
+        get BEIGE() {
+            return rgb(245, 245, 220);
+        },
+        get OLDLACE() {
+            return rgb(253, 245, 230);
+        },
+        get FLORALWHITE() {
+            return rgb(255, 250, 240);
+        },
+        get IVORY() {
+            return rgb(255, 255, 240);
+        },
+        get ANTIQUEWHITE() {
+            return rgb(250, 235, 215);
+        },
+        get LINEN() {
+            return rgb(250, 240, 230);
+        },
+        get LAVENDERBLUSH() {
+            return rgb(255, 240, 245);
+        },
+        get MISTYROSE() {
+            return rgb(255, 228, 225);
+        },
+        get GAINSBORO() {
+            return rgb(220, 220, 220);
+        },
+        get LIGHTGRAY() {
+            return rgb(211, 211, 211);
+        },
+        get SILVER() {
+            return rgb(192, 192, 192);
+        },
+        get DARKGRAY() {
+            return rgb(169, 169, 169);
+        },
+        get GRAY() {
+            return rgb(128, 128, 128);
+        },
+        get DIMGRAY() {
+            return rgb(105, 105, 105);
+        },
+        get LIGHTSLATEGRAY() {
+            return rgb(119, 136, 153);
+        },
+        get SLATEGRAY() {
+            return rgb(112, 128, 144);
+        },
+        get DARKSLATEGRAY() {
+            return rgb(47, 79, 79);
+        },
+        get BLACK() {
+            return rgb(0, 0, 0);
+        },
+        get CORNSILK() {
+            return rgb(255, 248, 220);
+        },
+        get BLANCHEDALMOND() {
+            return rgb(255, 235, 205);
+        },
+        get BISQUE() {
+            return rgb(255, 228, 196);
+        },
+        get NAVAJOWHITE() {
+            return rgb(255, 222, 173);
+        },
+        get WHEAT() {
+            return rgb(245, 222, 179);
+        },
+        get BURLYWOOD() {
+            return rgb(222, 184, 135);
+        },
+        get TAN() {
+            return rgb(210, 180, 140);
+        },
+        get ROSYBROWN() {
+            return rgb(188, 143, 143);
+        },
+        get SANDYBROWN() {
+            return rgb(244, 164, 96);
+        },
+        get GOLDENROD() {
+            return rgb(218, 165, 32);
+        },
+        get PERU() {
+            return rgb(205, 133, 63);
+        },
+        get CHOCOLATE() {
+            return rgb(210, 105, 30);
+        },
+        get SADDLEBROWN() {
+            return rgb(139, 69, 19);
+        },
+        get SIENNA() {
+            return rgb(160, 82, 45);
+        },
+        get BROWN() {
+            return rgb(165, 42, 42);
+        },
+        get MAROON() {
+            return rgb(128, 0, 0);
+        },
+        get TRANSPARENT() {
+            return new Color(0, 0, 0, 0);
+        }
+    };
+
+    function approxAtan(x) {
         if (x > 1)
-            return (Math.PI / 2 - fastAtan(1 / x));
+            return (Math.PI / 2 - approxAtan(1 / x));
         return (Math.PI / 4) * x - x * (x - 1) * (0.2447 + 0.0663 * x);
     }
-    function writeComplexToRGBA(c, arr, index, colorScale) {
-        // Somewhat optimized
-        let re = c.re, im = c.im;
-        const TWO_PI_OVER_3 = 2 * Math.PI / 3;
-        const TWO_OVER_PI = 2 / Math.PI;
-        let arg = 0; // argument
-        if (!Number.isFinite(re) || !Number.isFinite(im)) {
-            arg = Math.atan2(im, re);
+    const scratch = new Uint8ClampedArray(4);
+    // Method of converting complex to RGBA
+    class ColoringScheme {
+        writeComplexToRGBA(c, arr, index) {
+            this.writeComplexArrayToRGBA([c], arr, index);
         }
-        else {
-            let absX = Math.abs(re), absY = Math.abs(im);
-            let a = (absX > absY) ? (absY / absX) : (absX / absY);
-            let s = a * a;
-            arg = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
-            if (absY > absX)
-                arg = Math.PI / 2 - arg;
-            if (re < 0)
-                arg = Math.PI - arg;
-            if (im < 0)
-                arg = -arg;
+        /**
+         * Convert a complex number via this scheme. Don't use this function directly, unless only invoking it occasionally;
+         * writeComplexArrayToRGBA is usually preferable.
+         * @param c
+         */
+        complexToColor(c) {
+            this.writeComplexArrayToRGBA([c], scratch, 0);
+            return new Color(scratch[0], scratch[1], scratch[2], scratch[3]);
         }
-        let h = (arg + TWO_PI_OVER_3) * (1 / (2 * Math.PI));
-        let l = TWO_OVER_PI * fastAtan(Math.sqrt(re * re + im * im) / colorScale);
+    }
+    function writeHL(h, l, arr, index) {
         let q = l < 0.5 ? l * 2 : 1;
         let p = 2 * l - q;
         h -= 1 / 3;
@@ -5541,6 +6159,84 @@
         arr[index + 1] = (g * 255) | 0;
         arr[index + 2] = (b * 255) | 0;
         arr[index + 3] = 255;
+    }
+    function isComplexArray(c) {
+        return c[0] instanceof Complex;
+    }
+    // A repeating color scheme resets its brightness at various magnitudes. "exponential" will reset at every integer power
+    // of the base. "even" will reset at every multiple of the base.
+    class StandardColoringScheme extends ColoringScheme {
+        constructor(opts = {}) {
+            var _a, _b, _c, _d, _e, _f;
+            super();
+            this.type = (_a = opts.type) !== null && _a !== void 0 ? _a : "normal";
+            let base = +((_b = opts.base) !== null && _b !== void 0 ? _b : 2);
+            if (base !== base || base < 0) {
+                throw new Error("Invalid color scheme repeating base");
+            }
+            this.base = (_c = opts.base) !== null && _c !== void 0 ? _c : 2;
+            this.transformation = (_d = opts.transformation) !== null && _d !== void 0 ? _d : "atan";
+            this.minLightness = (_e = opts.minLightness) !== null && _e !== void 0 ? _e : 0.2;
+            this.maxLightness = (_f = opts.maxLightness) !== null && _f !== void 0 ? _f : 0.6;
+            if (this.minLightness < 0 || this.minLightness > 1) {
+                throw new Error("Invalid color scheme minLightness");
+            }
+            if (this.maxLightness < 0 || this.maxLightness > 1) {
+                throw new Error("Invalid color scheme maxLightness");
+            }
+        }
+        writeComplexArrayToRGBA(complexArr, arr, index) {
+            // Somewhat optimized
+            if (complexArr.length === 0)
+                return;
+            // Destructuring remains slow in Chrome, unfortunately, so do this
+            let type = this.type, base = this.base; this.transformation;
+            let minLightness = this.minLightness;
+            let maxLightness = this.maxLightness;
+            let rLightness = maxLightness - minLightness;
+            let isNormal = type === "normal";
+            let isExponential = type === "repeat_exponential";
+            let logBase = Math.log(this.base);
+            function write(re, im, index) {
+                let arg = Complex.approxArgComponents(re, im);
+                let magnitude = Math.sqrt(re * re + im * im);
+                let h = (arg + 2 * Math.PI / 3) * (1 / (2 * Math.PI));
+                if (isNormal) {
+                    writeHL(h, 2 / Math.PI * approxAtan(magnitude), arr, index);
+                    return;
+                }
+                else if (isExponential) {
+                    // Take the logarithm with the base TODO fast logarithm lookup, etc
+                    magnitude = Math.log(magnitude) / logBase;
+                }
+                else {
+                    magnitude /= base;
+                }
+                // Normalize to [minLightness, maxLightness), repeating
+                magnitude = minLightness + rLightness * (magnitude - Math.floor(magnitude));
+                writeHL(h, 4 / Math.PI * approxAtan(magnitude), arr, index);
+            }
+            if (isComplexArray(complexArr)) {
+                for (let i = 0; i < complexArr.length; ++i) {
+                    let c = complexArr[i];
+                    let re = c.re, im = c.im;
+                    write(re, im, index + (i << 2));
+                }
+            }
+            else if (complexArr instanceof Float32Array) {
+                // Split like this so that the stride is separate for typed arrays and hopefully won't cause deoptimization... lol
+                for (let i = 0; i < complexArr.length; i += 2) {
+                    let re = complexArr[i], im = complexArr[i + 1];
+                    write(re, im, index + (i << 1));
+                }
+            }
+            else {
+                for (let i = 0; i < complexArr.length; i += 2) {
+                    let re = complexArr[i], im = complexArr[i + 1];
+                    write(re, im, index + (i << 1));
+                }
+            }
+        }
     }
 
     /**
@@ -5776,14 +6472,16 @@
     }
 
     exports.BigFloat = BigFloat;
+    exports.BolusCancellationError = BolusCancellationError;
+    exports.BolusTimeoutError = BolusTimeoutError;
     exports.CompilationError = CompilationError;
     exports.Complex = Complex;
     exports.ParserError = ParserError;
     exports.ROUNDING_MODE = ROUNDING_MODE;
+    exports.StandardColoringScheme = StandardColoringScheme;
     exports.addMantissas = addMantissas;
     exports.asyncDigest = asyncDigest;
     exports.compileNode = compileNode;
-    exports.complexToRGB = complexToRGB;
     exports.countFloatsBetween = countFloatsBetween;
     exports.floatStore = floatStore;
     exports.flrLog2 = flrLog2;
@@ -5812,6 +6510,7 @@
     exports.prettyPrintMantissa = prettyPrintMantissa;
     exports.rationalExp = rationalExp;
     exports.resolveOperatorDefinition = resolveOperatorDefinition;
+    exports.riemannZetaReal = riemannZetaReal;
     exports.roundDown = roundDown;
     exports.roundMantissaToPrecision = roundMantissaToPrecision;
     exports.roundUp = roundUp;
@@ -5826,7 +6525,6 @@
     exports.ulpError = ulpError;
     exports.validateBigFloat = validateBigFloat;
     exports.validateMantissa = validateMantissa;
-    exports.writeComplexToRGBA = writeComplexToRGBA;
 
     Object.defineProperty(exports, '__esModule', { value: true });
 

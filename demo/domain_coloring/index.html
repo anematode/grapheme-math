@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, minimum-scale=1, maximum-scale=1" />
     <title>Playground</title>
 
     <link rel="stylesheet" href="../demos.css">
@@ -39,6 +40,11 @@
                 <label for="color-input">Color scale</label>
                 <input type="range" id="color-input" min="1" max="100" step="0.1" value="5" oninput="updateExpression()">
             </div>
+
+            <!--<div>
+                <label for="oversample"></label>
+                <input type="checkbox" id="oversample" onchange="updateExpression()">
+            </div>-->
 
             <button id="Render" onclick="draw()">Render</button>
             <p>Render time: <span id="render-time"></span></p>

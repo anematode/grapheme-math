@@ -37,7 +37,8 @@ type NodeBase = {
   astNode?: ASTNode
 
   // Used for constant nodes
-  value?: string
+  value?: any
+  stringValue?: string
 }
 
 type ConditionalNodeBase = NodeBase & {
@@ -69,12 +70,9 @@ class AssignmentGraph<NodeType extends NodeBase> {
   // to right. Nodes on different branches are not guaranteed to both be evaluated in a given instance and therefore
   // have no defined order between them. In particular, order is not transitive.
 
-  // The output node has a special name: $ret. Other variables are referred to by *name*, not by reference.
-
   // Map node name -> reference
   nodes: Map<string, NodeType>
   root: string  // name of root node
-
 
   /**
    * Iterate over input variables—variables which are either static or provided as arguments to the function

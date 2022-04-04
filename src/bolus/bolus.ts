@@ -60,14 +60,14 @@ export interface Bolus<T> {
   cleanup?: () => void
 }
 
-class BolusTimeoutError extends Error {
+export class BolusTimeoutError extends Error {
   constructor (message) {
     super(message)
     this.name = 'BolusTimeoutError'
   }
 }
 
-class BolusCancellationError extends Error {
+export class BolusCancellationError extends Error {
   constructor (message) {
     super(message)
     this.name = 'BolusCancellationError'

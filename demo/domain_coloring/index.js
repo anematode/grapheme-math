@@ -13,7 +13,11 @@ function draw () {
 
     document.getElementById("render-time").innerText = timeElapsed.toFixed(1) + 'ms'
   }).catch(e => {
-    // bolus suspended
+    if (e instanceof Grapheme.BolusCancellationError) {
+      // bolus suspended
+    } else {
+      throw e
+    }
   })
 }
 
@@ -24,25 +28,30 @@ function cancelDraw () {
 function * drawBolus () {
   let z = new Grapheme.Complex(0, 0)
   let ev = compiledExpression.targets[0].evaluate
+  let results = new Float32Array(2 * dim * dim)
+  let write = 0
+  let pauseRow = 5
 
   for (let i = 0; i < dim; ++i) {
-    let a = (0.5 - i / dim) * zoom
-    z.im = a
+    z.im = (0.5 - i / dim) * zoom
 
     // Progress report
-    if (i % 5 === 0) {
+    if (i % pauseRow === 0) {
       yield i / dim
     }
 
     for (let j = 0; j < dim; ++j) {
-      let b = (j / dim - 0.5) * zoom
-      z.re = b
+      z.re = (j / dim - 0.5) * zoom
 
       let v = ev(z)
-      Grapheme.writeComplexToRGBA(v, colors, 4 * (dim * i + j), 1 / colorScale)
 
+      results[write++] = v.re
+      results[write++] = v.im
     }
   }
+
+  new Grapheme.StandardColoringScheme({ type: "repeat_exponential" }).writeComplexArrayToRGBA(results, colors, 0)
+  copyToDisplay()
 }
 
 function copyToDisplay () {
@@ -71,12 +80,13 @@ let bolus = null
 
 let zoom = 1
 let colorScale = 1
+let oversample = false
 
 function setExpression (s) {
   if (exprInput.value !== s) exprInput.value = s
 
   try {
-    let result = Grapheme.compileNode(s, {
+    let result = Grapheme.compileNode(`complex(${s})`, {
       resolveTypes: {
         defaultType: "complex"
       }, targets: {
@@ -97,6 +107,7 @@ function updateExpression () {
 
   zoom = +document.getElementById("zoom-input").value
   colorScale = Math.sqrt(+document.getElementById("color-input").value) / 2
+  //oversample = !!document.getElementById("oversample").checked
 
   draw()
 }
