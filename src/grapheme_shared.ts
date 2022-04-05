@@ -390,9 +390,26 @@ export const levenshtein = (function () {
   }
 })()
 
-const warnings = new Map<any, number>()
+/**
+ * Get the next power of two after a number, accepting positive numbers in a reasonable range. If the number is itself
+ * a power of two, then it is returned.
+ * @param n Number in range [1, 2^31]
+ */
+export function nextPowerOfTwo (n: number): number {
+  return 1 << Math.ceil(Math.log2(n))
+}
 
-export function localWarn (s: string, id: any, maxCount: number=2) {
+const warnings = new Map<string, number>()
+
+/**
+ * Convenience function allowing local warnings that call console.warn, but do not repeatedly warn if the warning is
+ * reached multiple times (incl. in different execution paths), to avoid spamming the console. The warnings are recorded
+ * according to their id, which should be a string that compactly and uniquely describes the warning.
+ * @param s Verbose warning description
+ * @param id Short identifier for the warning (must be unique, unless multiple warnings should be shared)
+ * @param maxCount The maximum number of warnings that should be sent to console.warn before output is silenced
+ */
+export function localWarn (s: string, id: string, maxCount: number=2) {
   let count = warnings.get(id)
 
   if (count as number >= maxCount) return  // undefined casts to 0
