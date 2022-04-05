@@ -320,6 +320,39 @@
     }
 
     // File shared between all modules of Grapheme
+    let version = 0;
+    /**
+     * This function returns a number starting from 1 that never decreases. It is used to store "when" an operation has
+     * occurred, and thus whether to consider it a change.
+     * @returns {number}
+     */
+    function getVersionID() {
+        return ++version;
+    }
+    // Generate an id of the form xxxx-xxxx
+    // TODO: guarantee no collisions via LFSR or something similar
+    function getStringID() {
+        function randLetter() {
+            return String.fromCharCode(Math.round(Math.random() * 25 + 97));
+        }
+        function randFourLetter() {
+            return randLetter() + randLetter() + randLetter() + randLetter();
+        }
+        return randFourLetter() + '-' + randFourLetter();
+    }
+    function isTypedArray(arr) {
+        return ArrayBuffer.isView(arr) && !(arr instanceof DataView);
+    }
+    /**
+     * Arithmetic mod function instead of remainder
+     * @param n {number}
+     * @param m {number}
+     * @returns {number}
+     */
+    function mod(n, m) {
+        let r = n % m;
+        return (r >= 0) ? r : (r + m);
+    }
     // Remember left-pad?
     function leftZeroPad(str, len, char = '0') {
         var _a;
@@ -328,7 +361,23 @@
         char = (_a = char[0]) !== null && _a !== void 0 ? _a : '0';
         return char.repeat(len - str.length) + str;
     }
+    /**
+     * Get the next power of two after a number, accepting positive numbers in a reasonable range. If the number is itself
+     * a power of two, then it is returned.
+     * @param n Number in range [1, 2^31]
+     */
+    function nextPowerOfTwo(n) {
+        return 1 << Math.ceil(Math.log2(n));
+    }
     const warnings = new Map();
+    /**
+     * Convenience function allowing local warnings that call console.warn, but do not repeatedly warn if the warning is
+     * reached multiple times (incl. in different execution paths), to avoid spamming the console. The warnings are recorded
+     * according to their id, which should be a string that compactly and uniquely describes the warning.
+     * @param s Verbose warning description
+     * @param id Short identifier for the warning (must be unique, unless multiple warnings should be shared)
+     * @param maxCount The maximum number of warnings that should be sent to console.warn before output is silenced
+     */
     function localWarn(s, id, maxCount = 2) {
         let count = warnings.get(id);
         if (count >= maxCount)
@@ -6471,14 +6520,2292 @@
         return new BolusPromise(null, bolus, startTime, timeout, timeStep, onProgress, onCleanup, usePostMessage);
     }
 
+    // A rather common operation for generating texture atlases and the like.
+    // Credit to the authors of github.com/mapbox/potpack. I will be writing a better version soon
+    function potpack(boxes) {
+        // calculate total box area and maximum box width
+        let area = 0;
+        let maxWidth = 0;
+        for (const box of boxes) {
+            area += box.w * box.h;
+            maxWidth = Math.max(maxWidth, box.w);
+        }
+        // sort the boxes for insertion by height, descending
+        boxes.sort((a, b) => b.h - a.h);
+        // aim for a squarish resulting container,
+        // slightly adjusted for sub-100% space utilization
+        const startWidth = Math.max(Math.ceil(Math.sqrt(area / 0.95)), maxWidth);
+        // start with a single empty space, unbounded at the bottom
+        const spaces = [{ x: 0, y: 0, w: startWidth, h: Infinity }];
+        let width = 0;
+        let height = 0;
+        for (const box of boxes) {
+            // look through spaces backwards so that we check smaller spaces first
+            for (let i = spaces.length - 1; i >= 0; i--) {
+                const space = spaces[i];
+                // look for empty spaces that can accommodate the current box
+                if (box.w > space.w || box.h > space.h)
+                    continue;
+                // found the space; add the box to its top-left corner
+                // |-------|-------|
+                // |  box  |       |
+                // |_______|       |
+                // |         space |
+                // |_______________|
+                box.x = space.x;
+                box.y = space.y;
+                height = Math.max(height, box.y + box.h);
+                width = Math.max(width, box.x + box.w);
+                if (box.w === space.w && box.h === space.h) {
+                    // space matches the box exactly; remove it
+                    const last = spaces.pop();
+                    if (i < spaces.length)
+                        spaces[i] = last;
+                }
+                else if (box.h === space.h) {
+                    // space matches the box height; update it accordingly
+                    // |-------|---------------|
+                    // |  box  | updated space |
+                    // |_______|_______________|
+                    space.x += box.w;
+                    space.w -= box.w;
+                }
+                else if (box.w === space.w) {
+                    // space matches the box width; update it accordingly
+                    // |---------------|
+                    // |      box      |
+                    // |_______________|
+                    // | updated space |
+                    // |_______________|
+                    space.y += box.h;
+                    space.h -= box.h;
+                }
+                else {
+                    // otherwise the box splits the space into two spaces
+                    // |-------|-----------|
+                    // |  box  | new space |
+                    // |_______|___________|
+                    // | updated space     |
+                    // |___________________|
+                    spaces.push({
+                        x: space.x + box.w,
+                        y: space.y,
+                        w: space.w - box.w,
+                        h: box.h
+                    });
+                    space.y += box.h;
+                    space.h -= box.h;
+                }
+                break;
+            }
+        }
+        return {
+            w: width,
+            h: height,
+            fill: area / (width * height) || 0 // space utilization
+        };
+    }
+
+    class TextRenderer {
+        constructor() {
+            this.canvas = document.createElement('canvas');
+            let ctx = this.canvas.getContext('2d');
+            if (!ctx)
+                throw new Error('Could not create canvas context');
+            this.ctx = ctx;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        }
+        /**
+         * Clear out all previous text stores. In the future, when doing a dynamic text packing, this will be called sometimes
+         * to do a reallocation.
+         */
+        clearText() {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+        getMetrics(textInfo) {
+            const { ctx } = this;
+            const { fontSize, font } = textInfo.style;
+            ctx.font = `${fontSize}px ${font}`;
+            return ctx.measureText(textInfo.text);
+        }
+        resizeCanvas(width, height) {
+            this.canvas.width = width;
+            this.canvas.height = height;
+            const { ctx } = this;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        }
+        drawText(textInfos) {
+            var _a, _b;
+            const { ctx } = this;
+            const padding = 2; // Extra padding to allow for various antialiased pixels to spill over
+            // Sort by font to avoid excess ctx.font modifications
+            textInfos.sort((c1, c2) => c1.style.font < c2.style.font);
+            // Compute where to place the text. Note that the text instructions are mutated in this process (in fact, the point
+            // of this process is to provide the instruction compiler with enough info to get the correct vertices)
+            const rects = [];
+            for (const draw of textInfos) {
+                const metrics = this.getMetrics(draw);
+                let shadowDiameter = (_a = 2 * draw.style.shadowRadius) !== null && _a !== void 0 ? _a : 0;
+                const width = Math.ceil(metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight) +
+                    shadowDiameter +
+                    padding;
+                const height = Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) +
+                    shadowDiameter +
+                    padding;
+                draw.metrics = metrics;
+                draw.rect = { w: width, h: height };
+                rects.push(draw.rect);
+            }
+            const { w: packedWidth, h: packedHeight } = potpack(rects);
+            // Powers of two are generally nicer when working with textures
+            const canvasWidth = nextPowerOfTwo(packedWidth), canvasHeight = nextPowerOfTwo(packedHeight);
+            this.resizeCanvas(canvasWidth, canvasHeight);
+            this.clearText();
+            ctx.fillStyle = 'black';
+            // Each draw is now { metrics: TextMetrics, rect: {w, h, x, y}, text, style }
+            for (const draw of textInfos) {
+                const style = draw.style;
+                ctx.font = `${style.fontSize}px ${style.font}`;
+                const shadowRadius = (_b = draw.style.shadowRadius) !== null && _b !== void 0 ? _b : 0;
+                let x = draw.rect.x + draw.metrics.actualBoundingBoxLeft + shadowRadius;
+                let y = draw.rect.y + draw.metrics.actualBoundingBoxAscent + shadowRadius;
+                // Stroke text behind the text with white
+                if (shadowRadius) {
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = shadowRadius;
+                    ctx.strokeText(draw.text, x, y);
+                    ctx.fillStyle = 'black';
+                }
+                ctx.fillText(draw.text, x, y);
+                // The actual texture coordinates used should be minus the padding (which is only used for potpack)
+                draw.rect.w -= padding;
+                draw.rect.h -= padding;
+            }
+        }
+    }
+
+    function generateRectangleTriangleStrip(rect) {
+        const { x, y, w, h } = rect;
+        const points = [x, y, x + w, y, x, y + h, x + w, y + h];
+        return new Float32Array(points);
+    }
+    function generateRectangleDebug(rect) {
+        const { x, y, w, h } = rect;
+        const points = [x, y, x + w, y, x + w, y + h, x, y + h, x, y, x + w, y + w];
+        return new Float32Array(points);
+    }
+    function _flattenVec2ArrayInternal(arr) {
+        var _a;
+        const out = [];
+        for (let i = 0; i < arr.length; ++i) {
+            let item = arr[i];
+            if (item === null || item === undefined) {
+                out.push(NaN, NaN);
+            }
+            else if (item.x !== undefined && item.y !== undefined) {
+                out.push(item.x, item.y);
+            }
+            else if (item[0] !== undefined) {
+                out.push(+item[0], (_a = item[1]) !== null && _a !== void 0 ? _a : 0);
+            }
+            else {
+                if (typeof item === 'number')
+                    out.push(item);
+                else
+                    throw new TypeError(`Error when converting array to flattened Vec2 array: Unknown item ${item} at index ${i} in given array`);
+            }
+        }
+        return out;
+    }
+    // Given some arbitrary array of Vec2s, turn it into the regularized format [x1, y1, x2, y2, ..., xn, yn]. The end of
+    // one polyline and the start of another is done by one pair of numbers being NaN, NaN.
+    function flattenVec2Array(arr) {
+        if (isTypedArray(arr))
+            return arr;
+        for (let i = 0; i < arr.length; ++i) {
+            if (typeof arr[i] !== 'number')
+                return _flattenVec2ArrayInternal(arr);
+        }
+        return arr;
+    }
+    /**
+     * Compute Math.hypot(x, y), but since all the values of x and y we're using here are not extreme, we don't have to
+     * handle overflows and underflows with much accuracy at all. We can thus use the straightforward calculation.
+     * Chrome: 61.9 ms/iteration for 1e7 calculations for fastHypot; 444 ms/iteration for Math.hypot
+     * @param x {number}
+     * @param y {number}
+     * @returns {number} hypot(x, y)
+     */
+    function fastHypot(x, y) {
+        return Math.sqrt(x * x + y * y);
+    }
+
+    // Another one of these, yada yada, reinventing the wheel, yay
+    class Vec2 {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+        }
+        static fromObj(obj) {
+            let x = NaN, y = NaN;
+            if (Array.isArray(obj)) {
+                x = obj[0];
+                y = obj[1];
+            }
+            else if (typeof obj === 'object' && (obj !== null) && 'x' in obj) {
+                let o = obj;
+                x = +o.x;
+                y = +o.y;
+            }
+            else if (typeof obj === 'string') {
+                switch (obj) {
+                    case 'N':
+                    case 'NE':
+                    case 'NW':
+                        y = 1;
+                        break;
+                    case 'S':
+                    case 'SE':
+                    case 'SW':
+                        y = -1;
+                        break;
+                    case 'C':
+                        y = 0;
+                }
+                switch (obj) {
+                    case 'E':
+                    case 'NE':
+                    case 'SE':
+                        x = 1;
+                        break;
+                    case 'W':
+                    case 'NW':
+                    case 'SW':
+                        x = -1;
+                        break;
+                    case 'C':
+                        x = 0;
+                }
+            }
+            return new Vec2(x, y);
+        }
+        add(vec) {
+            return new Vec2(this.x + vec.x, this.y + vec.y);
+        }
+        subtract(vec) {
+            return new Vec2(this.x - vec.x, this.y - vec.y);
+        }
+        multiplyScalar(scalar) {
+            return new Vec2(this.x * scalar, this.y * scalar);
+        }
+        rot(angle, centre) {
+            // TODO
+            let s = Math.sin(angle), c = Math.cos(angle);
+            if (!centre)
+                return new Vec2(c * this.x - s * this.y, s * this.x + c * this.y);
+        }
+        rotDeg(angle, centre) {
+            return this.rot((angle * Math.PI) / 180, centre);
+        }
+        unit() {
+            return this.multiplyScalar(1 / this.length());
+        }
+        length() {
+            return Math.hypot(this.x, this.y);
+        }
+        lengthSquared() {
+            return this.x * this.x + this.y * this.y;
+        }
+    }
+
+    // TODO
+    /**
+     * Given some parameters describing a line segment, find a line segment that is consistent with at least two of them.
+     * @param x1 {number}
+     * @param x2 {number}
+     * @param w {number}
+     * @param cx {number}
+     */
+    function resolveAxisSpecification(x1, x2, w, cx) {
+        if (cx !== undefined) {
+            let halfWidth = 0;
+            if (w !== undefined)
+                halfWidth = w / 2;
+            else if (x2 !== undefined)
+                halfWidth = x2 - cx;
+            else if (x1 !== undefined)
+                halfWidth = cx - x1;
+            halfWidth = Math.abs(halfWidth);
+            return [cx - halfWidth, cx + halfWidth];
+        }
+        else if (x1 !== undefined) {
+            if (w !== undefined)
+                return [x1, x1 + w];
+            if (x2 !== undefined)
+                return [x1, x2];
+        }
+        else if (x2 !== undefined) {
+            if (w !== undefined)
+                return [x2 - w, x2];
+        }
+        return [0, 0];
+    }
+    /**
+     * A bounding box. In general, we consider the bounding box to be in canvas coordinates, so that the "top" is -y and
+     * the "bottom" is +y.
+     */
+    class BoundingBox {
+        constructor(x = 0, y = 0, width = 0, height = 0) {
+            this.x = x;
+            this.y = y;
+            this.w = width;
+            this.h = height;
+        }
+        clone() {
+            return new BoundingBox(this.x, this.y, this.w, this.h);
+        }
+        /**
+         * Push in (or pull out) all the sides of the box by a given amount. Returns null if too far. So squishing
+         * { x: 0, y: 0, w: 2, h: 2} by 1/2 will give { x: 0.5, y: 0.5, w: 1, h: 1 }
+         * @param margin {number}
+         */
+        squish(margin = 0) {
+            const { x, y, w, h } = this;
+            if (2 * margin > w || 2 * margin > h)
+                return null;
+            return new BoundingBox(x + margin, y + margin, w - 2 * margin, h - 2 * margin);
+        }
+        squishAsymmetrically(left = 0, right = 0, bottom = 0, top = 0, flipY = false) {
+            const { x, y, w, h } = this;
+            if (2 * (left + right) > w || 2 * (bottom + top) > h) {
+                return null;
+            }
+            if (flipY) {
+                let tmp = bottom;
+                bottom = top;
+                top = tmp;
+            }
+            return new BoundingBox(x + left, y + top, w - (left + right), h - (top + bottom));
+        }
+        translate(v) {
+            return new BoundingBox(this.x + v.x, this.y + v.y, this.w, this.h);
+        }
+        scale(s) {
+            return new BoundingBox(this.x * s, this.y * s, this.w * s, this.h * s);
+        }
+        getX2() {
+            return this.x + this.w;
+        }
+        getY2() {
+            return this.y + this.h;
+        }
+        static fromObj(obj) {
+            let finalX1, finalY1, finalX2, finalY2;
+            if (Array.isArray(obj)) {
+                finalX1 = obj[0];
+                finalY1 = obj[1];
+                finalX2 = obj[2] + finalX1;
+                finalY2 = obj[3] + finalY1;
+            }
+            else if (typeof obj === 'object') {
+                let { x, y, x1, y1, x2, y2, w, h, width, height, cx, cy, centerX, centerY } = obj;
+                // various aliases
+                x = x !== null && x !== void 0 ? x : x1;
+                y = y !== null && y !== void 0 ? y : y1;
+                w = w !== null && w !== void 0 ? w : width;
+                h = h !== null && h !== void 0 ? h : height;
+                cx = cx !== null && cx !== void 0 ? cx : centerX;
+                cy = cy !== null && cy !== void 0 ? cy : centerY;
+                [finalX1, finalX2] = resolveAxisSpecification(x, x2, w, cx);
+                [finalY1, finalY2] = resolveAxisSpecification(y, y2, h, cy);
+            }
+            return new BoundingBox(finalX1, finalY1, finalX2 - finalX1, finalY2 - finalY1);
+        }
+        get x1() {
+            return this.x;
+        }
+        get y1() {
+            return this.y;
+        }
+        get x2() {
+            return this.getX2();
+        }
+        get y2() {
+            return this.getY2();
+        }
+        tl() {
+            return new Vec2(this.x, this.y);
+        }
+    }
+    BoundingBox.Transform = Object.freeze({
+        X: (x, box1, box2, flipX) => {
+            if (Array.isArray(x) || isTypedArray(x)) {
+                x = x;
+                for (let i = 0; i < x.length; ++i) {
+                    let fractionAlong = (x[i] - box1.x) / box1.w;
+                    if (flipX)
+                        fractionAlong = 1 - fractionAlong;
+                    x[i] = fractionAlong * box2.w + box2.x;
+                }
+                return x;
+            }
+            else {
+                x = x;
+                return BoundingBox.Transform.X([x], box1, box2, flipX)[0];
+            }
+        },
+        Y: (y, box1, box2, flipY) => {
+            if (Array.isArray(y) || isTypedArray(y)) {
+                y = y;
+                for (let i = 0; i < y.length; ++i) {
+                    let fractionAlong = (y[i] - box1.y) / box1.h;
+                    if (flipY)
+                        fractionAlong = 1 - fractionAlong;
+                    y[i] = fractionAlong * box2.h + box2.y;
+                }
+                return y;
+            }
+            else {
+                y = y;
+                return BoundingBox.Transform.Y([y], box1, box2, flipY)[0];
+            }
+        },
+        XY: (xy, box1, box2, flipX, flipY) => {
+            if (Array.isArray(xy) || isTypedArray(xy)) {
+                xy = xy;
+                for (let i = 0; i < xy.length; i += 2) {
+                    let fractionAlong = (xy[i] - box1.x) / box1.w;
+                    if (flipX)
+                        fractionAlong = 1 - fractionAlong;
+                    xy[i] = fractionAlong * box2.w + box2.x;
+                    fractionAlong = (xy[i + 1] - box1.y) / box1.h;
+                    if (flipY)
+                        fractionAlong = 1 - fractionAlong;
+                    xy[i + 1] = fractionAlong * box2.h + box2.y;
+                }
+                return xy;
+            }
+            else {
+                throw new TypeError("BoundingBox.Transform.XY only accepts numeric arrays (Arrays of numbers and typed arrays)");
+            }
+        },
+        getReducedTransform(box1, box2, flipX, flipY) {
+            let xm = 1 / box1.w;
+            let xb = -box1.x / box1.w;
+            if (flipX) {
+                xm *= -1;
+                xb = 1 - xb;
+            }
+            xm *= box2.w;
+            xb *= box2.w;
+            xb += box2.x;
+            let ym = 1 / box1.h;
+            let yb = -box1.y / box1.h;
+            if (flipY) {
+                ym *= -1;
+                yb = 1 - yb;
+            }
+            ym *= box2.h;
+            yb *= box2.h;
+            yb += box2.y;
+            return { xm, xb, ym, yb };
+        }
+    });
+
+    // Thanks Emscripten for the names!
+    // Scratch buffer for large operations where the length of the resultant array is unknown. There is no "malloc" here, so
+    // operations should copy their result to a new array once they are done (which should be relatively fast, since
+    // it's just a memcpy)
+    let HEAP = new ArrayBuffer(0x1000000);
+    let HEAPF32 = new Float32Array(HEAP);
+
+    const ENDCAP_TYPES = {
+        butt: 0,
+        round: 1,
+        square: 2
+    };
+    const JOIN_TYPES = {
+        bevel: 0,
+        miter: 2,
+        round: 1,
+        dynamic: 3
+    };
+    const MIN_RES_ANGLE = 0.05; // minimum angle in radians between roundings in a polyline
+    const B = 4 / Math.PI;
+    const C = -4 / Math.PI ** 2;
+    function fastSin(x) {
+        // crude, but good enough for this
+        x %= 6.28318530717;
+        if (x < -3.14159265)
+            x += 6.28318530717;
+        else if (x > 3.14159265)
+            x -= 6.28318530717;
+        return B * x + C * x * (x < 0 ? -x : x);
+    }
+    function fastCos(x) {
+        return fastSin(x + 1.570796326794);
+    }
+    function fastAtan2(y, x) {
+        let abs_x = x < 0 ? -x : x;
+        let abs_y = y < 0 ? -y : y;
+        let a = abs_x < abs_y ? abs_x / abs_y : abs_y / abs_x;
+        let s = a * a;
+        let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+        if (abs_y > abs_x)
+            r = 1.57079637 - r;
+        if (x < 0)
+            r = 3.14159265 - r;
+        if (y < 0)
+            r = -r;
+        return r;
+    }
+    const glVertices = HEAPF32;
+    function convertTriangleStrip(vertices, pen) {
+        if (pen.thickness <= 0 ||
+            pen.endcapRes < MIN_RES_ANGLE ||
+            pen.joinRes < MIN_RES_ANGLE ||
+            vertices.length <= 3) {
+            return { glVertices: null, vertexCount: 0 };
+        }
+        let index = -1;
+        let origVertexCount = vertices.length / 2;
+        let th = pen.thickness / 2;
+        let maxMiterLength = th / fastCos(pen.joinRes / 2);
+        let endcap = ENDCAP_TYPES[pen.endcap];
+        let join = JOIN_TYPES[pen.join];
+        if (endcap === undefined || join === undefined) {
+            throw new Error('Undefined endcap or join.');
+        }
+        // p1 -- p2 -- p3, generating vertices for point p2
+        let x1 = 0, x2, x3 = vertices[0], y1 = 0, y2, y3 = vertices[1];
+        let v1x = 0, v1y = 0, v2x = 0, v2y = 0, v1l = 0, v2l = 0, b1_x, b1_y, scale, dis;
+        for (let i = 0; i < origVertexCount; ++i) {
+            x1 = i !== 0 ? x2 : NaN; // Previous vertex
+            x2 = x3; // Current vertex
+            x3 = i !== origVertexCount - 1 ? vertices[2 * i + 2] : NaN; // Next vertex
+            y1 = i !== 0 ? y2 : NaN; // Previous vertex
+            y2 = y3; // Current vertex
+            y3 = i !== origVertexCount - 1 ? vertices[2 * i + 3] : NaN; // Next vertex
+            if (Math.abs(x3) > 16384 || Math.abs(y3) > 16384) {
+                // Temporary
+                x3 = NaN;
+                y3 = NaN;
+            }
+            if (isNaN(x2) || isNaN(y2)) {
+                continue;
+            }
+            if (isNaN(x1) || isNaN(y1)) {
+                // The start of every endcap has two duplicate vertices for triangle strip reasons
+                v2x = x3 - x2;
+                v2y = y3 - y2;
+                v2l = fastHypot(v2x, v2y);
+                if (v2l < 1e-8) {
+                    v2x = 1;
+                    v2y = 0;
+                }
+                else {
+                    v2x /= v2l;
+                    v2y /= v2l;
+                }
+                if (isNaN(v2x) || isNaN(v2y)) {
+                    continue;
+                } // undefined >:(
+                if (endcap === 1) {
+                    // rounded endcap
+                    let theta = fastAtan2(v2y, v2x) + Math.PI / 2;
+                    let steps_needed = Math.ceil(Math.PI / pen.endcapRes);
+                    let o_x = x2 - th * v2y, o_y = y2 + th * v2x;
+                    let theta_c = theta + (1 / steps_needed) * Math.PI;
+                    // Duplicate first vertex
+                    let x = glVertices[++index] = x2 + th * fastCos(theta_c);
+                    let y = glVertices[++index] = y2 + th * fastSin(theta_c);
+                    glVertices[++index] = x;
+                    glVertices[++index] = y;
+                    glVertices[++index] = o_x;
+                    glVertices[++index] = o_y;
+                    for (let i = 2; i <= steps_needed; ++i) {
+                        let theta_c = theta + (i / steps_needed) * Math.PI;
+                        glVertices[++index] = x2 + th * fastCos(theta_c);
+                        glVertices[++index] = y2 + th * fastSin(theta_c);
+                        glVertices[++index] = o_x;
+                        glVertices[++index] = o_y;
+                    }
+                    continue;
+                }
+                else if (endcap === 2) {
+                    let x = glVertices[++index] = x2 - th * v2x + th * v2y;
+                    let y = glVertices[++index] = y2 - th * v2y - th * v2x;
+                    glVertices[++index] = x;
+                    glVertices[++index] = y;
+                    glVertices[++index] = x2 - th * v2x - th * v2y;
+                    glVertices[++index] = y2 - th * v2y + th * v2x;
+                    continue;
+                }
+                else {
+                    // no endcap
+                    let x = glVertices[++index] = x2 + th * v2y;
+                    let y = glVertices[++index] = y2 - th * v2x;
+                    glVertices[++index] = x;
+                    glVertices[++index] = y;
+                    glVertices[++index] = x2 - th * v2y;
+                    glVertices[++index] = y2 + th * v2x;
+                    continue;
+                }
+            }
+            if (isNaN(x3) || isNaN(y3)) {
+                // ending endcap
+                v1x = x2 - x1;
+                v1y = y2 - y1;
+                v1l = v2l;
+                if (v1l < 1e-8) {
+                    v1x = 1;
+                    v1y = 0;
+                }
+                else {
+                    v1x /= v1l;
+                    v1y /= v1l;
+                }
+                if (isNaN(v1x) || isNaN(v1y)) {
+                    continue;
+                } // undefined >:(
+                glVertices[++index] = x2 + th * v1y;
+                glVertices[++index] = y2 - th * v1x;
+                glVertices[++index] = x2 - th * v1y;
+                glVertices[++index] = y2 + th * v1x;
+                if (endcap === 1) {
+                    let theta = fastAtan2(v1y, v1x) + (3 * Math.PI) / 2;
+                    let steps_needed = Math.ceil(Math.PI / pen.endcapRes);
+                    let o_x = x2 - th * v1y, o_y = y2 + th * v1x;
+                    for (let i = 1; i <= steps_needed; ++i) {
+                        let theta_c = theta + (i / steps_needed) * Math.PI;
+                        glVertices[++index] = x2 + th * fastCos(theta_c);
+                        glVertices[++index] = y2 + th * fastSin(theta_c);
+                        glVertices[++index] = o_x;
+                        glVertices[++index] = o_y;
+                    }
+                }
+                // Duplicate last vertex of ending endcap
+                glVertices[index + 1] = glVertices[index - 1];
+                glVertices[index + 2] = glVertices[index];
+                index += 2;
+                continue;
+            }
+            // all vertices are defined, time to draw a joinerrrrr
+            if (join === 2 || join === 3) {
+                // find the two angle bisectors of the angle formed by v1 = p1 -> p2 and v2 = p2 -> p3
+                v1x = x1 - x2;
+                v1y = y1 - y2;
+                v2x = x3 - x2;
+                v2y = y3 - y2;
+                v1l = v2l;
+                v2l = fastHypot(v2x, v2y);
+                b1_x = v2l * v1x + v1l * v2x;
+                b1_y = v2l * v1y + v1l * v2y;
+                scale = 1 / fastHypot(b1_x, b1_y);
+                if (scale === Infinity || scale === -Infinity) {
+                    b1_x = -v1y;
+                    b1_y = v1x;
+                    scale = 1 / fastHypot(b1_x, b1_y);
+                }
+                b1_x *= scale;
+                b1_y *= scale;
+                scale = (th * v1l) / (b1_x * v1y - b1_y * v1x);
+                if (join === 2 || Math.abs(scale) < maxMiterLength) {
+                    // Draw a miter. But the length of the miter is massive and we're in dynamic mode (3), we exit this if statement and do a rounded join
+                    b1_x *= scale;
+                    b1_y *= scale;
+                    glVertices[++index] = x2 - b1_x;
+                    glVertices[++index] = y2 - b1_y;
+                    glVertices[++index] = x2 + b1_x;
+                    glVertices[++index] = y2 + b1_y;
+                    continue;
+                }
+            }
+            v2x = x3 - x2;
+            v2y = y3 - y2;
+            dis = fastHypot(v2x, v2y);
+            if (dis < 0.001) {
+                v2x = 1;
+                v2y = 0;
+            }
+            else {
+                v2x /= dis;
+                v2y /= dis;
+            }
+            v1x = x2 - x1;
+            v1y = y2 - y1;
+            dis = fastHypot(v1x, v1y);
+            if (dis === 0) {
+                v1x = 1;
+                v1y = 0;
+            }
+            else {
+                v1x /= dis;
+                v1y /= dis;
+            }
+            glVertices[++index] = x2 + th * v1y;
+            glVertices[++index] = y2 - th * v1x;
+            glVertices[++index] = x2 - th * v1y;
+            glVertices[++index] = y2 + th * v1x;
+            if (join === 1 || join === 3) {
+                let a1 = fastAtan2(-v1y, -v1x) - Math.PI / 2;
+                let a2 = fastAtan2(v2y, v2x) - Math.PI / 2;
+                // if right turn, flip a2
+                // if left turn, flip a1
+                let start_a, end_a;
+                if (mod(a1 - a2, 2 * Math.PI) < Math.PI) {
+                    // left turn
+                    start_a = Math.PI + a1;
+                    end_a = a2;
+                }
+                else {
+                    start_a = Math.PI + a2;
+                    end_a = a1;
+                }
+                let angle_subtended = mod(end_a - start_a, 2 * Math.PI);
+                let steps_needed = Math.ceil(angle_subtended / pen.joinRes);
+                for (let i = 0; i <= steps_needed; ++i) {
+                    let theta_c = start_a + (angle_subtended * i) / steps_needed;
+                    glVertices[++index] = x2 + th * fastCos(theta_c);
+                    glVertices[++index] = y2 + th * fastSin(theta_c);
+                    glVertices[++index] = x2;
+                    glVertices[++index] = y2;
+                }
+            }
+            glVertices[++index] = x2 + th * v2y;
+            glVertices[++index] = y2 - th * v2x;
+            glVertices[++index] = x2 - th * v2y;
+            glVertices[++index] = y2 + th * v2x;
+        }
+        let ret = new Float32Array((index >= 0) ? glVertices.subarray(0, index) : []);
+        return ret;
+    }
+
+    class Pen {
+        constructor() {
+            this.color = new Color(0, 0, 0, 255);
+            this.thickness = 2;
+            this.dashPattern = [];
+            this.dashOffset = 0;
+            this.endcap = 'round';
+            this.endcapRes = 1;
+            this.join = 'dynamic';
+            this.joinRes = 1;
+            this.useNative = false;
+            this.visible = true;
+        }
+    }
+
+    function earcut(data, holeIndices, dim) {
+        dim = dim || 2;
+        var hasHoles = holeIndices && holeIndices.length, outerLen = hasHoles ? holeIndices[0] * dim : data.length, outerNode = linkedList(data, 0, outerLen, dim, true), triangles = [];
+        if (!outerNode || outerNode.next === outerNode.prev)
+            return triangles;
+        var minX, minY, maxX, maxY, x, y, invSize;
+        if (hasHoles)
+            outerNode = eliminateHoles(data, holeIndices, outerNode, dim);
+        // if the shape is not too simple, we'll use z-order curve hash later; calculate polygon bbox
+        if (data.length > 80 * dim) {
+            minX = maxX = data[0];
+            minY = maxY = data[1];
+            for (var i = dim; i < outerLen; i += dim) {
+                x = data[i];
+                y = data[i + 1];
+                if (x < minX)
+                    minX = x;
+                if (y < minY)
+                    minY = y;
+                if (x > maxX)
+                    maxX = x;
+                if (y > maxY)
+                    maxY = y;
+            }
+            // minX, minY and invSize are later used to transform coords into integers for z-order calculation
+            invSize = Math.max(maxX - minX, maxY - minY);
+            invSize = invSize !== 0 ? 1 / invSize : 0;
+        }
+        earcutLinked(outerNode, triangles, dim, minX, minY, invSize);
+        return triangles;
+    }
+    // create a circular doubly linked list from polygon points in the specified winding order
+    function linkedList(data, start, end, dim, clockwise) {
+        var i, last;
+        if (clockwise === (signedArea(data, start, end, dim) > 0)) {
+            for (i = start; i < end; i += dim)
+                last = insertNode(i, data[i], data[i + 1], last);
+        }
+        else {
+            for (i = end - dim; i >= start; i -= dim)
+                last = insertNode(i, data[i], data[i + 1], last);
+        }
+        if (last && equals(last, last.next)) {
+            removeNode(last);
+            last = last.next;
+        }
+        return last;
+    }
+    // eliminate colinear or duplicate points
+    function filterPoints(start, end) {
+        if (!start)
+            return start;
+        if (!end)
+            end = start;
+        var p = start, again;
+        do {
+            again = false;
+            if (!p.steiner && (equals(p, p.next) || area(p.prev, p, p.next) === 0)) {
+                removeNode(p);
+                p = end = p.prev;
+                if (p === p.next)
+                    break;
+                again = true;
+            }
+            else {
+                p = p.next;
+            }
+        } while (again || p !== end);
+        return end;
+    }
+    // main ear slicing loop which triangulates a polygon (given as a linked list)
+    function earcutLinked(ear, triangles, dim, minX, minY, invSize, pass) {
+        if (!ear)
+            return;
+        // interlink polygon nodes in z-order
+        if (!pass && invSize)
+            indexCurve(ear, minX, minY, invSize);
+        var stop = ear, prev, next;
+        // iterate through ears, slicing them one by one
+        while (ear.prev !== ear.next) {
+            prev = ear.prev;
+            next = ear.next;
+            if (invSize ? isEarHashed(ear, minX, minY, invSize) : isEar(ear)) {
+                // cut off the triangle
+                triangles.push(prev.i / dim);
+                triangles.push(ear.i / dim);
+                triangles.push(next.i / dim);
+                removeNode(ear);
+                // skipping the next vertex leads to less sliver triangles
+                ear = next.next;
+                stop = next.next;
+                continue;
+            }
+            ear = next;
+            // if we looped through the whole remaining polygon and can't find any more ears
+            if (ear === stop) {
+                // try filtering points and slicing again
+                if (!pass) {
+                    earcutLinked(filterPoints(ear), triangles, dim, minX, minY, invSize, 1);
+                    // if this didn't work, try curing all small self-intersections locally
+                }
+                else if (pass === 1) {
+                    ear = cureLocalIntersections(filterPoints(ear), triangles, dim);
+                    earcutLinked(ear, triangles, dim, minX, minY, invSize, 2);
+                    // as a last resort, try splitting the remaining polygon into two
+                }
+                else if (pass === 2) {
+                    splitEarcut(ear, triangles, dim, minX, minY, invSize);
+                }
+                break;
+            }
+        }
+    }
+    // check whether a polygon node forms a valid ear with adjacent nodes
+    function isEar(ear) {
+        var a = ear.prev, b = ear, c = ear.next;
+        if (area(a, b, c) >= 0)
+            return false; // reflex, can't be an ear
+        // now make sure we don't have other points inside the potential ear
+        var p = ear.next.next;
+        while (p !== ear.prev) {
+            if (pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
+                area(p.prev, p, p.next) >= 0)
+                return false;
+            p = p.next;
+        }
+        return true;
+    }
+    function isEarHashed(ear, minX, minY, invSize) {
+        var a = ear.prev, b = ear, c = ear.next;
+        if (area(a, b, c) >= 0)
+            return false; // reflex, can't be an ear
+        // triangle bbox; min & max are calculated like this for speed
+        var minTX = a.x < b.x ? (a.x < c.x ? a.x : c.x) : (b.x < c.x ? b.x : c.x), minTY = a.y < b.y ? (a.y < c.y ? a.y : c.y) : (b.y < c.y ? b.y : c.y), maxTX = a.x > b.x ? (a.x > c.x ? a.x : c.x) : (b.x > c.x ? b.x : c.x), maxTY = a.y > b.y ? (a.y > c.y ? a.y : c.y) : (b.y > c.y ? b.y : c.y);
+        // z-order range for the current triangle bbox;
+        var minZ = zOrder(minTX, minTY, minX, minY, invSize), maxZ = zOrder(maxTX, maxTY, minX, minY, invSize);
+        var p = ear.prevZ, n = ear.nextZ;
+        // look for points inside the triangle in both directions
+        while (p && p.z >= minZ && n && n.z <= maxZ) {
+            if (p !== ear.prev && p !== ear.next &&
+                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
+                area(p.prev, p, p.next) >= 0)
+                return false;
+            p = p.prevZ;
+            if (n !== ear.prev && n !== ear.next &&
+                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y) &&
+                area(n.prev, n, n.next) >= 0)
+                return false;
+            n = n.nextZ;
+        }
+        // look for remaining points in decreasing z-order
+        while (p && p.z >= minZ) {
+            if (p !== ear.prev && p !== ear.next &&
+                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
+                area(p.prev, p, p.next) >= 0)
+                return false;
+            p = p.prevZ;
+        }
+        // look for remaining points in increasing z-order
+        while (n && n.z <= maxZ) {
+            if (n !== ear.prev && n !== ear.next &&
+                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y) &&
+                area(n.prev, n, n.next) >= 0)
+                return false;
+            n = n.nextZ;
+        }
+        return true;
+    }
+    // go through all polygon nodes and cure small local self-intersections
+    function cureLocalIntersections(start, triangles, dim) {
+        var p = start;
+        do {
+            var a = p.prev, b = p.next.next;
+            if (!equals(a, b) && intersects(a, p, p.next, b) && locallyInside(a, b) && locallyInside(b, a)) {
+                triangles.push(a.i / dim);
+                triangles.push(p.i / dim);
+                triangles.push(b.i / dim);
+                // remove two nodes involved
+                removeNode(p);
+                removeNode(p.next);
+                p = start = b;
+            }
+            p = p.next;
+        } while (p !== start);
+        return filterPoints(p);
+    }
+    // try splitting polygon into two and triangulate them independently
+    function splitEarcut(start, triangles, dim, minX, minY, invSize) {
+        // look for a valid diagonal that divides the polygon into two
+        var a = start;
+        do {
+            var b = a.next.next;
+            while (b !== a.prev) {
+                if (a.i !== b.i && isValidDiagonal(a, b)) {
+                    // split the polygon in two by the diagonal
+                    var c = splitPolygon(a, b);
+                    // filter colinear points around the cuts
+                    a = filterPoints(a, a.next);
+                    c = filterPoints(c, c.next);
+                    // run earcut on each half
+                    earcutLinked(a, triangles, dim, minX, minY, invSize);
+                    earcutLinked(c, triangles, dim, minX, minY, invSize);
+                    return;
+                }
+                b = b.next;
+            }
+            a = a.next;
+        } while (a !== start);
+    }
+    // link every hole into the outer loop, producing a single-ring polygon without holes
+    function eliminateHoles(data, holeIndices, outerNode, dim) {
+        var queue = [], i, len, start, end, list;
+        for (i = 0, len = holeIndices.length; i < len; i++) {
+            start = holeIndices[i] * dim;
+            end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
+            list = linkedList(data, start, end, dim, false);
+            if (list === list.next)
+                list.steiner = true;
+            queue.push(getLeftmost(list));
+        }
+        queue.sort(compareX);
+        // process holes from left to right
+        for (i = 0; i < queue.length; i++) {
+            outerNode = eliminateHole(queue[i], outerNode);
+            outerNode = filterPoints(outerNode, outerNode.next);
+        }
+        return outerNode;
+    }
+    function compareX(a, b) {
+        return a.x - b.x;
+    }
+    // find a bridge between vertices that connects hole with an outer ring and and link it
+    function eliminateHole(hole, outerNode) {
+        var bridge = findHoleBridge(hole, outerNode);
+        if (!bridge) {
+            return outerNode;
+        }
+        var bridgeReverse = splitPolygon(bridge, hole);
+        // filter collinear points around the cuts
+        var filteredBridge = filterPoints(bridge, bridge.next);
+        filterPoints(bridgeReverse, bridgeReverse.next);
+        // Check if input node was removed by the filtering
+        return outerNode === bridge ? filteredBridge : outerNode;
+    }
+    // David Eberly's algorithm for finding a bridge between hole and outer polygon
+    function findHoleBridge(hole, outerNode) {
+        var p = outerNode, hx = hole.x, hy = hole.y, qx = -Infinity, m;
+        // find a segment intersected by a ray from the hole's leftmost point to the left;
+        // segment's endpoint with lesser x will be potential connection point
+        do {
+            if (hy <= p.y && hy >= p.next.y && p.next.y !== p.y) {
+                var x = p.x + (hy - p.y) * (p.next.x - p.x) / (p.next.y - p.y);
+                if (x <= hx && x > qx) {
+                    qx = x;
+                    if (x === hx) {
+                        if (hy === p.y)
+                            return p;
+                        if (hy === p.next.y)
+                            return p.next;
+                    }
+                    m = p.x < p.next.x ? p : p.next;
+                }
+            }
+            p = p.next;
+        } while (p !== outerNode);
+        if (!m)
+            return null;
+        if (hx === qx)
+            return m; // hole touches outer segment; pick leftmost endpoint
+        // look for points inside the triangle of hole point, segment intersection and endpoint;
+        // if there are no points found, we have a valid connection;
+        // otherwise choose the point of the minimum angle with the ray as connection point
+        var stop = m, mx = m.x, my = m.y, tanMin = Infinity, tan;
+        p = m;
+        do {
+            if (hx >= p.x && p.x >= mx && hx !== p.x &&
+                pointInTriangle(hy < my ? hx : qx, hy, mx, my, hy < my ? qx : hx, hy, p.x, p.y)) {
+                tan = Math.abs(hy - p.y) / (hx - p.x); // tangential
+                if (locallyInside(p, hole) &&
+                    (tan < tanMin || (tan === tanMin && (p.x > m.x || (p.x === m.x && sectorContainsSector(m, p)))))) {
+                    m = p;
+                    tanMin = tan;
+                }
+            }
+            p = p.next;
+        } while (p !== stop);
+        return m;
+    }
+    // whether sector in vertex m contains sector in vertex p in the same coordinates
+    function sectorContainsSector(m, p) {
+        return area(m.prev, m, p.prev) < 0 && area(p.next, m, m.next) < 0;
+    }
+    // interlink polygon nodes in z-order
+    function indexCurve(start, minX, minY, invSize) {
+        var p = start;
+        do {
+            if (p.z === null)
+                p.z = zOrder(p.x, p.y, minX, minY, invSize);
+            p.prevZ = p.prev;
+            p.nextZ = p.next;
+            p = p.next;
+        } while (p !== start);
+        p.prevZ.nextZ = null;
+        p.prevZ = null;
+        sortLinked(p);
+    }
+    // Simon Tatham's linked list merge sort algorithm
+    // http://www.chiark.greenend.org.uk/~sgtatham/algorithms/listsort.html
+    function sortLinked(list) {
+        var i, p, q, e, tail, numMerges, pSize, qSize, inSize = 1;
+        do {
+            p = list;
+            list = null;
+            tail = null;
+            numMerges = 0;
+            while (p) {
+                numMerges++;
+                q = p;
+                pSize = 0;
+                for (i = 0; i < inSize; i++) {
+                    pSize++;
+                    q = q.nextZ;
+                    if (!q)
+                        break;
+                }
+                qSize = inSize;
+                while (pSize > 0 || (qSize > 0 && q)) {
+                    if (pSize !== 0 && (qSize === 0 || !q || p.z <= q.z)) {
+                        e = p;
+                        p = p.nextZ;
+                        pSize--;
+                    }
+                    else {
+                        e = q;
+                        q = q.nextZ;
+                        qSize--;
+                    }
+                    if (tail)
+                        tail.nextZ = e;
+                    else
+                        list = e;
+                    e.prevZ = tail;
+                    tail = e;
+                }
+                p = q;
+            }
+            tail.nextZ = null;
+            inSize *= 2;
+        } while (numMerges > 1);
+        return list;
+    }
+    // z-order of a point given coords and inverse of the longer side of data bbox
+    function zOrder(x, y, minX, minY, invSize) {
+        // coords are transformed into non-negative 15-bit integer range
+        x = 32767 * (x - minX) * invSize;
+        y = 32767 * (y - minY) * invSize;
+        x = (x | (x << 8)) & 0x00FF00FF;
+        x = (x | (x << 4)) & 0x0F0F0F0F;
+        x = (x | (x << 2)) & 0x33333333;
+        x = (x | (x << 1)) & 0x55555555;
+        y = (y | (y << 8)) & 0x00FF00FF;
+        y = (y | (y << 4)) & 0x0F0F0F0F;
+        y = (y | (y << 2)) & 0x33333333;
+        y = (y | (y << 1)) & 0x55555555;
+        return x | (y << 1);
+    }
+    // find the leftmost node of a polygon ring
+    function getLeftmost(start) {
+        var p = start, leftmost = start;
+        do {
+            if (p.x < leftmost.x || (p.x === leftmost.x && p.y < leftmost.y))
+                leftmost = p;
+            p = p.next;
+        } while (p !== start);
+        return leftmost;
+    }
+    // check if a point lies within a convex triangle
+    function pointInTriangle(ax, ay, bx, by, cx, cy, px, py) {
+        return (cx - px) * (ay - py) - (ax - px) * (cy - py) >= 0 &&
+            (ax - px) * (by - py) - (bx - px) * (ay - py) >= 0 &&
+            (bx - px) * (cy - py) - (cx - px) * (by - py) >= 0;
+    }
+    // check if a diagonal between two polygon nodes is valid (lies in polygon interior)
+    function isValidDiagonal(a, b) {
+        return a.next.i !== b.i && a.prev.i !== b.i && !intersectsPolygon(a, b) && // dones't intersect other edges
+            (locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b) && // locally visible
+                (area(a.prev, a, b.prev) || area(a, b.prev, b)) || // does not create opposite-facing sectors
+                equals(a, b) && area(a.prev, a, a.next) > 0 && area(b.prev, b, b.next) > 0); // special zero-length case
+    }
+    // signed area of a triangle
+    function area(p, q, r) {
+        return (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+    }
+    // check if two points are equal
+    function equals(p1, p2) {
+        return p1.x === p2.x && p1.y === p2.y;
+    }
+    // check if two segments intersect
+    function intersects(p1, q1, p2, q2) {
+        var o1 = sign(area(p1, q1, p2));
+        var o2 = sign(area(p1, q1, q2));
+        var o3 = sign(area(p2, q2, p1));
+        var o4 = sign(area(p2, q2, q1));
+        if (o1 !== o2 && o3 !== o4)
+            return true; // general case
+        if (o1 === 0 && onSegment(p1, p2, q1))
+            return true; // p1, q1 and p2 are collinear and p2 lies on p1q1
+        if (o2 === 0 && onSegment(p1, q2, q1))
+            return true; // p1, q1 and q2 are collinear and q2 lies on p1q1
+        if (o3 === 0 && onSegment(p2, p1, q2))
+            return true; // p2, q2 and p1 are collinear and p1 lies on p2q2
+        if (o4 === 0 && onSegment(p2, q1, q2))
+            return true; // p2, q2 and q1 are collinear and q1 lies on p2q2
+        return false;
+    }
+    // for collinear points p, q, r, check if point q lies on segment pr
+    function onSegment(p, q, r) {
+        return q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) && q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y);
+    }
+    function sign(num) {
+        return num > 0 ? 1 : num < 0 ? -1 : 0;
+    }
+    // check if a polygon diagonal intersects any polygon segments
+    function intersectsPolygon(a, b) {
+        var p = a;
+        do {
+            if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i &&
+                intersects(p, p.next, a, b))
+                return true;
+            p = p.next;
+        } while (p !== a);
+        return false;
+    }
+    // check if a polygon diagonal is locally inside the polygon
+    function locallyInside(a, b) {
+        return area(a.prev, a, a.next) < 0 ?
+            area(a, b, a.next) >= 0 && area(a, a.prev, b) >= 0 :
+            area(a, b, a.prev) < 0 || area(a, a.next, b) < 0;
+    }
+    // check if the middle point of a polygon diagonal is inside the polygon
+    function middleInside(a, b) {
+        var p = a, inside = false, px = (a.x + b.x) / 2, py = (a.y + b.y) / 2;
+        do {
+            if (((p.y > py) !== (p.next.y > py)) && p.next.y !== p.y &&
+                (px < (p.next.x - p.x) * (py - p.y) / (p.next.y - p.y) + p.x))
+                inside = !inside;
+            p = p.next;
+        } while (p !== a);
+        return inside;
+    }
+    // link two polygon vertices with a bridge; if the vertices belong to the same ring, it splits polygon into two;
+    // if one belongs to the outer ring and another to a hole, it merges it into a single ring
+    function splitPolygon(a, b) {
+        var a2 = new Node(a.i, a.x, a.y), b2 = new Node(b.i, b.x, b.y), an = a.next, bp = b.prev;
+        a.next = b;
+        b.prev = a;
+        a2.next = an;
+        an.prev = a2;
+        b2.next = a2;
+        a2.prev = b2;
+        bp.next = b2;
+        b2.prev = bp;
+        return b2;
+    }
+    // create a node and optionally link it with previous one (in a circular doubly linked list)
+    function insertNode(i, x, y, last) {
+        var p = new Node(i, x, y);
+        if (!last) {
+            p.prev = p;
+            p.next = p;
+        }
+        else {
+            p.next = last.next;
+            p.prev = last;
+            last.next.prev = p;
+            last.next = p;
+        }
+        return p;
+    }
+    function removeNode(p) {
+        p.next.prev = p.prev;
+        p.prev.next = p.next;
+        if (p.prevZ)
+            p.prevZ.nextZ = p.nextZ;
+        if (p.nextZ)
+            p.nextZ.prevZ = p.prevZ;
+    }
+    function Node(i, x, y) {
+        // vertex index in coordinates array
+        this.i = i;
+        // vertex coordinates
+        this.x = x;
+        this.y = y;
+        // previous and next vertex nodes in a polygon ring
+        this.prev = null;
+        this.next = null;
+        // z-order curve value
+        this.z = null;
+        // previous and next nodes in z-order
+        this.prevZ = null;
+        this.nextZ = null;
+        // indicates whether this is a steiner point
+        this.steiner = false;
+    }
+    // return a percentage difference between the polygon area and its triangulation area;
+    // used to verify correctness of triangulation
+    earcut.deviation = function (data, holeIndices, dim, triangles) {
+        var hasHoles = holeIndices && holeIndices.length;
+        var outerLen = hasHoles ? holeIndices[0] * dim : data.length;
+        var polygonArea = Math.abs(signedArea(data, 0, outerLen, dim));
+        if (hasHoles) {
+            for (var i = 0, len = holeIndices.length; i < len; i++) {
+                var start = holeIndices[i] * dim;
+                var end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
+                polygonArea -= Math.abs(signedArea(data, start, end, dim));
+            }
+        }
+        var trianglesArea = 0;
+        for (i = 0; i < triangles.length; i += 3) {
+            var a = triangles[i] * dim;
+            var b = triangles[i + 1] * dim;
+            var c = triangles[i + 2] * dim;
+            trianglesArea += Math.abs((data[a] - data[c]) * (data[b + 1] - data[a + 1]) -
+                (data[a] - data[b]) * (data[c + 1] - data[a + 1]));
+        }
+        return polygonArea === 0 && trianglesArea === 0 ? 0 :
+            Math.abs((trianglesArea - polygonArea) / polygonArea);
+    };
+    function signedArea(data, start, end, dim) {
+        var sum = 0;
+        for (var i = start, j = end - dim; i < end; i += dim) {
+            sum += (data[j] - data[i]) * (data[i + 1] + data[j + 1]);
+            j = i;
+        }
+        return sum;
+    }
+    // turn a polygon in a multi-dimensional array form (e.g. as in GeoJSON) into a form Earcut accepts
+    earcut.flatten = function (data) {
+        var dim = data[0][0].length, result = { vertices: [], holes: [], dimensions: dim }, holeIndex = 0;
+        for (var i = 0; i < data.length; i++) {
+            for (var j = 0; j < data[i].length; j++) {
+                for (var d = 0; d < dim; d++)
+                    result.vertices.push(data[i][j][d]);
+            }
+            if (i > 0) {
+                holeIndex += data[i - 1].length;
+                result.holes.push(holeIndex);
+            }
+        }
+        return result;
+    };
+
+    // Given a top-level scene, construct a bunch of information about the scene, outputting a map of context ids ->
+    /**
+     * Validate, shallow clone instructions and change their zIndex, et cetera
+     * @param instruction
+     */
+    function adjustInstruction(instruction) {
+        const type = instruction.type;
+        if (!type)
+            throw new Error('Instruction does not have a type. Erroneous instruction: ' +
+                JSON.stringify(instruction));
+        let out = Object.assign({}, instruction);
+        let zIndex = out.zIndex;
+        let escapeContext = out.escapeContext;
+        // Fill in zIndex value for sorting
+        if (zIndex === undefined) {
+            if (type === 'text') {
+                out.zIndex = Infinity;
+            }
+            else {
+                out.zIndex = 0;
+            }
+        }
+        if (escapeContext === undefined) {
+            // Default text value
+            if (type === 'text') {
+                out.escapeContext = 'top';
+            }
+        }
+        else if (escapeContext) {
+            // Validate
+            if (typeof escapeContext !== 'string') {
+                throw new Error('Instruction has an invalid escape context value. Erroneous instruction: ' +
+                    JSON.stringify(instruction));
+            }
+        }
+        return out;
+    }
+    /**
+     * Return whether a given context is the correct context to escape to, depending on what information is provided.
+     * @param context
+     * @param escapeContext
+     */
+    function matchEscapeContext(context, escapeContext) {
+        if (typeof escapeContext === 'string') {
+            return context.id === escapeContext;
+        }
+        else if (typeof escapeContext === 'object') {
+            let type = escapeContext.type;
+            if (!type)
+                throw new Error('escapeContext has insufficient information to determine which context to escape to');
+            return context.info.type !== type;
+        }
+        else {
+            throw new TypeError(`Invalid escapeContext value ${escapeContext}`);
+        }
+    }
+    class SceneGraph {
+        constructor() {
+            /**
+             * Mapping of <context id> -> <context info>, where contexts are specific subsets of the rendering sequence created
+             * by certain groups that allow for operations to be applied to multiple elements. Example: a plot may create a
+             * context to scissor element within its boundaries. The context info also contains rendering instructions for that
+             * context (incl. buffers and such). The scene graph contains a lot of information!
+             * @type {Map<string, {}>}
+             */
+            this.contextMap = new Map();
+            this.id = getStringID();
+            /**
+             * The renderer this graph is attached to. Certain instructions don't need the renderer to be involved, so this
+             * is optional allowing for static analysis of scenes detached from any specific renderer.
+             * @type {WebGLRenderer|null}
+             */
+            this.renderer = null;
+            /**
+             * Resources used by this scene graph
+             * @type {{}}
+             */
+            this.resources = {
+                textures: {},
+                buffers: {}
+            };
+        }
+        destroyAll() {
+            this.contextMap.clear();
+        }
+        /**
+         * Construct a graph from scratch
+         * @param scene
+         * @returns {*}
+         */
+        constructFromScene(scene) {
+            this.destroyAll();
+            const contextMap = this.contextMap;
+            let topContext = {
+                parent: null,
+                id: 'top',
+                info: { type: 'top' },
+                children: [],
+                contextDepth: 0
+            };
+            contextMap.set('top', topContext);
+            let currentContext = topContext;
+            let contextDepth = 0;
+            recursivelyBuild(scene);
+            // Recurse through the scene elements, not yet handling zIndex and escapeContext
+            function recursivelyBuild(elem) {
+                var _a, _b;
+                let children = elem.children;
+                let info = elem.getRenderingInfo();
+                let instructions = info === null || info === void 0 ? void 0 : info.instructions;
+                let contexts = info === null || info === void 0 ? void 0 : info.contexts;
+                let initialContext = currentContext;
+                if (contexts) {
+                    // Time to build contexts
+                    contexts = Array.isArray(contexts) ? contexts : [contexts];
+                    for (const c of contexts) {
+                        contextDepth++;
+                        let newContext = {
+                            type: 'context',
+                            id: (_a = c.id) !== null && _a !== void 0 ? _a : elem.id + '-' + getVersionID(),
+                            parent: currentContext,
+                            children: [],
+                            info: c,
+                            zIndex: (_b = c.zIndex) !== null && _b !== void 0 ? _b : 0,
+                            contextDepth,
+                            escapeContext: c.type === 'escapeContext' ? c.escapeContext : null
+                        };
+                        contextMap.set(newContext.id, newContext);
+                        currentContext.children.push(newContext);
+                        currentContext = newContext;
+                    }
+                }
+                if (instructions) {
+                    instructions = Array.isArray(instructions)
+                        ? instructions
+                        : [instructions];
+                    currentContext.children.push({
+                        id: elem.id,
+                        instructions
+                    });
+                }
+                if (children) {
+                    let childrenLen = children.length;
+                    for (let i = 0; i < childrenLen; ++i) {
+                        recursivelyBuild(children[i]);
+                    }
+                }
+                currentContext = initialContext;
+                contextDepth = currentContext.contextDepth;
+            }
+            return this;
+        }
+        computeInstructions() {
+            // For each context compute a list of instructions that the renderer should run
+            var _a;
+            const { contextMap } = this;
+            const contexts = Array.from(contextMap.values()).sort((a, b) => b.contextDepth - a.contextDepth);
+            for (const c of contexts) {
+                const children = c.children;
+                const instructions = [];
+                const escapingInstructions = [];
+                // eventually, instructions will have the structure {child: id, instructions: [], zIndex: (number)}. zIndex of text
+                // instructions is assumed to be Infinity and unspecified zIndex is 0. For now we'll just have a flat map
+                for (const child of children) {
+                    if (child.children) {
+                        // Is context
+                        let contextInstruction = {
+                            type: 'context',
+                            id: child.id,
+                            zIndex: (_a = child.zIndex) !== null && _a !== void 0 ? _a : 0,
+                            escapeContext: child.escapeContext
+                        };
+                        if (child.escapeContext) {
+                            escapingInstructions.push(contextInstruction);
+                        }
+                        else {
+                            instructions.push(contextInstruction);
+                            // Add escaped instructions
+                            for (const inst of child.escapingInstructions) {
+                                if (matchEscapeContext(c, inst.escapeContext))
+                                    instructions.push(inst);
+                                else
+                                    escapingInstructions.push(inst);
+                            }
+                        }
+                    }
+                    else {
+                        for (const instruction of child.instructions) {
+                            if (!instruction)
+                                continue;
+                            let adj = adjustInstruction(instruction);
+                            if (adj.escapeContext) {
+                                escapingInstructions.push(adj);
+                            }
+                            else {
+                                instructions.push(adj);
+                            }
+                        }
+                    }
+                }
+                c.instructions = instructions;
+                c.escapingInstructions = escapingInstructions;
+            }
+            for (const c of contextMap.values()) {
+                c.instructions.sort((a, b) => a.zIndex - b.zIndex);
+            }
+        }
+        /**
+         * Execute a callback on each context of the scene graph
+         * @param callback
+         */
+        forEachContext(callback) {
+            for (const context of this.contextMap.values())
+                callback(context);
+        }
+        /**
+         * Return an array of all text instructions, to be used to generate a text texture
+         * @returns {Array}
+         */
+        getTextInstructions() {
+            let ret = [];
+            this.forEachContext(c => {
+                const instructions = c.instructions;
+                for (let i = instructions.length - 1; i >= 0; --i) {
+                    if (instructions[i].type === 'text')
+                        ret.push(instructions[i]);
+                }
+            });
+            return ret;
+        }
+        loadTextAtlas(img) {
+            const renderer = this.renderer;
+            const gl = renderer.gl;
+            let name = '__' + this.id + '-text';
+            let texture = renderer.getTexture(name);
+            let needsInitialize = !texture;
+            if (needsInitialize) {
+                texture = renderer.createTexture(name);
+            }
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            if (needsInitialize) {
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            }
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            this.resources.textAtlas = {
+                id: name,
+                width: img.width,
+                height: img.height
+            };
+        }
+        destroyTextAtlas() {
+            const renderer = this.renderer;
+            renderer.gl;
+            let name = '__' + this.id + '-text';
+            renderer.deleteTexture(name);
+        }
+        freeCompiledInstructions(inst) {
+            if (!inst)
+                return;
+            for (const i of inst) {
+                if (i.vao) {
+                    this.renderer.deleteVAO(i.vao);
+                }
+                if (i.buffers) {
+                    i.buffers.forEach(b => this.renderer.deleteBuffer(b));
+                }
+            }
+        }
+        compile() {
+            // Convert context instructions into a series of renderable instructions, generating appropriate vertex arrays and
+            // textures. Until this step, the scene graph is independent of the renderer.
+            const renderer = this.renderer;
+            if (!renderer)
+                throw new Error('Compiling a scene graph requires the graph to be attached to a renderer.');
+            const gl = renderer.gl;
+            const textRenderer = renderer.textRenderer;
+            const textInstructions = this.getTextInstructions();
+            if (textInstructions.length !== 0) {
+                textRenderer.drawText(textInstructions);
+                this.loadTextAtlas(textRenderer.canvas);
+            }
+            this.forEachContext(context => {
+                var _a, _b, _c;
+                this.freeCompiledInstructions(context.compiledInstructions);
+                const instructions = context.instructions;
+                const compiledInstructions = [];
+                switch (context.info.type) {
+                    case 'scene':
+                    case 'scissor':
+                        compiledInstructions.push(context.info);
+                        break;
+                }
+                // Super simple (and hella inefficient) for now
+                for (const instruction of instructions) {
+                    switch (instruction.type) {
+                        case 'context':
+                            compiledInstructions.push(instruction);
+                            break;
+                        case 'polyline': {
+                            const pen = (_a = instruction.pen) !== null && _a !== void 0 ? _a : Pen.default;
+                            let vertices = convertTriangleStrip(flattenVec2Array(instruction.vertices), pen);
+                            let color = pen.color;
+                            let buffName = context.id + '-' + getVersionID();
+                            let vaoName = context.id + '-' + getVersionID();
+                            let buff = renderer.createBuffer(buffName);
+                            let vao = renderer.createVAO(vaoName);
+                            gl.bindVertexArray(vao);
+                            gl.bindBuffer(gl.ARRAY_BUFFER, buff);
+                            gl.enableVertexAttribArray(0 /* position buffer */);
+                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+                            let compiled = {
+                                type: 'triangle_strip',
+                                vao: vaoName,
+                                buffers: [buffName],
+                                vertexCount: vertices.length / 2,
+                                color
+                            };
+                            compiledInstructions.push(compiled);
+                            break;
+                        }
+                        case 'text': {
+                            let tcName = context.id + '-' + getVersionID();
+                            let scName = context.id + '-' + getVersionID();
+                            let vaoName = context.id + '-' + getVersionID();
+                            let textureCoords = renderer.createBuffer(tcName);
+                            let sceneCoords = renderer.createBuffer(scName);
+                            let vao = renderer.createVAO(vaoName);
+                            gl.bindVertexArray(vao);
+                            gl.bindBuffer(gl.ARRAY_BUFFER, sceneCoords);
+                            gl.enableVertexAttribArray(0 /* position buffer */);
+                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+                            let pos = instruction.pos, rect = instruction.rect;
+                            // Round to pixels so it looks nicer
+                            rect = { x: pos.x | 0, y: pos.y | 0, w: rect.w, h: rect.h };
+                            gl.bufferData(gl.ARRAY_BUFFER, generateRectangleTriangleStrip(rect), gl.STATIC_DRAW);
+                            gl.bindBuffer(gl.ARRAY_BUFFER, textureCoords);
+                            gl.enableVertexAttribArray(1 /* texture coords buffer */);
+                            gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+                            gl.bufferData(gl.ARRAY_BUFFER, generateRectangleTriangleStrip(instruction.rect), gl.STATIC_DRAW);
+                            let compiled = {
+                                type: 'text',
+                                vao: vaoName,
+                                buffers: [tcName, scName],
+                                vertexCount: 4,
+                                text: instruction.text
+                            };
+                            compiledInstructions.push(compiled);
+                            break;
+                        }
+                        /*case 'latex': {
+                          let compiledStr = katex.renderToString(instruction.latex)
+              
+                          let compiled = {
+                            type: 'latex',
+                            html: compiledStr,
+                            content: instruction.latex,
+                            pos: instruction.pos,
+                            dir: instruction.dir ?? "C",
+                            spacing: instruction.spacing ?? 0,
+                            scale: instruction.scale ?? 1
+                          }
+                          compiledInstructions.push(compiled)
+              
+                          break
+                        }*/
+                        case 'triangle_strip': {
+                            let vertices = instruction.vertices;
+                            let color = (_b = instruction.color) !== null && _b !== void 0 ? _b : Colors.BLACK;
+                            let buffName = context.id + '-' + getVersionID();
+                            let vaoName = context.id + '-' + getVersionID();
+                            let buff = renderer.createBuffer(buffName);
+                            let vao = renderer.createVAO(vaoName);
+                            gl.bindVertexArray(vao);
+                            gl.bindBuffer(gl.ARRAY_BUFFER, buff);
+                            gl.enableVertexAttribArray(0 /* position buffer */);
+                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+                            let compiled = {
+                                type: 'triangle_strip',
+                                vao: vaoName,
+                                buffers: [buffName],
+                                vertexCount: vertices.length / 2,
+                                color
+                            };
+                            compiledInstructions.push(compiled);
+                            break;
+                        }
+                        case 'polygon': {
+                            let vertices = instruction.vertices;
+                            let triangulatedVertices = earcut(vertices);
+                            let color = (_c = instruction.color) !== null && _c !== void 0 ? _c : Colors.BLACK;
+                            let vertexBufferName = context.id + '-' + getVersionID();
+                            let indexBufferName = context.id + '-' + getVersionID();
+                            let vaoName = context.id + '-' + getVersionID();
+                            let vertexBuffer = renderer.createBuffer(vertexBufferName);
+                            let indexBuffer = renderer.createBuffer(indexBufferName);
+                            let vao = renderer.createVAO(vaoName);
+                            gl.bindVertexArray(vao);
+                            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                            gl.enableVertexAttribArray(0 /* position buffer */);
+                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+                            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+                            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(triangulatedVertices), gl.STATIC_DRAW);
+                            let compiled = {
+                                type: 'triangles',
+                                mode: 'elements',
+                                vao: vaoName,
+                                buffers: [vertexBufferName],
+                                vertexCount: triangulatedVertices.length,
+                                color
+                            };
+                            compiledInstructions.push(compiled);
+                            break;
+                        }
+                        case 'debug': {
+                            let buffName = context.id + '-' + getVersionID();
+                            let vaoName = context.id + '-' + getVersionID();
+                            let buff = renderer.createBuffer(buffName);
+                            let vao = renderer.createVAO(vaoName);
+                            gl.bindVertexArray(vao);
+                            gl.bindBuffer(gl.ARRAY_BUFFER, buff);
+                            gl.enableVertexAttribArray(0 /* position buffer */);
+                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+                            let vertices;
+                            if (instruction.rect) {
+                                let rect = BoundingBox.fromObj(instruction.rect);
+                                if (!rect)
+                                    throw new Error('Invalid rectangle debug instruction');
+                                vertices = generateRectangleDebug(rect);
+                            }
+                            else if (instruction.polyline) {
+                                vertices = new Float32Array(flattenVec2Array(instruction.polyline));
+                            }
+                            else {
+                                throw new Error('Unrecognized debug instruction');
+                            }
+                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+                            let compiled = {
+                                type: 'line_strip',
+                                vao: vaoName,
+                                buffers: [buffName],
+                                vertexCount: vertices.length / 2,
+                                color: Colors.RED
+                            };
+                            compiledInstructions.push(compiled);
+                            break;
+                        }
+                        default:
+                            throw new Error(`Unsupported instruction type ${instruction.type}`);
+                    }
+                }
+                gl.bindVertexArray(null);
+                compiledInstructions.push({ type: 'pop_context' });
+                context.compiledInstructions = compiledInstructions;
+            });
+        }
+        // Yield a list of all compiled instructions
+        forEachCompiledInstruction(callback, contextID = 'top') {
+            let ctx = this.contextMap.get(contextID);
+            if (ctx.compiledInstructions) {
+                for (const instruction of ctx.compiledInstructions) {
+                    if (instruction.type === 'context') {
+                        this.forEachCompiledInstruction(callback, instruction.id);
+                    }
+                    else {
+                        callback(instruction);
+                    }
+                }
+            }
+        }
+        destroy() {
+            this.forEachContext(c => this.freeCompiledInstructions(c.compiledInstructions));
+            this.destroyTextAtlas();
+        }
+    }
+
+    /**
+     * Here lies madness.
+     *
+     * Grapheme's renderer is going to be pretty monolithic, with a lot of interdependent moving parts. As such, I'm going
+     * to keep it mostly contained within one class, perhaps with some helper classes. Doing so will also help eliminate
+     * fluff and make optimization easy and expressive.
+     *
+     * On the surface, Grapheme's rendering sequence is simple: the renderer traverses through the scene, calls
+     * getRenderingInfo() on every element, compiles a list of all the instructions (which look something like
+     * "draw this set of triangles", "draw this text"), and runs them all, returning the final product. But if the rendering
+     * pipeline were so simple, there would be little point in using WebGL at all. Why not just use Canvas2D? Why learn such
+     * a painful API? The name of the game is parallelism and optimization. Where WebGL excels is low-level control
+     * and rapid parallel computation. Its weaknesses are in a lack of builtin functions (lacking text, for example) and
+     * high complexity and verbosity,
+     *
+     * Imagine we did indeed render a scene instruction by instruction. We come across a line, so we switch to the polyline
+     * program, load in the vertices into a buffer, and drawArrays -- draw it to the canvas. We then come across a piece of
+     * text. WebGL cannot render text, so we switch over to a Canvas2D context and draw a piece of text onto a blank canvas.
+     * We then load the blank canvas as a texture into WebGL and switch to the text program, loading in a set of vertices
+     * specifying where the text is, and calling drawArrays. We then come across a couple hundred polylines in a row. For
+     * each polyline, we copy its data to the buffer and render it.
+     *
+     * There are two serious problems here. One is that loading buffers and textures is slow, for various
+     * reasons. Another is that parallelism is seriously lacking. We have to call drawArrays several hundred times for those
+     * polylines, and each call has a large constant overhead.
+     *
+     * The renderer thus has several difficult jobs: minimizing buffer and texture loading, and combining consecutive calls
+     * into one large drawArrays call. Accomplishing these jobs (and a few more) requires somewhat intricate work,
+     * which should of course be designed to allow more esoteric draw calls -- for a Mandelbrot set, say -- to still be
+     * handled with consistency. There is no perfect solution, but there are certainly gains to be made. As with the props
+     * of Grapheme elements, the problem is made easier by high-level abstraction. The renderer should produce a comparable
+     * result when optimized, compared to when every call is made individually. (They need not be exactly the same, for
+     * reasons that will become apparent.)
+     *
+     * Even more annoying is that the WebGL context may suddenly crash and all its buffers and programs lost in the ether.
+     * The renderer thus has to be able to handle such data loss without indefinitely screwing up the rendering process. So
+     * I have my work cut out, but that's exciting.
+     *
+     * The current thinking is a z-index based system with heuristic reallocation of changing and unchanging buffers. Given
+     * a list of elements and each element's instructions, we are allowed to rearrange the instructions under certain
+     * conditions: 1. instructions are drawn in order of z-index and 2. specific instructions within a given z-index may
+     * specify that they must be rendered in the order in which they appear in the instruction list. The latter condition
+     * allows deterministic ordering of certain instructions on the same z-index, which is useful when that suborder does
+     * matter (like when two instructions for a given element are intended to be one on top of the other). Otherwise, the
+     * instructions may be freely rearranged and (importantly) combined into larger operations that look the same.
+     *
+     * Already, such a sorting system is very helpful. Text elements generally specify a z-index of Infinity, while
+     * gridlines might specify a z-index of 0 to be behind most things, and a draggable point might have an index of 20. A
+     * simple algorithm to render a static image is to sort by z-index, then within each z-index group triangle draw calls
+     * with the same color together, and group text draw calls together. We then proceed to render each z-index's grouped
+     * calls in order.
+     *
+     * For a static scene, such a rendering system would work great. But in a dynamic scene, constantly reoptimizing the
+     * entire scene as a result of changing some inconsequential little geometry would be stupid. Ideally, changing a little
+     * geometry would merely update a single buffer or subsection of a buffer. Yet some changes do require a complete re-
+     * distribution of instructions; if the scene's size doubled, for example, and all the elements changed substantially.
+     * We can certainly cache information from the previous rendering process of a scene, but what do we cache? How do we
+     * ensure stability and few edge cases? How do we deal with context loss?
+     *
+     * The first step is to understand exactly what instructions are. *Anonymous* instructions have a type, some data, and
+     * an element id (which element it originated from). *Normal* instructions have a type, some data, an element id, an
+     * instruction id, and a version. The point of normal instructions is to represent a sort of "draw concept", where after
+     * an update, that instruction may have changed slightly, but will still have the same id. The instruction associated
+     * with a function plot, for example, will have some numerical ID, and when the plot changes somehow, the version will
+     * increase, but the numerical ID will remain the same. Conceptually, this means that the instruction to draw the
+     * function plot has been rewritten, and the old data is basically irrelevant -- and buffers associated with that
+     * data can and should be reused or reallocated.
+     *
+     * Anonymous instructions, on the other hand, have no concept of "versioning". Anonymous instructions are
+     * entirely reallocated or deleted every time their element updates. These instructions are generally used to indicate
+     * instructions which are very prone to change and where its values should be tied solely to the element updating.
+     */
+    // Functions taken from Mozilla docs
+    function createShaderFromSource(gl, shaderType, shaderSource) {
+        const shader = gl.createShader(shaderType);
+        gl.shaderSource(shader, shaderSource);
+        gl.compileShader(shader);
+        const succeeded = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+        if (succeeded)
+            return shader;
+        const err = new Error(gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        throw err;
+    }
+    function createGLProgram(gl, vertexShader, fragShader) {
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragShader);
+        gl.linkProgram(program);
+        const succeeded = gl.getProgramParameter(program, gl.LINK_STATUS);
+        if (succeeded)
+            return program;
+        const err = new Error(gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+        throw err;
+    }
+    const MonochromaticGeometryProgram = {
+        vert: `
+precision highp float;
+attribute vec2 vertexPosition;
+// Transforms a vertex from pixel coordinates to clip space
+uniform vec2 xyScale;
+vec2 displacement = vec2(-1, 1);
+         
+void main() {
+   gl_Position = vec4(vertexPosition * xyScale + displacement, 0, 1);
+}`,
+        frag: `precision highp float;
+uniform vec4 color;
+        
+void main() {
+   gl_FragColor = color;
+}`
+    };
+    const TextProgram = {
+        vert: `
+precision highp float;
+attribute vec2 vertexPosition;
+attribute vec2 texCoords;
+        
+uniform vec2 xyScale;
+uniform vec2 textureSize;
+        
+varying vec2 texCoord;
+vec2 displace = vec2(-1, 1);
+         
+void main() {
+  gl_Position = vec4(vertexPosition * xyScale + displace, 0, 1);
+  texCoord = texCoords / textureSize;
+}`,
+        frag: `
+precision highp float;
+        
+uniform vec4 color;
+uniform sampler2D textAtlas;
+        
+varying vec2 texCoord;
+        
+void main() {
+  gl_FragColor = texture2D(textAtlas, texCoord);
+}`
+    };
+    /**
+     * Currently accepted draw calls:
+     *
+     * Triangle strip: { type: "triangle_strip", vertices: Float32Array, color: { r: (int), g: (int), b: (int), a: (int) } }
+     * Debug: { type: "debug" }
+     * Text: { type: "text", font: (string), x: (float), y: (float), color: { r: ... } }
+     */
+    class WebGLRenderer {
+        constructor() {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl2');
+            if (!gl) {
+                throw new Error("WebGL2 not supported");
+            }
+            /**
+             * The main rendering buffer
+             * @type {HTMLCanvasElement}
+             */
+            this.canvas = canvas;
+            /**
+             * The renderer's WebGL context. Assuming WebGL2 for now
+             * @type {WebGLRenderingContext}
+             */
+            this.gl = gl;
+            /**
+             * Map between scene ids and known information about them
+             * @type {Map<string, {}>}
+             */
+            this.sceneCaches = new Map();
+            /**
+             * A mapping between program names and valid programs. When the context is lost, this map is reset
+             * @type {Map<string, { glProgram: WebGLProgram, attribs: {}, uniforms: {} }>}
+             */
+            this.programs = new Map();
+            this.buffers = new Map();
+            this.textures = new Map();
+            this.vaos = new Map();
+            this.textRenderer = new TextRenderer();
+        }
+        /**
+         * Create and link a program and store it in the form { glProgram, attribs, uniforms }, where glProgram is the
+         * underlying program and attribs and uniforms are a dictionary of attributes and uniforms from the program. The
+         * attributes are given as an object, of manually assigned indices
+         * @param programName {string}
+         * @param vertexShaderSource {string}
+         * @param fragShaderSource {string}
+         * @param attributeBindings {{}}
+         * @param uniformNames {string[]}
+         * @return  {{glProgram: WebGLProgram, attribs: {}, uniforms: {}}} The program
+         */
+        createProgram(programName, vertexShaderSource, fragShaderSource, attributeBindings = {}, uniformNames = []) {
+            this.deleteProgram(programName);
+            const { gl } = this;
+            const glProgram = createGLProgram(gl, createShaderFromSource(gl, gl.VERTEX_SHADER, vertexShaderSource), createShaderFromSource(gl, gl.FRAGMENT_SHADER, fragShaderSource));
+            for (let name in attributeBindings) {
+                let loc = attributeBindings[name];
+                gl.bindAttribLocation(glProgram, loc, name);
+            }
+            const uniforms = {};
+            for (const name of uniformNames) {
+                uniforms[name] = gl.getUniformLocation(glProgram, name);
+            }
+            const program = { glProgram, attribs: attributeBindings, uniforms };
+            this.programs.set(programName, program);
+            return program;
+        }
+        /**
+         * Get the program of a given name, returning undefined if it does not exist
+         * @param programName {string}
+         * @returns {{glProgram: WebGLProgram, attribs: {}, uniforms: {}}}
+         */
+        getProgram(programName) {
+            return this.programs.get(programName);
+        }
+        /**
+         * Delete a program, including the underlying GL program
+         * @param programName {string}
+         */
+        deleteProgram(programName) {
+            const program = this.getProgram(programName);
+            if (program) {
+                this.gl.deleteProgram(program.glProgram);
+                this.programs.delete(programName);
+            }
+        }
+        getTexture(textureName) {
+            return this.textures.get(textureName);
+        }
+        deleteTexture(textureName) {
+            let texture = this.getTexture(textureName);
+            if (texture !== undefined) {
+                this.gl.deleteTexture(this.getTexture(textureName));
+                this.textures.delete(textureName);
+            }
+        }
+        createTexture(textureName) {
+            this.deleteTexture(textureName);
+            const texture = this.gl.createTexture();
+            this.textures.set(textureName, texture);
+            return texture;
+        }
+        getBuffer(bufferName) {
+            return this.buffers.get(bufferName);
+        }
+        createBuffer(bufferName) {
+            let buffer = this.getBuffer(bufferName);
+            if (!buffer) {
+                buffer = this.gl.createBuffer();
+                this.buffers.set(bufferName, buffer);
+            }
+            return buffer;
+        }
+        deleteBuffer(bufferName) {
+            const buffer = this.getBuffer(bufferName);
+            if (buffer !== undefined) {
+                this.buffers.delete(bufferName);
+                this.gl.deleteBuffer(buffer);
+            }
+        }
+        getVAO(vaoName) {
+            return this.vaos.get(vaoName);
+        }
+        createVAO(vaoName) {
+            let vao = this.getVAO(vaoName);
+            if (!vao) {
+                vao = this.gl.createVertexArray();
+                this.vaos.set(vaoName, vao);
+            }
+            return vao;
+        }
+        deleteVAO(vaoName) {
+            const vao = this.getVAO(vaoName);
+            if (vao !== undefined) {
+                this.vaos.delete(vaoName);
+                this.gl.deleteVertexArray(vao);
+            }
+        }
+        monochromaticGeometryProgram() {
+            let program = this.getProgram('__MonochromaticGeometry');
+            if (!program) {
+                const programDesc = MonochromaticGeometryProgram;
+                program = this.createProgram('__MonochromaticGeometry', programDesc.vert, programDesc.frag, { vertexPosition: 0 }, ['xyScale', 'color']);
+            }
+            return program;
+        }
+        textProgram() {
+            let program = this.getProgram('__Text');
+            if (!program) {
+                const programDesc = TextProgram;
+                program = this.createProgram('__Text', programDesc.vert, programDesc.frag, { vertexPosition: 0, texCoords: 1 }, ['textureSize', 'xyScale', 'textAtlas', 'color']);
+            }
+            return program;
+        }
+        /**
+         * Resize and clear the canvas, only clearing if the dimensions haven't changed, since the buffer will be erased.
+         * @param width
+         * @param height
+         * @param dpr
+         * @param clear {Color}
+         */
+        clearAndResizeCanvas(width, height, dpr = 1, clear = Colors.TRANSPARENT) {
+            const { canvas } = this;
+            this.dpr = dpr;
+            if (canvas.width === width && canvas.height === height) {
+                this.clearCanvas(clear);
+            }
+            else {
+                canvas.width = width;
+                canvas.height = height;
+                // lol, use the given background color
+                if (clear.r || clear.g || clear.b || clear.a) {
+                    this.clearCanvas(clear);
+                }
+            }
+            this.gl.viewport(0, 0, width, height);
+        }
+        clearCanvas(clearColor) {
+            const { gl } = this;
+            gl.clearColor(clearColor.r / 255, clearColor.g / 255, clearColor.b / 255, clearColor.a / 255);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        getXYScale() {
+            let { canvas, dpr } = this;
+            return [2 / canvas.width * dpr, -2 / canvas.height * dpr];
+        }
+        renderScene(scene, log = false) {
+            scene.updateAll();
+            const graph = new SceneGraph();
+            graph.renderer = this;
+            let startTime = performance.now();
+            let globalStartTime = startTime;
+            graph.constructFromScene(scene);
+            let endTime = performance.now();
+            let additionalHTML = [];
+            if (log)
+                console.log(`Construction time: ${endTime - startTime}ms`);
+            startTime = performance.now();
+            graph.computeInstructions();
+            endTime = performance.now();
+            if (log)
+                console.log(`Instruction compute time: ${endTime - startTime}ms`);
+            startTime = performance.now();
+            graph.compile();
+            endTime = performance.now();
+            if (log)
+                console.log(`Instruction compile time: ${endTime - startTime}ms`);
+            const { gl } = this;
+            let scissorTest = false;
+            let scissorBox = null;
+            // Contains instructions for how to reset the state back to how it was before a context was entered
+            const contexts = [];
+            const setScissor = (enabled, box) => {
+                scissorTest = enabled;
+                scissorBox = box;
+                let dpr = this.dpr;
+                if (enabled) {
+                    gl.enable(gl.SCISSOR_TEST);
+                }
+                else {
+                    gl.disable(gl.SCISSOR_TEST);
+                }
+                if (box) {
+                    // GL scissoring is from bottom left corner, not top left. One of those annoying cases where we care about dpr
+                    // since we're working in pixels, not CSS pixels
+                    gl.scissor(dpr * box.x, this.canvas.height - dpr * (box.y + box.h), dpr * box.w, dpr * box.h);
+                }
+            };
+            startTime = performance.now();
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            graph.forEachCompiledInstruction(instruction => {
+                var _a;
+                let primitiveEnum = 0;
+                switch (instruction.type) {
+                    case 'scene': {
+                        const { dims, backgroundColor } = instruction;
+                        this.clearAndResizeCanvas(dims.canvasWidth, dims.canvasHeight, dims.dpr, backgroundColor);
+                        contexts.push(null);
+                        break;
+                    }
+                    case 'scissor': {
+                        contexts.push({
+                            type: 'set_scissor',
+                            enable: scissorTest,
+                            scissor: scissorBox
+                        });
+                        setScissor(true, instruction.scissor);
+                        break;
+                    }
+                    case 'text': {
+                        const program = this.textProgram();
+                        gl.useProgram(program.glProgram);
+                        gl.bindVertexArray(this.getVAO(instruction.vao));
+                        let { id: atlasID, width: atlasWidth, height: atlasHeight } = graph.resources.textAtlas;
+                        let texture = this.getTexture(atlasID);
+                        gl.activeTexture(gl.TEXTURE0);
+                        gl.bindTexture(gl.TEXTURE_2D, texture);
+                        gl.uniform1i(program.uniforms.textAtlas, 0);
+                        gl.uniform2f(program.uniforms.textureSize, atlasWidth, atlasHeight);
+                        gl.uniform2fv(program.uniforms.xyScale, this.getXYScale());
+                        gl.drawArrays(gl.TRIANGLE_STRIP, 0, instruction.vertexCount);
+                        break;
+                    }
+                    case 'latex': {
+                        additionalHTML.push(instruction);
+                        break;
+                    }
+                    case 'triangle_strip': // LOL
+                        primitiveEnum++;
+                    case 'triangles':
+                        primitiveEnum++;
+                    case 'line_strip':
+                        primitiveEnum += 2;
+                    case 'lines':
+                        primitiveEnum++;
+                        {
+                            const program = this.monochromaticGeometryProgram();
+                            gl.useProgram(program.glProgram);
+                            gl.bindVertexArray(this.getVAO(instruction.vao));
+                            const color = instruction.color;
+                            gl.uniform4f(program.uniforms.color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
+                            gl.uniform2fv(program.uniforms.xyScale, this.getXYScale());
+                            const mode = (_a = instruction.mode) !== null && _a !== void 0 ? _a : "arrays";
+                            if (mode === "arrays") {
+                                gl.drawArrays(primitiveEnum, 0, instruction.vertexCount);
+                            }
+                            else if (mode === "elements") {
+                                gl.drawElements(primitiveEnum, instruction.vertexCount, gl.UNSIGNED_SHORT, 0);
+                            }
+                            break;
+                        }
+                    case 'pop_context': {
+                        const popped = contexts.pop();
+                        if (!popped)
+                            break;
+                        switch (popped.type) {
+                            case 'set_scissor': {
+                                setScissor(popped.enabled, popped.scissor);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        throw new Error(`Unknown instruction type ${instruction.type}`);
+                }
+            });
+            endTime = performance.now();
+            if (log)
+                console.log(`Render time: ${endTime - globalStartTime}ms`);
+            graph.destroy();
+            if (additionalHTML.length && scene.domElement) {
+                scene.setHTMLElements(additionalHTML);
+            }
+        }
+        renderDOMScene(scene) {
+            this.renderScene(scene);
+            createImageBitmap(this.canvas).then(bitmap => {
+                scene.bitmapRenderer.transferFromImageBitmap(bitmap);
+            });
+        }
+    }
+
     exports.BigFloat = BigFloat;
     exports.BolusCancellationError = BolusCancellationError;
     exports.BolusTimeoutError = BolusTimeoutError;
+    exports.Color = Color;
+    exports.Colors = Colors;
     exports.CompilationError = CompilationError;
     exports.Complex = Complex;
     exports.ParserError = ParserError;
     exports.ROUNDING_MODE = ROUNDING_MODE;
     exports.StandardColoringScheme = StandardColoringScheme;
+    exports.WebGLRenderer = WebGLRenderer;
     exports.addMantissas = addMantissas;
     exports.asyncDigest = asyncDigest;
     exports.compileNode = compileNode;

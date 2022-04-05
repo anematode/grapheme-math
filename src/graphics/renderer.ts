@@ -1,4 +1,6 @@
 /**
+ * Here lies madness.
+ *
  * Grapheme's renderer is going to be pretty monolithic, with a lot of interdependent moving parts. As such, I'm going
  * to keep it mostly contained within one class, perhaps with some helper classes. Doing so will also help eliminate
  * fluff and make optimization easy and expressive.
@@ -7,8 +9,8 @@
  * getRenderingInfo() on every element, compiles a list of all the instructions (which look something like
  * "draw this set of triangles", "draw this text"), and runs them all, returning the final product. But if the rendering
  * pipeline were so simple, there would be little point in using WebGL at all. Why not just use Canvas2D? Why learn such
- * a ridiculous API? The name of the game is parallelism and optimization. Where WebGL excels at is low-level control
- * and rapid parallel computation. Its weaknesses are in a lack of intrinsic functions (lacking text, for example) and
+ * a painful API? The name of the game is parallelism and optimization. Where WebGL excels is low-level control
+ * and rapid parallel computation. Its weaknesses are in a lack of builtin functions (lacking text, for example) and
  * high complexity and verbosity,
  *
  * Imagine we did indeed render a scene instruction by instruction. We come across a line, so we switch to the polyline
@@ -18,12 +20,12 @@
  * specifying where the text is, and calling drawArrays. We then come across a couple hundred polylines in a row. For
  * each polyline, we copy its data to the buffer and render it.
  *
- * This is madness. There are two serious problems here. One is that loading buffers and textures is slow, for various
+ * There are two serious problems here. One is that loading buffers and textures is slow, for various
  * reasons. Another is that parallelism is seriously lacking. We have to call drawArrays several hundred times for those
- * polylines, and each call has a large constant time overhead.
+ * polylines, and each call has a large constant overhead.
  *
  * The renderer thus has several difficult jobs: minimizing buffer and texture loading, and combining consecutive calls
- * into one large drawArrays call. Accomplishing these jobs (and a few more) requires somewhat intricate algorithms,
+ * into one large drawArrays call. Accomplishing these jobs (and a few more) requires somewhat intricate work,
  * which should of course be designed to allow more esoteric draw calls -- for a Mandelbrot set, say -- to still be
  * handled with consistency. There is no perfect solution, but there are certainly gains to be made. As with the props
  * of Grapheme elements, the problem is made easier by high-level abstraction. The renderer should produce a comparable
@@ -64,7 +66,7 @@
  * function plot has been rewritten, and the old data is basically irrelevant -- and buffers associated with that
  * data can and should be reused or reallocated.
  *
- * Anonymous instructions, on the other hand, have no identical concept of "versioning". Anonymous instructions are
+ * Anonymous instructions, on the other hand, have no concept of "versioning". Anonymous instructions are
  * entirely reallocated or deleted every time their element updates. These instructions are generally used to indicate
  * instructions which are very prone to change and where its values should be tied solely to the element updating.
  */
