@@ -9,49 +9,11 @@
 <script type="module" src="perf/perf.js"></script>
 
 <script>
+    function play() {
+      renderer = new Grapheme.WebGLRenderer()
 
-  // Find the sum of integers from 1 to n in bolus form
-  function testBolus (n) {
-    let i = 0
-    let sum = 0
-    let finished = false
-
-    return {
-      next () {
-        if (finished) return { value: undefined, done: true }
-        let s = sum
-
-        for (let j = 0; j <= 1e5; ++i, ++j) {
-          // Sum at most 10000 values
-          s += i
-
-          if (i === n) {
-            finished = true
-            return { value: s, done: true }
-          }
-        }
-
-        sum = s
-
-        return { value: i / n, done: false }
-      }
+      document.body.appendChild(renderer.canvas)
     }
-  }
-
-  function onProgress(f) {
-    console.log("Progress:", f, "Time", Date.now())
-  }
-
-    // use global variables for convenience
-      function play() {
-        s = "e^(i*z)/(e^-z+e^z)"
-        n = Grapheme.parseString(s)
-
-        n.resolveTypes({}, {defaultType: "complex"})
-        n.resolveTypes({}, {defaultType: "complex"})
-        n.resolveTypes({}, {defaultType: "complex"})
-        canvas = Grapheme.compileNode(n)
-      }
 </script>
 
 </body>

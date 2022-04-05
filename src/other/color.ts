@@ -606,4 +606,4 @@ const Colors = {
   }
 }
 
-export { Color }
+export { Color, Colors }
