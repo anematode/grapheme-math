@@ -43,7 +43,7 @@
 
             <div>
                 <label for="radius">Radius</label>
-                <input type="range" id="radius" min="0" max="3" step="0.001" value="1" oninput="radius=this.value">
+                <input type="range" id="radius" min="0" max="10" step="0.001" value="1" oninput="radius=this.value">
             </div>
 
             <!-- radio check box -->
@@ -52,6 +52,12 @@
                 <input type="radio" name="color" id="coloring-scheme-normal" checked oninput="coloringScheme='normal';updateExpression()">
                 <label for="coloring-scheme-repeat">Repeat</label>
                 <input type="radio" name="color" id="coloring-scheme-repeat" oninput="coloringScheme='repeat_exponential';updateExpression()">
+            </div>
+
+            <!-- check box -->
+            <div>
+                <label for="show-circle">Show circles</label>
+                <input type="checkbox" id="show-circles" checked oninput="showCircles=this.checked">
             </div>
 
             <!--<div>

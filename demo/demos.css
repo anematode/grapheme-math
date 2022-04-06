@@ -34,6 +34,10 @@
     display: flex;
 }
 
+input[type=range] {
+    width: 200px;
+}
+
 .controls {
     width: 400px;
     display: flex;

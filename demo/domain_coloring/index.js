@@ -121,10 +121,13 @@ function dotAt (v) {
 
 const Vec2 = Grapheme.Vec2
 let radius = 1
+let showCircles = true
 
 function draw () {
   requestAnimationFrame(draw)
   copyToDisplay()
+
+  if (!showCircles) return
 
   let steps = 400
 
@@ -137,7 +140,7 @@ function draw () {
   } catch (e) {
     return
   }
-  
+
   let isx, isy, sx, sy, after = () => {}
 
   for (let i = 0; i < steps; ++i) {
