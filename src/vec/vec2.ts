@@ -15,10 +15,15 @@ export class Vec2 {
     if (Array.isArray(obj)) {
       x = obj[0]
       y = obj[1]
-    } else if (typeof obj === 'object' && (obj !== null) && 'x' in obj) {
+    } else if (typeof obj === 'object' && (obj !== null)) {
       let o = obj as any
-      x = +o.x
-      y = +o.y
+      if ('x' in obj) {
+        x = +o.x
+        y = +o.y
+      } else if ('re' in obj) {
+        x = +o.re
+        y = +o.im
+      }
     } else if (typeof obj === 'string') {
       switch (obj) {
         case 'N':

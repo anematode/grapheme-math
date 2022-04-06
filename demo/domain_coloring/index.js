@@ -1,6 +1,7 @@
 
-function draw () {
+function calculateDomainColoring () {
   cancelDraw()
+  colors.fill(255)
 
   bolus = Grapheme.asyncDigest(drawBolus(), {
     onProgress: p => document.getElementById("render-progress").innerText = (100 * p).toFixed(1) + '%'
@@ -16,7 +17,7 @@ function draw () {
     if (e instanceof Grapheme.BolusCancellationError) {
       // bolus suspended
     } else {
-      throw e
+      //throw e
     }
   })
 }
@@ -50,26 +51,21 @@ function * drawBolus () {
     }
   }
 
-  new Grapheme.StandardColoringScheme({ type: "repeat_exponential" }).writeComplexArrayToRGBA(results, colors, 0)
-  copyToDisplay()
+  new Grapheme.StandardColoringScheme({ type: coloringScheme, base: (coloringScheme === "normal") ? colorScale : 2 }).writeComplexArrayToRGBA(results, colors, 0)
 }
 
 function copyToDisplay () {
   ctx.putImageData(new ImageData(colors, dim, dim), 0, 0)
 }
 
-function copyWhileWorking () {
-  if (bolus)
-    copyToDisplay()
-
-  requestAnimationFrame(copyWhileWorking)
-}
-
-requestAnimationFrame(copyWhileWorking)
-
 let canvas = document.createElement("canvas")
 let dim = canvas.width = canvas.height = 750
 document.getElementById("plot-container").appendChild(canvas)
+
+let transform = new Grapheme.LinearPlot2DTransform()
+
+transform.resizeToGraphBox({ cx: 0, cy: 0, w: 5, h: 5 })
+transform.resizeToPixelBox({ x: 0, y: 0, w: dim, h: dim })
 
 let ctx = canvas.getContext('2d')
 let colors = new Uint8ClampedArray(dim * dim * 4)
@@ -80,7 +76,7 @@ let bolus = null
 
 let zoom = 1
 let colorScale = 1
-let oversample = false
+let coloringScheme = "normal"
 
 function setExpression (s) {
   if (exprInput.value !== s) exprInput.value = s
@@ -109,7 +105,83 @@ function updateExpression () {
   colorScale = Math.sqrt(+document.getElementById("color-input").value) / 2
   //oversample = !!document.getElementById("oversample").checked
 
-  draw()
+  transform.resizeToGraphBox({ cx: 0, cy: 0, w: zoom, h: zoom })
+
+  calculateDomainColoring()
+}
+
+let t = 0
+
+function dotAt (v) {
+  ctx.beginPath()
+  ctx.arc(v.x, v.y, 8, 0, Math.PI*2, true)
+  ctx.closePath()
+  ctx.fill()
+}
+
+const Vec2 = Grapheme.Vec2
+let radius = 1
+
+function draw () {
+  requestAnimationFrame(draw)
+  copyToDisplay()
+
+  let steps = 400
+
+  let input = new Path2D()
+  let output = new Path2D()
+  let z = new Grapheme.Complex()
+  let ev
+  try {
+    ev = compiledExpression.targets[0].evaluate
+  } catch (e) {
+    return
+  }
+  
+  let isx, isy, sx, sy, after = () => {}
+
+  for (let i = 0; i < steps; ++i) {
+    z.expi(i / steps * 2 * Math.PI)
+    z.multiplyReal(z, radius)
+
+    let v = ev(z)
+
+    let { x: vx, y: vy } = transform.graphToPixel(Vec2.fromObj(z))
+    let { x, y } = transform.graphToPixel(Vec2.fromObj(v))
+
+    if (i === t) {
+      after = () => {
+        ctx.fillStyle = "gray"
+        dotAt(new Vec2(vx, vy))
+        ctx.fillStyle = "yellow"
+        dotAt(new Vec2(x, y))
+        ctx.fillStyle = "black"
+        dotAt(transform.graphToPixel(new Vec2(0, 0)))
+      }
+    }
+
+    if (i === 0) {
+      output.moveTo(sx = x, sy = y)
+      input.moveTo(isx = vx, isy = vy)
+    } else {
+      output.lineTo(x, y)
+      input.lineTo(vx, vy)
+    }
+  }
+
+  t += 1
+  t %= steps
+
+  output.lineTo(sx, sy)
+  input.lineTo(isx, isy)
+
+  ctx.lineWidth = 3
+  ctx.strokeStyle = "gray"
+  ctx.stroke(input)
+  ctx.strokeStyle = "black"
+  ctx.stroke(output)
+
+  after()
 }
 
 function play() {

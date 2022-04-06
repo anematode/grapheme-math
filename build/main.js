@@ -2297,6 +2297,10 @@
             this.re = +re;
             this.im = +im;
         }
+        setComponents(re, im = 0) {
+            this.re = re;
+            this.im = im;
+        }
         /**
          * Attempt to parse an object. Returns a Complex with NaN parts if couldn't sensibly convert.
          * @param o {any}
@@ -2422,22 +2426,58 @@
             c.multiply(c2, c);
             this.exp(c);
         }
+        expi(theta) {
+            this.re = Math.cos(theta);
+            this.im = Math.sin(theta);
+        }
         /**
          * Set this complex number to the result of b^r
          * @param b {Complex}
-         * @param r {number}
+         * @param exp {number}
          */
-        powReal(b, r) {
-            if (Number.isInteger(r)) {
-                if (r === 0) { // TODO add more integer handling
+        powReal(b, exp) {
+            if (Number.isInteger(exp) && exp >= 0) {
+                if (exp === 0) { // TODO add more integer handling
                     this.re = 1;
                     this.im = 0;
+                    return;
+                }
+                let r = b.re, i = b.im;
+                if (exp === 1) {
+                    this.re = b.re;
+                    this.im = b.im;
+                    return;
+                }
+                else if (exp === 2) {
+                    // square b
+                    this.re = r * r - i * i;
+                    this.im = 2 * r * i;
+                    return;
+                }
+                else if (exp === 3) {
+                    this.re = r * r * r - 3 * r * i * i;
+                    this.im = 3 * r * r * i - i * i * i;
+                    return;
+                }
+                else if (exp === 4) {
+                    let i2 = i * i;
+                    let r2 = r * r;
+                    this.re = r2 * r2 - 6 * r2 * i2 + i2 * i2;
+                    this.im = 4 * (r2 * r * i - i * i2 * r);
+                    return;
+                }
+                else if (exp === 5) {
+                    let i2 = i * i;
+                    let r2 = r * r;
+                    let r3 = r2 * r;
+                    this.re = r2 * r3 - 10 * r3 * i2 + 5 * r * i2 * i2;
+                    this.im = 5 * r2 * r2 * i - 10 * r2 * i2 * i + i2 * i2 * i;
                     return;
                 }
             }
             let c = new Complex();
             c.log(b);
-            c.multiplyReal(c, r);
+            c.multiplyReal(c, exp);
             this.exp(c);
         }
         static abs(c) {
@@ -6213,20 +6253,22 @@
         return c[0] instanceof Complex;
     }
     // A repeating color scheme resets its brightness at various magnitudes. "exponential" will reset at every integer power
-    // of the base. "even" will reset at every multiple of the base.
+    // of the base. "even" will reset at every multiple of the base. A normal color scheme simply has a mapping from
+    // [0, inf) -> [0, 1] for lightness, based on arctan. The input is scaled by base.
     class StandardColoringScheme extends ColoringScheme {
         constructor(opts = {}) {
-            var _a, _b, _c, _d, _e, _f;
+            var _a, _b, _c, _d, _e;
             super();
             this.type = (_a = opts.type) !== null && _a !== void 0 ? _a : "normal";
+            console.log(opts);
             let base = +((_b = opts.base) !== null && _b !== void 0 ? _b : 2);
             if (base !== base || base < 0) {
                 throw new Error("Invalid color scheme repeating base");
             }
-            this.base = (_c = opts.base) !== null && _c !== void 0 ? _c : 2;
-            this.transformation = (_d = opts.transformation) !== null && _d !== void 0 ? _d : "atan";
-            this.minLightness = (_e = opts.minLightness) !== null && _e !== void 0 ? _e : 0.2;
-            this.maxLightness = (_f = opts.maxLightness) !== null && _f !== void 0 ? _f : 0.6;
+            this.base = base;
+            this.transformation = (_c = opts.transformation) !== null && _c !== void 0 ? _c : "atan";
+            this.minLightness = (_d = opts.minLightness) !== null && _d !== void 0 ? _d : 0.2;
+            this.maxLightness = (_e = opts.maxLightness) !== null && _e !== void 0 ? _e : 0.6;
             if (this.minLightness < 0 || this.minLightness > 1) {
                 throw new Error("Invalid color scheme minLightness");
             }
@@ -6246,12 +6288,13 @@
             let isNormal = type === "normal";
             let isExponential = type === "repeat_exponential";
             let logBase = Math.log(this.base);
+            console.log(base);
             function write(re, im, index) {
                 let arg = Complex.approxArgComponents(re, im);
                 let magnitude = Math.sqrt(re * re + im * im);
                 let h = (arg + 2 * Math.PI / 3) * (1 / (2 * Math.PI));
                 if (isNormal) {
-                    writeHL(h, 2 / Math.PI * approxAtan(magnitude), arr, index);
+                    writeHL(h, 2 / Math.PI * approxAtan(magnitude * base), arr, index);
                     return;
                 }
                 else if (isExponential) {
@@ -6754,10 +6797,16 @@
                 x = obj[0];
                 y = obj[1];
             }
-            else if (typeof obj === 'object' && (obj !== null) && 'x' in obj) {
+            else if (typeof obj === 'object' && (obj !== null)) {
                 let o = obj;
-                x = +o.x;
-                y = +o.y;
+                if ('x' in obj) {
+                    x = +o.x;
+                    y = +o.y;
+                }
+                else if ('re' in obj) {
+                    x = +o.re;
+                    y = +o.im;
+                }
             }
             else if (typeof obj === 'string') {
                 switch (obj) {
@@ -6901,6 +6950,11 @@
         getY2() {
             return this.y + this.h;
         }
+        /**
+         * Attempt to convert an object to a bounding box via various interpretation methods. In particular, the relevant
+         * parameters are x (or x1), y (or y1), x2, y2, w (or width), h (or height), cx (or centerX), and cy (or centerY).
+         * @param obj
+         */
         static fromObj(obj) {
             let finalX1, finalY1, finalX2, finalY2;
             if (Array.isArray(obj)) {
@@ -6910,6 +6964,9 @@
                 finalY2 = obj[3] + finalY1;
             }
             else if (typeof obj === 'object') {
+                if (obj instanceof BoundingBox) {
+                    return obj.clone();
+                }
                 let { x, y, x1, y1, x2, y2, w, h, width, height, cx, cy, centerX, centerY } = obj;
                 // various aliases
                 x = x !== null && x !== void 0 ? x : x1;
@@ -6920,6 +6977,13 @@
                 cy = cy !== null && cy !== void 0 ? cy : centerY;
                 [finalX1, finalX2] = resolveAxisSpecification(x, x2, w, cx);
                 [finalY1, finalY2] = resolveAxisSpecification(y, y2, h, cy);
+            }
+            finalX1 = +finalX1;
+            finalY1 = +finalY1;
+            finalX2 = +finalX2;
+            finalY2 = +finalY2;
+            if (finalX1 !== finalX1 || finalY1 !== finalY1 || finalX2 !== finalX2 || finalY2 !== finalY2) {
+                throw new Error('BoundingBox.fromObj: Invalid bounding box specification');
             }
             return new BoundingBox(finalX1, finalY1, finalX2 - finalX1, finalY2 - finalY1);
         }
@@ -8795,6 +8859,121 @@ void main() {
         }
     }
 
+    class LinearPlot2DTransform {
+        /**
+         * Parameters beginning with p are the bounding box in pixel coordinates. Those beginning with g are the bounding box
+         * in graph coordinates. The transform has an implicit y flipping operation, which is key. The point (px1, py1) does
+         * NOT map to the point (gx1, gy1), but the point (gx1, gy1 + gh). This annoyance is why a special class is useful.
+         */
+        constructor(px1 = 0, py1 = 0, pw = 400, ph = 400, gx1 = -1, gy1 = -1, gw = 1, gh = 1) {
+            this.px1 = px1;
+            this.py1 = py1;
+            this.pw = pw;
+            this.ph = ph;
+            this.gx1 = gx1;
+            this.gy1 = gy1;
+            this.gw = gw;
+            this.gh = gh;
+        }
+        get px2() {
+            return this.px1 + this.pw;
+        }
+        get py2() {
+            return this.py1 + this.ph;
+        }
+        get gx2() {
+            return this.gx1 + this.gw;
+        }
+        get gy2() {
+            return this.gy1 + this.gh;
+        }
+        pixelBox() {
+            return new BoundingBox(this.px1, this.py1, this.pw, this.ph);
+        }
+        graphBox() {
+            return new BoundingBox(this.gx1, this.gy1, this.gw, this.gh);
+        }
+        resizeToPixelBox(box) {
+            let convertedBox = BoundingBox.fromObj(box);
+            this.px1 = convertedBox.x;
+            this.py1 = convertedBox.y;
+            this.pw = convertedBox.w;
+            this.ph = convertedBox.h;
+            return this;
+        }
+        resizeToGraphBox(box) {
+            let convertedBox = BoundingBox.fromObj(box);
+            this.gx1 = convertedBox.x;
+            this.gy1 = convertedBox.y;
+            this.gw = convertedBox.w;
+            this.gh = convertedBox.h;
+            return this;
+        }
+        setGraphXBounds(x1, x2) {
+            this.gx1 = x1;
+            this.gw = x2 - x1;
+        }
+        setGraphYBounds(y1, y2) {
+            this.gy1 = y1;
+            this.gh = y2 - y1;
+        }
+        setGraphXYBounds(x1, x2, y1, y2) {
+            this.setGraphXBounds(x1, x2);
+            this.setGraphYBounds(y1, y2);
+        }
+        clone() {
+            return new LinearPlot2DTransform(this.px1, this.py1, this.pw, this.ph, this.gx1, this.gy1, this.gw, this.gh);
+        }
+        pixelToGraphX(x) {
+            // This is not flipped
+            return ((x - this.px1) / this.pw) * this.gw + this.gx1;
+        }
+        pixelToGraphY(y) {
+            // This is flipped
+            return (1 - (y - this.py1) / this.ph) * this.gh + this.gy1;
+        }
+        graphToPixelX(x) {
+            // This is not flipped
+            return ((x - this.gx1) / this.gw) * this.pw + this.px1;
+        }
+        graphToPixelY(y) {
+            // This is flipped
+            return (1 - (y - this.gy1) / this.gh) * this.ph + this.py1;
+        }
+        pixelToGraph(vec) {
+            return new Vec2(this.pixelToGraphX(vec.x), this.pixelToGraphY(vec.y));
+        }
+        graphToPixel(vec) {
+            return new Vec2(this.graphToPixelX(vec.x), this.graphToPixelY(vec.y));
+        }
+        /**
+         * Return {xm, ym, xb, yb} where xm * x + xb is the transformation from graph x to pixel x, etc.
+         */
+        getReducedGraphToPixelTransform() {
+            const { px1, py1, pw, ph, gx1, gy1, gw, gh } = this;
+            return {
+                xm: pw / gw,
+                ym: -ph / gh,
+                xb: (-gx1 / gw) * pw + px1,
+                yb: (1 + gy1 / gh) * ph + py1
+            };
+        }
+        graphToPixelArrInPlace(arr) {
+            let { xm, ym, xb, yb } = this.getReducedGraphToPixelTransform();
+            for (let i = 0; i < arr.length; i += 2) {
+                arr[i] = xm * arr[i] + xb;
+                arr[i + 1] = ym * arr[i + 1] + yb;
+            }
+            return arr;
+        }
+        /**
+         * The size, in graph units, of a single pixel
+         */
+        graphPixelSize() {
+            return this.gh / this.ph;
+        }
+    }
+
     exports.BigFloat = BigFloat;
     exports.BolusCancellationError = BolusCancellationError;
     exports.BolusTimeoutError = BolusTimeoutError;
@@ -8802,9 +8981,11 @@ void main() {
     exports.Colors = Colors;
     exports.CompilationError = CompilationError;
     exports.Complex = Complex;
+    exports.LinearPlot2DTransform = LinearPlot2DTransform;
     exports.ParserError = ParserError;
     exports.ROUNDING_MODE = ROUNDING_MODE;
     exports.StandardColoringScheme = StandardColoringScheme;
+    exports.Vec2 = Vec2;
     exports.WebGLRenderer = WebGLRenderer;
     exports.addMantissas = addMantissas;
     exports.asyncDigest = asyncDigest;

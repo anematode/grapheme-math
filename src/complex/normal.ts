@@ -15,6 +15,11 @@ class Complex {
     this.im = +im
   }
 
+  setComponents (re: number, im: number=0) {
+    this.re = re
+    this.im = im
+  }
+
   /**
    * Attempt to parse an object. Returns a Complex with NaN parts if couldn't sensibly convert.
    * @param o {any}
@@ -164,16 +169,53 @@ class Complex {
     this.exp(c)
   }
 
+  expi (theta: number) {
+    this.re = Math.cos(theta)
+    this.im = Math.sin(theta)
+  }
+
   /**
    * Set this complex number to the result of b^r
    * @param b {Complex}
-   * @param r {number}
+   * @param exp {number}
    */
-  powReal (b: Complex, r: number) {
-    if (Number.isInteger(r)) {
-      if (r === 0) { // TODO add more integer handling
+  powReal (b: Complex, exp: number) {
+    if (Number.isInteger(exp) && exp >= 0) {
+      if (exp === 0) { // TODO add more integer handling
         this.re = 1
         this.im = 0
+        return
+      }
+
+      let r = b.re, i = b.im
+
+      if (exp === 1) {
+        this.re = b.re
+        this.im = b.im
+        return
+      } else if (exp === 2) {
+        // square b
+        this.re = r * r - i * i
+        this.im = 2 * r * i
+        return
+      } else if (exp === 3) {
+        this.re = r * r * r - 3 * r * i * i
+        this.im = 3 * r * r * i - i * i * i
+        return
+      } else if (exp === 4) {
+        let i2 = i * i
+        let r2 = r * r
+        this.re = r2 * r2 - 6 * r2 * i2 + i2 * i2
+        this.im = 4 * (r2 * r * i - i * i2 * r)
+        return
+      } else if (exp === 5) {
+        let i2 = i * i
+        let r2 = r * r
+        let r3 = r2 * r
+
+        this.re = r2 * r3 - 10 * r3 * i2 + 5 * r * i2 * i2
+        this.im = 5 * r2 * r2 * i - 10 * r2 * i2 * i + i2 * i2 * i
+
         return
       }
     }
@@ -181,7 +223,7 @@ class Complex {
     let c = new Complex()
 
     c.log(b)
-    c.multiplyReal(c, r)
+    c.multiplyReal(c, exp)
 
     this.exp(c)
   }

@@ -95,7 +95,8 @@ type ColorSchemeOptions = {
 }
 
 // A repeating color scheme resets its brightness at various magnitudes. "exponential" will reset at every integer power
-// of the base. "even" will reset at every multiple of the base.
+// of the base. "even" will reset at every multiple of the base. A normal color scheme simply has a mapping from
+// [0, inf) -> [0, 1] for lightness, based on arctan. The input is scaled by base.
 export class StandardColoringScheme extends ColoringScheme {
   type: "normal" | "repeat" | "repeat_exponential"
   minLightness: number
@@ -107,13 +108,14 @@ export class StandardColoringScheme extends ColoringScheme {
     super()
 
     this.type = opts.type ?? "normal"
+    console.log(opts)
 
     let base = +(opts.base ?? 2)
     if (base !== base || base < 0) {
       throw new Error("Invalid color scheme repeating base")
     }
 
-    this.base = opts.base ?? 2
+    this.base = base
     this.transformation = opts.transformation ?? "atan"
     this.minLightness = opts.minLightness ?? 0.2
     this.maxLightness = opts.maxLightness ?? 0.6
@@ -142,6 +144,8 @@ export class StandardColoringScheme extends ColoringScheme {
     let isExponential = type === "repeat_exponential"
     let logBase = Math.log(this.base)
 
+    console.log(base)
+
     function write (re: number, im: number, index: number) {
       let arg = Complex.approxArgComponents(re, im)
       let magnitude = Math.sqrt(re * re + im * im)
@@ -149,7 +153,7 @@ export class StandardColoringScheme extends ColoringScheme {
       let h = (arg + 2 * Math.PI / 3) * (1 / (2 * Math.PI))
 
       if (isNormal) {
-        writeHL(h, 2 / Math.PI * approxAtan(magnitude), arr, index)
+        writeHL(h, 2 / Math.PI * approxAtan(magnitude * base), arr, index)
         return
       } else if (isExponential) {
         // Take the logarithm with the base TODO fast logarithm lookup, etc

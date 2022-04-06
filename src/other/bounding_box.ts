@@ -9,9 +9,7 @@ import { isTypedArray, NumericArray } from "../grapheme_shared.js";
  * @param w {number}
  * @param cx {number}
  */
-function resolveAxisSpecification (x1, x2, w, cx) {
-  let ox1, ox2, ow, ox
-
+function resolveAxisSpecification (x1: number | undefined, x2: number | undefined, w: number | undefined, cx: number | undefined): [ number, number ] {
   if (cx !== undefined) {
     let halfWidth = 0
 
@@ -31,6 +29,24 @@ function resolveAxisSpecification (x1, x2, w, cx) {
 
   return [0, 0]
 }
+
+// Type that may be permissively cast into a bounding box via fromObj
+export type BoundingBoxLike = {
+  x?: number
+  x1?: number
+  y?: number
+  y1?: number
+  x2?: number
+  y2?: number
+  w?: number
+  width?: number
+  h?: number
+  height?: number
+  cx?: number
+  cy?: number
+  centerX?: number
+  centerY?: number
+} | [ number, number, number, number ] | BoundingBox
 
 /**
  * A bounding box. In general, we consider the bounding box to be in canvas coordinates, so that the "top" is -y and
@@ -114,7 +130,12 @@ export class BoundingBox {
     return this.y + this.h
   }
 
-  static fromObj (obj) {
+  /**
+   * Attempt to convert an object to a bounding box via various interpretation methods. In particular, the relevant
+   * parameters are x (or x1), y (or y1), x2, y2, w (or width), h (or height), cx (or centerX), and cy (or centerY).
+   * @param obj
+   */
+  static fromObj (obj: BoundingBoxLike): BoundingBox {
     let finalX1, finalY1, finalX2, finalY2
 
     if (Array.isArray(obj)) {
@@ -123,22 +144,11 @@ export class BoundingBox {
       finalX2 = obj[2] + finalX1
       finalY2 = obj[3] + finalY1
     } else if (typeof obj === 'object') {
-      let {
-        x,
-        y,
-        x1,
-        y1,
-        x2,
-        y2,
-        w,
-        h,
-        width,
-        height,
-        cx,
-        cy,
-        centerX,
-        centerY
-      } = obj
+      if (obj instanceof BoundingBox) {
+        return obj.clone()
+      }
+
+      let { x, y, x1, y1, x2, y2, w, h, width, height, cx, cy, centerX, centerY } = obj
 
       // various aliases
       x = x ?? x1
@@ -155,6 +165,15 @@ export class BoundingBox {
       // to figure out how to do it elegantly rather than case work.
       ;[finalX1, finalX2] = resolveAxisSpecification(x, x2, w, cx)
       ;[finalY1, finalY2] = resolveAxisSpecification(y, y2, h, cy)
+    }
+
+    finalX1 = +finalX1
+    finalY1 = +finalY1
+    finalX2 = +finalX2
+    finalY2 = +finalY2
+
+    if (finalX1 !== finalX1 || finalY1 !== finalY1 || finalX2 !== finalX2 || finalY2 !== finalY2) {
+      throw new Error('BoundingBox.fromObj: Invalid bounding box specification')
     }
 
     return new BoundingBox(

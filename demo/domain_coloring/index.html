@@ -41,12 +41,25 @@
                 <input type="range" id="color-input" min="1" max="100" step="0.1" value="5" oninput="updateExpression()">
             </div>
 
+            <div>
+                <label for="radius">Radius</label>
+                <input type="range" id="radius" min="0" max="3" step="0.001" value="1" oninput="radius=this.value">
+            </div>
+
+            <!-- radio check box -->
+            <div>
+                <label for="coloring-scheme-normal">Normal</label>
+                <input type="radio" name="color" id="coloring-scheme-normal" checked oninput="coloringScheme='normal';updateExpression()">
+                <label for="coloring-scheme-repeat">Repeat</label>
+                <input type="radio" name="color" id="coloring-scheme-repeat" oninput="coloringScheme='repeat_exponential';updateExpression()">
+            </div>
+
             <!--<div>
                 <label for="oversample"></label>
                 <input type="checkbox" id="oversample" onchange="updateExpression()">
             </div>-->
 
-            <button id="Render" onclick="draw()">Render</button>
+            <button id="Render" onclick="calculateDomainColoring()">Render</button>
             <p>Render time: <span id="render-time"></span></p>
             <p>Progress: <span id="render-progress"></span></p>
             <div class="progress-bar-container">

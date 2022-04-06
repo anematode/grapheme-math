@@ -1,5 +1,5 @@
 import { Vec2 } from '../vec/vec2.js';
-import { BoundingBox, Reduced2DBoundingBoxTransform } from "./bounding_box.js";
+import { BoundingBox, BoundingBoxLike, Reduced2DBoundingBoxTransform } from "./bounding_box.js";
 
 export class LinearPlot2DTransform {
   px1: number
@@ -16,7 +16,7 @@ export class LinearPlot2DTransform {
    * in graph coordinates. The transform has an implicit y flipping operation, which is key. The point (px1, py1) does
    * NOT map to the point (gx1, gy1), but the point (gx1, gy1 + gh). This annoyance is why a special class is useful.
    */
-  constructor (px1, py1, pw, ph, gx1, gy1, gw, gh) {
+  constructor (px1=0, py1=0, pw=400, ph=400, gx1=-1, gy1=-1, gw=1, gh=1) {
     this.px1 = px1
     this.py1 = py1
     this.pw = pw
@@ -51,35 +51,39 @@ export class LinearPlot2DTransform {
     return new BoundingBox(this.gx1, this.gy1, this.gw, this.gh)
   }
 
-  resizeToPixelBox (box) {
-    this.px1 = box.x
-    this.py1 = box.y
-    this.pw = box.w
-    this.ph = box.h
+  resizeToPixelBox (box: BoundingBoxLike): LinearPlot2DTransform {
+    let convertedBox = BoundingBox.fromObj(box)
+
+    this.px1 = convertedBox.x
+    this.py1 = convertedBox.y
+    this.pw = convertedBox.w
+    this.ph = convertedBox.h
 
     return this
   }
 
-  resizeToGraphBox (box) {
-    this.gx1 = box.x
-    this.gy1 = box.y
-    this.gw = box.w
-    this.gh = box.h
+  resizeToGraphBox (box: BoundingBoxLike): LinearPlot2DTransform {
+    let convertedBox = BoundingBox.fromObj(box)
+
+    this.gx1 = convertedBox.x
+    this.gy1 = convertedBox.y
+    this.gw = convertedBox.w
+    this.gh = convertedBox.h
 
     return this
   }
 
-  setGraphXBounds (x1, x2) {
+  setGraphXBounds (x1: number, x2: number) {
     this.gx1 = x1
     this.gw = x2 - x1
   }
 
-  setGraphYBounds (y1, y2) {
+  setGraphYBounds (y1: number, y2: number) {
     this.gy1 = y1
     this.gh = y2 - y1
   }
 
-  setGraphXYBounds (x1, x2, y1, y2) {
+  setGraphXYBounds (x1: number, x2: number, y1: number, y2: number) {
     this.setGraphXBounds(x1, x2)
     this.setGraphYBounds(y1, y2)
   }
@@ -97,31 +101,31 @@ export class LinearPlot2DTransform {
     )
   }
 
-  pixelToGraphX (x) {
+  pixelToGraphX (x: number) {
     // This is not flipped
     return ((x - this.px1) / this.pw) * this.gw + this.gx1
   }
 
-  pixelToGraphY (y) {
+  pixelToGraphY (y: number) {
     // This is flipped
     return (1 - (y - this.py1) / this.ph) * this.gh + this.gy1
   }
 
-  graphToPixelX (x) {
+  graphToPixelX (x: number) {
     // This is not flipped
     return ((x - this.gx1) / this.gw) * this.pw + this.px1
   }
 
-  graphToPixelY (y) {
+  graphToPixelY (y: number) {
     // This is flipped
     return (1 - (y - this.gy1) / this.gh) * this.ph + this.py1
   }
 
-  pixelToGraph (vec) {
+  pixelToGraph (vec: Vec2) {
     return new Vec2(this.pixelToGraphX(vec.x), this.pixelToGraphY(vec.y))
   }
 
-  graphToPixel (vec) {
+  graphToPixel (vec: Vec2) {
     return new Vec2(this.graphToPixelX(vec.x), this.graphToPixelY(vec.y))
   }
 
@@ -139,7 +143,7 @@ export class LinearPlot2DTransform {
     }
   }
 
-  graphToPixelArrInPlace (arr) {
+  graphToPixelArrInPlace (arr: number[]): number[] {
     let { xm, ym, xb, yb } = this.getReducedGraphToPixelTransform()
 
     for (let i = 0; i < arr.length; i += 2) {
@@ -153,7 +157,12 @@ export class LinearPlot2DTransform {
   /**
    * The size, in graph units, of a single pixel
    */
-  graphPixelSize () {
+  graphPixelSize (): number {
     return this.gh / this.ph
   }
+}
+
+// Plot transform controls, a state machine which determines how a given transform should be moved about
+class Plot2DTransformControls {
+
 }
