@@ -124,6 +124,10 @@ class Color {
   static default() {
     return Color.rgba(0, 0, 0, 255)
   }
+
+  equals (c: Color) {
+    return c.r === this.r && c.g === this.g && c.b === this.b && c.a === this.a
+  }
 }
 
 function hexToRgb (hex: string) {

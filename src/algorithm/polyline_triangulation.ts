@@ -1,6 +1,5 @@
 import { mod } from '../grapheme_shared.js'
 import { getDashedPolyline} from './dashed_polyline.js'
-import { HEAPF32 } from './heap.js'
 import { fastHypot } from './miscellaneous_geometry.js'
 
 const ENDCAP_TYPES = {
@@ -13,10 +12,6 @@ const JOIN_TYPES = {
   miter: 2,
   round: 1,
   dynamic: 3
-}
-
-function nextPowerOfTwo (x) {
-  return 2 ** Math.ceil(Math.log2(x))
 }
 
 const MIN_RES_ANGLE = 0.05 // minimum angle in radians between roundings in a polyline
@@ -53,8 +48,6 @@ function fastAtan2 (y, x) {
   return r
 }
 
-const glVertices = HEAPF32
-
 /**
  * Convert an array of polyline vertices into a Float32Array of vertices to be rendered using WebGL.
  * @param vertices {Array} The vertices of the polyline.
@@ -86,10 +79,33 @@ export function convertTriangleStrip (vertices, pen) {
   let maxMiterLength = th / fastCos(pen.joinRes / 2)
 
   let endcap = ENDCAP_TYPES[pen.endcap]
+  let endcapRes = pen.endcapRes, joinRes = pen.joinRes
   let join = JOIN_TYPES[pen.join]
 
   if (endcap === undefined || join === undefined) {
     throw new Error('Undefined endcap or join.')
+  }
+
+  // Grows by ceiling multiples of 1.5, a la most implementations of a vector
+  // We begin with a very rough estimate of how much space will be needed
+  let glVertices = new Float32Array(
+    origVertexCount * 2 + // raw minimum
+    ((endcap === 1) ? (2.1 * Math.PI / endcapRes) : 0) + // rough endcap minimum
+    ((join === 1 || join === 3) ? (origVertexCount * 0.1 / joinRes) : 0)  // join estimate, assuming an average of 0.1 radians per join
+  )
+  let maxVerticesPerStep = 2 + Math.max(2 * Math.PI / endcapRes, 2 * Math.PI / joinRes) | 0
+
+  function reallocGLVertices (minSize) {
+    minSize = minSize | 0
+
+    if (minSize > glVertices.length) {
+      minSize = (minSize * 1.5) | 0
+      let newGLVertices = new Float32Array(minSize)
+
+      // Copy it over
+      newGLVertices.set(glVertices, 0)
+      glVertices = newGLVertices
+    }
   }
 
   // p1 -- p2 -- p3, generating vertices for point p2
@@ -98,6 +114,7 @@ export function convertTriangleStrip (vertices, pen) {
   let chunkPos = 0
 
   for (let i = 0; i < origVertexCount; ++i) {
+    reallocGLVertices(index + maxVerticesPerStep)
     chunkPos++
 
     x1 = i !== 0 ? x2 : NaN // Previous vertex
@@ -140,7 +157,7 @@ export function convertTriangleStrip (vertices, pen) {
       if (endcap === 1) {
         // rounded endcap
         let theta = fastAtan2(v2y, v2x) + Math.PI / 2
-        let steps_needed = Math.ceil(Math.PI / pen.endcapRes)
+        let steps_needed = Math.ceil(Math.PI / endcapRes)
 
         let o_x = x2 - th * v2y,
           o_y = y2 + th * v2x
@@ -217,7 +234,7 @@ export function convertTriangleStrip (vertices, pen) {
 
       if (endcap === 1) {
         let theta = fastAtan2(v1y, v1x) + (3 * Math.PI) / 2
-        let steps_needed = Math.ceil(Math.PI / pen.endcapRes)
+        let steps_needed = Math.ceil(Math.PI / endcapRes)
 
         let o_x = x2 - th * v1y,
           o_y = y2 + th * v1x
@@ -330,7 +347,7 @@ export function convertTriangleStrip (vertices, pen) {
       }
 
       let angle_subtended = mod(end_a - start_a, 2 * Math.PI)
-      let steps_needed = Math.ceil(angle_subtended / pen.joinRes)
+      let steps_needed = Math.ceil(angle_subtended / joinRes)
 
       for (let i = 0; i <= steps_needed; ++i) {
         let theta_c = start_a + (angle_subtended * i) / steps_needed
