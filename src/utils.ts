@@ -433,3 +433,7 @@ export function localWarn (s: string, id: string, maxCount: number=2) {
 export function isValidVariableName (s: string) {
   return true
 }
+
+export function staticImplements<T>(ctor: T) {
+
+}

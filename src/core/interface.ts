@@ -18,63 +18,10 @@ import { Props } from './props.js'
 /**
  * Print object to string in a way that isn't too painful (limit the length of the string to 100 chars or so)
  * @param obj
- * @param limit {number} (Estimated) number of characters to restrict the display to
+ * @param limit {number} Number of characters to restrict the display to
  */
 export function relaxedPrint (obj: unknown, limit = 100): string {
-  if (typeof obj === 'number' || typeof obj === 'boolean' || obj == null) {
-    return '' + obj
-  } else if (typeof obj === 'function') {
-    let name = obj.name
-    let ret = name ? '[function ' + name : '[function]'
-
-    if (ret.length > limit) return '...'
-
-    return ret
-  } else if (typeof obj === 'object') {
-    let keys = Object.keys(obj!).slice(0, 3)
-
-    if (keys.length === 0) {
-      return '{}'
-    }
-
-    let keysUsed = 0
-    let keyValues: string[] = []
-    let totalLen = 5
-
-    for (let key of keys) {
-      let n = obj![key]
-      let pp = relaxedPrint(n, limit - totalLen - 4)
-
-      totalLen += pp.length + 4
-
-      if (totalLen > limit) break
-      keyValues.push(pp)
-      keysUsed++
-    }
-
-    if (keysUsed === 0) {
-      return '{ ... }'
-    } else {
-      let ret = '{ '
-
-      for (let i = 0; i < keysUsed; ++i) {
-        ret += keys[i]
-        ret += ': '
-        ret += keyValues[i]
-        if (i !== keysUsed - 1) ret += ', '
-      }
-
-      return ret + ' }'
-    }
-  } else if (typeof obj === 'string') {
-    if (obj.length <= limit - 2) return `"${obj}"`
-
-    let len = Math.max(((limit / 2) | 0) - 4, 0)
-
-    return '"' + obj.slice(0, len) + ' ... ' + obj.slice(obj.length - len) + '"'
-  }
-
-  return "[unknown]"
+  return (obj + '').slice(0, limit)
 }
 
 function genTypecheckRangedInteger (lo, hi) {
@@ -313,10 +260,6 @@ export function constructInterface (description) {
   const interfaceDesc = description.interface
   const internal = description.internal
 
-  //if (!interfaceDesc) throw new Error("Interface description lacks an interface")
-  //if (!internal) throw new Error("Interface description lacks an internal description")
-
-  // Instructions on how to get and set properties, respectively
   const setters = {}
   const getters = {}
 

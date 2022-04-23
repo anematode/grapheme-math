@@ -1,4 +1,10 @@
 import { Color } from "./color";
+import { CompositionType } from "./composition_type.js";
+import { staticImplements } from "../utils.js";
+
+export type PartialPenSpecification = {
+  [key in keyof Pen]?: Pen[key]
+}
 
 export class Pen {
   color: Color
@@ -24,4 +30,23 @@ export class Pen {
     this.useNative = false
     this.visible = true
   }
+
+  static compose (...args: PartialPenSpecification[]): Pen {
+    return new Pen()
+  }
+
+  static create (params: PartialPenSpecification): Pen {
+    return new Pen()
+  }
+
+  static default () {
+    return new Pen()
+  }
+
+  static fromObj (o: any): Pen {
+    return new Pen()
+  }
 }
+
+// Ensure Pen implements requisite composition type members
+staticImplements<CompositionType<Pen, PartialPenSpecification>>(Pen)
