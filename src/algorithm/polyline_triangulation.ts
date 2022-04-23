@@ -2,17 +2,7 @@ import { mod } from '../utils.js'
 import { getDashedPolyline} from './dashed_polyline.js'
 import { fastHypot } from './miscellaneous_geometry.js'
 
-const ENDCAP_TYPES = {
-  butt: 0,
-  round: 1,
-  square: 2
-}
-const JOIN_TYPES = {
-  bevel: 0,
-  miter: 2,
-  round: 1,
-  dynamic: 3
-}
+
 
 const MIN_RES_ANGLE = 0.05 // minimum angle in radians between roundings in a polyline
 const B = 4 / Math.PI

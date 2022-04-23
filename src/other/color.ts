@@ -1,50 +1,20 @@
-import { leftZeroPad } from "../utils.js";
+import { leftZeroPad, staticImplements } from "../utils.js";
+import { CompositionType } from "./composition_type";
 
-class Color {
+export type ColorSpecification = Color | string | { r: number, g: number, b: number, a?: number }
+
+export class Color {
   // Range: 0–255, inclusive
   r: number;
   g: number;
   b: number;
   a: number;
 
-  constructor (r, g, b, a) {
+  constructor (r: number, g: number, b: number, a: number) {
     this.r = r
     this.g = g
     this.b = b
     this.a = a
-  }
-
-  rounded () {
-    return {
-      r: Math.round(this.r),
-      g: Math.round(this.g),
-      b: Math.round(this.b),
-      a: Math.round(this.a)
-    }
-  }
-
-  toJSON () {
-    return {
-      r: this.r,
-      g: this.g,
-      b: this.b,
-      a: this.a
-    }
-  }
-
-  hex () {
-    const rnd = this.rounded()
-    return `#${[rnd.r, rnd.g, rnd.b, rnd.a]
-      .map(x => leftZeroPad(x.toString(16), 2))
-      .join('')}`;
-  }
-
-  toNumber () {
-    return this.r * 0x1000000 + this.g * 0x10000 + this.b * 0x100 + this.a
-  }
-
-  clone () {
-    return new Color(this.r, this.g, this.b, this.a)
   }
 
   static rgb (r: number, g: number, b: number) {
@@ -104,6 +74,19 @@ class Color {
     }
   }
 
+  static compose(...args: ColorSpecification[]): Color {
+    if (args.length === 0) {
+      return Color.default()
+    }
+
+    // Use the last specification
+    return Color.fromObj(args[args.length - 1])
+  }
+
+  static create(spec: ColorSpecification): Color {
+    return Color.fromObj(spec)
+  }
+
   /**
    * Permissively convert an object to a color; returns black if conversion failed
    */
@@ -121,8 +104,44 @@ class Color {
     return Color.default()
   }
 
-  static default() {
+  static default(): Color {
     return Color.rgba(0, 0, 0, 255)
+  }
+
+  rounded () {
+    return {
+      r: (this.r + 0.5) | 0,
+      g: (this.g + 0.5) | 0,
+      b: (this.b + 0.5) | 0,
+      a: (this.a + 0.5) | 0
+    }
+  }
+
+  toJSON () {
+    return {
+      r: this.r,
+      g: this.g,
+      b: this.b,
+      a: this.a
+    }
+  }
+
+  hex (): string {
+    const rnd = this.rounded()
+    return `#${[rnd.r, rnd.g, rnd.b, rnd.a]
+      .map(x => leftZeroPad(x.toString(16), 2))
+      .join('')}`;
+  }
+
+  /**
+   * Convert this color into a packed hex number (including an opacity value)
+   */
+  toNumber (): number {
+    return this.r * 0x1000000 + this.g * 0x10000 + this.b * 0x100 + this.a
+  }
+
+  clone () {
+    return new Color(this.r, this.g, this.b, this.a)
   }
 
   equals (c: Color) {
@@ -610,4 +629,4 @@ const Colors = {
   }
 }
 
-export { Color, Colors }
+staticImplements<CompositionType<Color, ColorSpecification>>(Color)
