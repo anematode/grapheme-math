@@ -11,7 +11,7 @@
 // find a workaround. But even just for me, having this kind of system would help with catching my own errors.
 
 import { Vec2 } from '../vec/vec2.js'
-import { deepMerge, isTypedArray } from '../utils.js'
+import { deepMerge, isTypedArray, isValidVariableName } from '../utils.js'
 import { Color, lookupCompositionType } from '../styles/definitions.js'
 import { Props } from './props.js'
 
@@ -443,8 +443,6 @@ export function constructInterface (description) {
   }
 
   function setDict (props, propDict) {
-    let ret = {}
-
     for (let propName in propDict) {
       _set(props, propName, propDict[propName])
     }
@@ -518,9 +516,6 @@ export function constructInterface (description) {
 
   return { set, get, computeProps, description }
 }
-
-const attachGettersAndSetters = () => null
-export { attachGettersAndSetters }
 
 const NullInterface = constructInterface({ interface: {}, internal: {} })
 export { NullInterface }
