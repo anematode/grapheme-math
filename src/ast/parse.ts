@@ -214,11 +214,6 @@ function checkParensBalanced (s: string) {
   if (err) raiseParserError(s, { index: i }, 'unbalanced parentheses/brackets')
 }
 
-// Exclude valid variables if needed later
-export function isValidVariableName (str) {
-  return true
-}
-
 const trimRight = ('trimRight' in String.prototype) ? (s: string): string => (s as any).trimRight() : (s: string) => {
   return s.replace(/\s+$/, '')
 }

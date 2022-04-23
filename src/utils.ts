@@ -425,3 +425,11 @@ export function localWarn (s: string, id: string, maxCount: number=2) {
     console.warn(`Warning ${id} raised ${maxCount} times; no longer being reported`)
   }
 }
+
+/**
+ * Whether a string is a permissible variable name
+ * @param s
+ */
+export function isValidVariableName (s: string) {
+  return true
+}
