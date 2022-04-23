@@ -37,7 +37,7 @@
  * terminate the function (and call reject()) before it actually ends. This is useful for things like cancelling
  * expensive updates.
  */
-import { localWarn } from "../grapheme_shared";
+import { localWarn } from "../utils";
 
 type BolusReturn<T> = {
   value: number | T  // if done is false, a value between 0 and 1 may be returned. If done is true, the result is returned.

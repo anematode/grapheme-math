@@ -1,4 +1,4 @@
-import { mod } from '../grapheme_shared.js'
+import { mod } from '../utils.js'
 import { getDashedPolyline} from './dashed_polyline.js'
 import { fastHypot } from './miscellaneous_geometry.js'
 

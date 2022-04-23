@@ -2,7 +2,7 @@ import {resolveOperatorDefinition} from './builtin/builtin_operators.js'
 import {toMathematicalType} from "./builtin/builtin_types.js"
 import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
 import {MathematicalConstants} from "./builtin/globals.js"
-import {localWarn} from "../grapheme_shared.js";
+import {localWarn} from "../utils.js";
 import {MathematicalType} from "./type.js";
 import {MathematicalCast, OperatorDefinition} from "./operator_definition.js";
 

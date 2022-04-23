@@ -1,4 +1,4 @@
-import { isTypedArray, mod } from '../grapheme_shared.js'
+import { isTypedArray, mod } from '../utils.js'
 import { BoundingBox } from '../other/bounding_box.js'
 
 /**

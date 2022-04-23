@@ -4,7 +4,7 @@
 
 // Map: id -> { parent, elem id, info, children: [{ child: id, instructions: [] }, { , version, ... }
 
-import { getStringID, getVersionID } from '../grapheme_shared.js'
+import { getStringID, getVersionID } from '../utils.js'
 import { convertTriangleStrip } from '../algorithm/polyline_triangulation.js'
 import {
   flattenVec2Array,

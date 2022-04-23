@@ -177,7 +177,7 @@ function deepAssignInternal (target: object, source: unknown, opts: DeepAssignFi
  * @param source
  * @param opts
  */
-export function deepMerge (target: unknown, source: unknown, opts : DeepAssignOptions) {
+export function deepMerge (target: unknown, source: unknown, opts: DeepAssignOptions = {}) {
   if (typeof target !== "object" || target === null) return deepClone(source, opts)
 
   return deepAssign(deepClone(target, opts), source, opts)

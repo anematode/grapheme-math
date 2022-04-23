@@ -11,7 +11,7 @@
 // find a workaround. But even just for me, having this kind of system would help with catching my own errors.
 
 import { Vec2 } from '../vec/vec2.js'
-import { deepMerge, isTypedArray } from '../grapheme_shared.js'
+import { deepMerge, isTypedArray } from '../utils.js'
 import { Color, lookupCompositionType } from '../styles/definitions.js'
 import { Props } from './props.js'
 
@@ -20,8 +20,8 @@ import { Props } from './props.js'
  * @param obj
  * @param limit {number} (Estimated) number of characters to restrict the display to
  */
-export function relaxedPrint (obj, limit = 100) {
-  if (typeof obj === 'number' || typeof obj === 'boolean') {
+export function relaxedPrint (obj: unknown, limit = 100): string {
+  if (typeof obj === 'number' || typeof obj === 'boolean' || obj == null) {
     return '' + obj
   } else if (typeof obj === 'function') {
     let name = obj.name
@@ -31,18 +31,18 @@ export function relaxedPrint (obj, limit = 100) {
 
     return ret
   } else if (typeof obj === 'object') {
-    let keys = Object.keys(obj).slice(0, 3)
+    let keys = Object.keys(obj!).slice(0, 3)
 
     if (keys.length === 0) {
       return '{}'
     }
 
     let keysUsed = 0
-    let keyValues = []
+    let keyValues: string[] = []
     let totalLen = 5
 
     for (let key of keys) {
-      let n = obj[key]
+      let n = obj![key]
       let pp = relaxedPrint(n, limit - totalLen - 4)
 
       totalLen += pp.length + 4
@@ -73,6 +73,8 @@ export function relaxedPrint (obj, limit = 100) {
 
     return '"' + obj.slice(0, len) + ' ... ' + obj.slice(obj.length - len) + '"'
   }
+
+  return "[unknown]"
 }
 
 function genTypecheckRangedInteger (lo, hi) {

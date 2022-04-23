@@ -1,5 +1,5 @@
 import { Eventful } from './eventful.js'
-import { getStringID, getVersionID } from '../grapheme_shared.js'
+import { getStringID, getVersionID } from '../utils.js'
 import { Props } from './props.js'
 import { NullInterface } from './interface.js'
 import { Scene } from "./scene";

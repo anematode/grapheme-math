@@ -1,4 +1,4 @@
-import { deepEquals, getVersionID } from '../grapheme_shared.js'
+import { deepEquals, getVersionID } from '../utils.js'
 
 const proxyHandlers = {
   get: (target, propName) => {

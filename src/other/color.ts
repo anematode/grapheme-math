@@ -1,4 +1,4 @@
-import { leftZeroPad } from "../grapheme_shared.js";
+import { leftZeroPad } from "../utils.js";
 
 class Color {
   // Range: 0–255, inclusive

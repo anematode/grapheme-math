@@ -1,5 +1,5 @@
 import { potpack } from '../algorithm/rectangle_packing.js'
-import { nextPowerOfTwo } from '../grapheme_shared.js'
+import { nextPowerOfTwo } from '../utils.js'
 
 export class TextRenderer {
   canvas: HTMLCanvasElement

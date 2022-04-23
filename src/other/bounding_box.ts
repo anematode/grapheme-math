@@ -1,6 +1,6 @@
 // TODO
 import { Vec2 } from '../vec/vec2.js'
-import { isTypedArray, NumericArray } from "../grapheme_shared.js";
+import { isTypedArray, NumericArray } from "../utils.js";
 
 /**
  * Given some parameters describing a line segment, find a line segment that is consistent with at least two of them.
