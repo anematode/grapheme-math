@@ -23,12 +23,14 @@ export class Pen {
   useNative: boolean
   visible: boolean
 
+  // Enum for endcaps
   static ENDCAP_TYPES = Object.freeze({
     butt: 0,
     round: 1,
     square: 2
   } as const)
 
+  // Enum for join types
   static JOIN_TYPES = Object.freeze({
     bevel: 0,
     miter: 2,
