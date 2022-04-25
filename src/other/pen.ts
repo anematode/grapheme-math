@@ -1,12 +1,16 @@
-import { Color } from "./color";
+import { Color, ColorSpecification } from "./color";
 import { CompositionType } from "./composition_type.js";
 import { staticImplements } from "../utils.js";
 
-export type PartialPenSpecification = {
-  [key in keyof Pen]?: Pen[key],
+export type PartialPenSpecification = ({
+  [key in keyof Pen]?: Pen[key]
+} & {
   color: ColorSpecification
-}
+}) | Pen
 
+/**
+ * Describes how a line should be drawn. Opacity should be set through color and is not tracked separately.
+ */
 export class Pen {
   color: Color
   thickness: number
@@ -33,39 +37,66 @@ export class Pen {
   } as const)
 
   constructor () {
-    this.color = new Color(0, 0, 0, 255)
-    this.thickness = 2
-    this.dashPattern = []
-    this.dashOffset = 0
-    this.endcap = 'round'
-    this.endcapRes = 1
-    this.join = 'dynamic'
-    this.joinRes = 1
-    this.useNative = false
-    this.visible = true
+
   }
 
   static compose (...args: PartialPenSpecification[]): Pen {
-    let p = new Pen()
+    let p = Pen.default()
 
     // Later arguments are given more precedence
     for (let spec of args) {
-      Object.assign(p, spec)
+      if (spec.color !== undefined)
+        p.color = Color.fromObj(spec.color)
+      if (spec.thickness !== undefined)
+        p.thickness = spec.thickness
+      if (spec.dashPattern !== undefined)
+        p.dashPattern = spec.dashPattern
+      if (spec.dashOffset !== undefined)
+        p.dashOffset = spec.dashOffset
+      if (spec.endcap !== undefined)
+        p.endcap = spec.endcap
+      if (spec.endcapRes !== undefined)
+        p.endcapRes = spec.endcapRes
+      if (spec.join !== undefined)
+        p.join = spec.join
+      if (spec.joinRes !== undefined)
+        p.joinRes = spec.joinRes
+      if (spec.useNative !== undefined)
+        p.useNative = spec.useNative
+      if (spec.visible !== undefined)
+        p.visible = spec.visible
     }
+
+    p.color = p.color.clone()
 
     return p
   }
 
   static create (params: PartialPenSpecification): Pen {
-    return new Pen()
+    return Pen.compose(params)
   }
 
-  static default () {
-    return new Pen()
+  static default (): Pen {
+    let p = new Pen()
+
+    p.color = new Color(0, 0, 0, 255)
+    p.thickness = 2
+    p.dashPattern = []
+    p.dashOffset = 0
+    p.endcap = 'round'
+    p.endcapRes = 1
+    p.join = 'dynamic'
+    p.joinRes = 1
+    p.useNative = false
+    p.visible = true
+
+    return p
   }
 
-  static fromObj (o: any): Pen {
-    return new Pen()
+  static fromObj (o: unknown): Pen {
+    if (typeof o === 'string') return _interpretStringAsPen(o)
+
+    return Pen.compose(Pen.default(), o as PartialPenSpecification)
   }
 
   _toJoinTypeEnum (): number {
@@ -74,6 +105,16 @@ export class Pen {
 
   _toEndcapTypeEnum (): number {
     return Pen.ENDCAP_TYPES[this.endcap]
+  }
+}
+
+function _interpretStringAsPen (str): Pen {
+  try {
+    let color = Color.fromCss(str)
+
+    return Pen.fromObj({ color })
+  } catch {
+    return Pen.default()
   }
 }
 

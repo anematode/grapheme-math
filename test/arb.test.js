@@ -9,7 +9,7 @@ import {
 } from "./test_common.js"
 import { roundMantissaToPrecision,addMantissas, neededWordsForPrecision } from "../build/arb/bigfloat.js"
 import {expectMultipleCases} from "./test.js"
-import {deepEquals} from "../src/grapheme_shared.ts"
+import {deepEquals} from "../build/utils.js"
 import { addMantissas as referenceAddMantissas } from "../build/arb/reference.js";
 
 const BF = BigFloat

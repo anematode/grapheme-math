@@ -3,6 +3,10 @@ import { CompositionType } from "./composition_type";
 
 export type ColorSpecification = Color | string | { r: number, g: number, b: number, a?: number }
 
+function _clampRGB (x: number): number {
+  return (((x < 0) ? 0 : ((x > 255) ? 255 : x)) + 0.5) | 0
+}
+
 export class Color {
   // Range: 0–255, inclusive
   r: number;
@@ -18,11 +22,11 @@ export class Color {
   }
 
   static rgb (r: number, g: number, b: number) {
-    return new Color(r, g, b, 255)
+    return new Color(_clampRGB(r), _clampRGB(g), _clampRGB(b), 255)
   }
 
   static rgba (r: number, g: number, b: number, a = 255) {
-    return new Color(r, g, b, a)
+    return new Color(_clampRGB(r), _clampRGB(g), _clampRGB(b), _clampRGB(a))
   }
 
   static hsl (h: number, s: number, l: number) {
@@ -61,14 +65,14 @@ export class Color {
       return color ? color : throwBadColor()
     }
 
-    let args = argsMatch[1].split(',').map(parseFloat)
+    let args = argsMatch[1].split(',').map(Number.parseFloat)
 
     if (cssColorString.startsWith('rgb')) {
-      let values = args.map(s => s * 255)
-      return Color.rgba(values[0], values[1], values[2], cssColorString.startsWith('rgba') ? values[3] : 255)
+      return Color.rgba(args[0], args[1], args[2], cssColorString.startsWith('rgba') ? (_clampRGB(args[3] * 255)) : 255)
     } else if (cssColorString.startsWith('hsl')) {
-      let [r, g, b] = hslToRgb(args[0], args[1], args[2])
-      return Color.rgba(r, g, b, cssColorString.startsWith('hsla') ? args[3] : 255)
+      let [ r, g, b ] = hslToRgb(args[0], args[1], args[2])
+
+      return Color.rgba(r, g, b, cssColorString.startsWith('hsla') ? (_clampRGB(args[3] * 255)) : 255)
     } else {
       throwBadColor()
     }
@@ -206,7 +210,7 @@ function hslToRgb (h, s, l) {
 
 const rgb = Color.rgb
 
-const Colors = {
+export const Colors = Object.freeze({
   get LIGHTSALMON () {
     return rgb(255, 160, 122)
   },
@@ -627,6 +631,6 @@ const Colors = {
   get TRANSPARENT () {
     return new Color(0, 0, 0, 0)
   }
-}
+} as const)
 
 staticImplements<CompositionType<Color, ColorSpecification>>(Color)

@@ -1,14 +1,14 @@
 import { mod } from '../utils.js'
 import { getDashedPolyline} from './dashed_polyline.js'
 import { fastHypot } from './miscellaneous_geometry.js'
-
-
+import { Pen } from "../other/pen.js";
+import { BoundingBox } from "../other/bounding_box";
 
 const MIN_RES_ANGLE = 0.05 // minimum angle in radians between roundings in a polyline
 const B = 4 / Math.PI
 const C = -4 / Math.PI ** 2
 
-function fastSin (x) {
+function fastSin (x: number): number {
   // crude, but good enough for this
 
   x %= 6.28318530717
@@ -19,11 +19,11 @@ function fastSin (x) {
   return B * x + C * x * (x < 0 ? -x : x)
 }
 
-function fastCos (x) {
+function fastCos (x: number): number {
   return fastSin(x + 1.570796326794)
 }
 
-function fastAtan2 (y, x) {
+function fastAtan2 (y: number, x: number): number {
   let abs_x = x < 0 ? -x : x
   let abs_y = y < 0 ? -y : y
 
@@ -38,13 +38,16 @@ function fastAtan2 (y, x) {
   return r
 }
 
+// Float32Array is fine for compactness
+type PolylineVertexList = number[] | Float64Array | Float32Array
+
 /**
  * Convert an array of polyline vertices into a Float32Array of vertices to be rendered using WebGL.
  * @param vertices {Array} The vertices of the polyline.
  * @param pen {Object} A JSON representation of the pen. Could also be the pen object itself.
  * @param box {BoundingBox} The bounding box of the plot, used to optimize line dashes
  */
-export function calculatePolylineVertices (vertices, pen, box = null) {
+export function calculatePolylineVertices (vertices: PolylineVertexList, pen: Pen, box: BoundingBox | null = null) {
   if (pen.dashPattern.length === 0) {
     return convertTriangleStrip(vertices, pen)
   } else {
@@ -52,7 +55,7 @@ export function calculatePolylineVertices (vertices, pen, box = null) {
   }
 }
 
-export function convertTriangleStrip (vertices, pen) {
+export function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen) {
   if (
     pen.thickness <= 0 ||
     pen.endcapRes < MIN_RES_ANGLE ||
@@ -68,9 +71,10 @@ export function convertTriangleStrip (vertices, pen) {
   let th = pen.thickness / 2
   let maxMiterLength = th / fastCos(pen.joinRes / 2)
 
-  let endcap = ENDCAP_TYPES[pen.endcap]
-  let endcapRes = pen.endcapRes, joinRes = pen.joinRes
-  let join = JOIN_TYPES[pen.join]
+  let endcap = pen._toEndcapTypeEnum()
+  let join = pen._toJoinTypeEnum()
+  let endcapRes = pen.endcapRes
+  let joinRes = pen.joinRes
 
   if (endcap === undefined || join === undefined) {
     throw new Error('Undefined endcap or join.')
@@ -99,8 +103,8 @@ export function convertTriangleStrip (vertices, pen) {
   }
 
   // p1 -- p2 -- p3, generating vertices for point p2
-  let x1 = 0, x2, x3 = vertices[0], y1 = 0, y2, y3 = vertices[1]
-  let v1x = 0, v1y = 0, v2x = 0, v2y = 0, v1l = 0, v2l = 0, b1_x, b1_y, scale, dis
+  let x1 = 0, x2 = 0, x3 = vertices[0], y1 = 0, y2 = 0, y3 = vertices[1]
+  let v1x = 0, v1y = 0, v2x = 0, v2y = 0, v1l = 0, v2l = 0, b1_x = 0, b1_y = 0, scale = 0, dis = 0
   let chunkPos = 0
 
   for (let i = 0; i < origVertexCount; ++i) {
@@ -121,11 +125,11 @@ export function convertTriangleStrip (vertices, pen) {
       y3 = NaN
     }
 
-    if (isNaN(x2) || isNaN(y2)) {
+    if (x2 !== x2 || y2 !== y2) {
       continue
     }
 
-    if (isNaN(x1) || isNaN(y1)) {
+    if (x1 !== x1 || y1 !== y1) {
       // The start of every endcap has two duplicate vertices for triangle strip reasons
       v2x = x3 - x2
       v2y = y3 - y2
@@ -140,7 +144,7 @@ export function convertTriangleStrip (vertices, pen) {
         v2y /= v2l
       }
 
-      if (isNaN(v2x) || isNaN(v2y)) {
+      if (v2x !== v2x || v2y !== v2y) {
         continue
       } // undefined >:(
 
@@ -198,7 +202,7 @@ export function convertTriangleStrip (vertices, pen) {
       }
     }
 
-    if (isNaN(x3) || isNaN(y3)) {
+    if (x3 !== x3 || y3 !== y3) {
       // ending endcap
       v1x = x2 - x1
       v1y = y2 - y1
@@ -213,7 +217,7 @@ export function convertTriangleStrip (vertices, pen) {
         v1y /= v1l
       }
 
-      if (isNaN(v1x) || isNaN(v1y)) {
+      if (v1x !== v1x || v1y !== v1y) {
         continue
       } // undefined >:(
 
