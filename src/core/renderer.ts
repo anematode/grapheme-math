@@ -78,7 +78,7 @@ import { SceneGraph } from './scene_graph.js'
 import { Color, Colors } from '../other/color.js'
 import { calculateRectShift } from '../other/text_utils.js'
 import { BoundingBox } from '../other/bounding_box.js'
-import { Vec2 } from "../vec/vec2";
+import { Vec2 } from "../vec/vec2.js";
 
 type ShaderType = number
 

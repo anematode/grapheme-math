@@ -1,4 +1,4 @@
-import { Color, ColorSpecification } from "./color";
+import { Color, ColorSpecification } from "./color.js";
 import { CompositionType } from "./composition_type.js";
 import { staticImplements } from "../utils.js";
 
