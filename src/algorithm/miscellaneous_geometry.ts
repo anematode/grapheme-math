@@ -33,7 +33,7 @@ function lineSegmentIntersect (x1, y1, x2, y2, x3, y3, x4, y4) {
   )
 }
 
-// Credit to cortijon on StackOverflow! Thanks bro/sis
+// Credit to cortijon on StackOverflow (comment on https://stackoverflow.com/a/1968345/13458117)
 function getLineIntersection (p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
   let s1_x, s1_y, s2_x, s2_y
 
