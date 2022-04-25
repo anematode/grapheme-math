@@ -11,7 +11,7 @@ import { BoundingBox } from '../other/bounding_box.js'
  * @param y3
  * @returns {boolean}
  */
-function pointsCCW (x1, y1, x2, y2, x3, y3) {
+function pointsCCW (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): boolean {
   return (y3 - y1) * (x2 - x1) > (y2 - y1) * (x3 - x1)
 }
 
@@ -26,7 +26,7 @@ function pointsCCW (x1, y1, x2, y2, x3, y3) {
  * @param x4
  * @param y4
  */
-function lineSegmentIntersect (x1, y1, x2, y2, x3, y3, x4, y4) {
+function lineSegmentIntersect (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number): boolean {
   return (
     pointsCCW(x1, y1, x3, y3, x4, y4) !== pointsCCW(x2, y2, x3, y3, x4, y4) &&
     pointsCCW(x1, y1, x2, y2, x3, y3) !== pointsCCW(x1, y1, x2, y2, x4, y4)
