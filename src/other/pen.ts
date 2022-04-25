@@ -2,7 +2,10 @@ import { Color, ColorSpecification } from "./color.js";
 import { CompositionType } from "./composition_type.js";
 import { staticImplements } from "../utils.js";
 
-export type PartialPenSpecification = ({
+/**
+ * Partial pen specification, with optional members
+ */
+export type PenLike = ({
   [key in keyof Pen]?: Pen[key]
 } & {
   color: ColorSpecification
@@ -42,7 +45,7 @@ export class Pen {
 
   }
 
-  static compose (...args: PartialPenSpecification[]): Pen {
+  static compose (...args: PenLike[]): Pen {
     let p = Pen.default()
 
     // Later arguments are given more precedence
@@ -74,7 +77,7 @@ export class Pen {
     return p
   }
 
-  static create (params: PartialPenSpecification): Pen {
+  static create (params: PenLike): Pen {
     return Pen.compose(params)
   }
 
@@ -98,7 +101,7 @@ export class Pen {
   static fromObj (o: unknown): Pen {
     if (typeof o === 'string') return _interpretStringAsPen(o)
 
-    return Pen.compose(Pen.default(), o as PartialPenSpecification)
+    return Pen.compose(Pen.default(), o as PenLike)
   }
 
   _toJoinTypeEnum (): number {
@@ -110,6 +113,7 @@ export class Pen {
   }
 }
 
+// TODO
 function _interpretStringAsPen (str): Pen {
   try {
     let color = Color.fromCss(str)
@@ -121,4 +125,4 @@ function _interpretStringAsPen (str): Pen {
 }
 
 // Ensure Pen implements requisite composition type members
-staticImplements<CompositionType<Pen, PartialPenSpecification>>(Pen)
+staticImplements<CompositionType<Pen, PenLike>>(Pen)

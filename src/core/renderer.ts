@@ -333,7 +333,7 @@ export class WebGLRenderer {
    * @param dpr
    * @param clear {Color}
    */
-  clearAndResizeCanvas (width, height, dpr=1, clear = Colors.TRANSPARENT) {
+  clearAndResizeCanvas (width: number, height: number, dpr=1, clear = Colors.TRANSPARENT) {
     const { canvas } = this
 
     this.dpr = dpr
@@ -346,7 +346,7 @@ export class WebGLRenderer {
       canvas.height = height
 
       // If the given color is not plain transparent black, we need to set the canvas color directly
-      if (clear.equals(Colors.TRANSPARENT)) {
+      if (!clear.equals(Colors.TRANSPARENT)) {
         this.clearCanvas(clear)
       }
     }
@@ -380,10 +380,9 @@ export class WebGLRenderer {
     return new Vec2(2 / canvas.width * dpr, -2 / canvas.height * dpr)
   }
 
-
-
   renderDOMScene (scene) {
     createImageBitmap(this.canvas).then(bitmap => {
+      console.log(bitmap)
       scene.bitmapRenderer.transferFromImageBitmap(bitmap)
     })
   }

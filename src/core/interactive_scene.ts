@@ -111,14 +111,14 @@ export class InteractiveScene extends Scene {
   }
 
   resizeCanvas () {
-    const { sceneDims } = this.props.proxy
-    const { domCanvas } = this
+    let sceneDims = this._getDims()
+    let c = this.domCanvas
 
-    domCanvas.width = sceneDims.canvasWidth
-    domCanvas.height = sceneDims.canvasHeight
+    c.width = sceneDims.canvasWidth
+    c.height = sceneDims.canvasHeight
 
-    domCanvas.style.width = sceneDims.width + 'px'
-    domCanvas.style.height = sceneDims.height + 'px'
+    c.style.width = sceneDims.width + 'px'
+    c.style.height = sceneDims.height + 'px'
   }
 
   addHTMLElement (element) {

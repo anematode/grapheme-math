@@ -75,21 +75,34 @@ export class Scene extends Group {
     return this.props.get('sceneDims')
   }
 
+  _setDims (dims: SceneDimensions) {
+    this.props.set("sceneDims", dims, 0, 2)
+  }
+
   setWidth (w: number): Scene {
     checkDimInRange(w)
-    this._getDims().width = w
+    let d = this.getDims()
+    d.width = w
+
+    this._setDims(d)
     return this
   }
 
   setHeight (h: number): Scene {
     checkDimInRange(h)
-    this._getDims().height = h
+    let d = this.getDims()
+    d.width = h
+
+    this._setDims(d)
     return this
   }
 
   setDPR (dpr: number): Scene {
-    checkDPRInRange(dpr)
-    this._getDims().dpr = dpr
+    checkDimInRange(dpr)
+    let d = this.getDims()
+    d.width = dpr
+
+    this._setDims(d)
     return this
   }
 
