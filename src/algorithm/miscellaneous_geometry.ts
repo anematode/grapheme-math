@@ -34,7 +34,7 @@ function lineSegmentIntersect (x1, y1, x2, y2, x3, y3, x4, y4) {
 }
 
 // Credit to cortijon on StackOverflow (comment on https://stackoverflow.com/a/1968345/13458117)
-function getLineIntersection (p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
+function getLineIntersection (p0_x: number, p0_y: number, p1_x: number, p1_y: number, p2_x: number, p2_y: number, p3_x: number, p3_y: number) {
   let s1_x, s1_y, s2_x, s2_y
 
   s1_x = p1_x - p0_x
@@ -94,14 +94,14 @@ export function pointInTriangle (px: number, py: number, ax: number, ay: number,
 }
 
 function lineSegmentIntersectsBox (
-  x1,
-  y1,
-  x2,
-  y2,
-  box_x1,
-  box_y1,
-  box_x2,
-  box_y2
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  box_x1: number,
+  box_y1: number,
+  box_x2: number,
+  box_y2: number
 ) {
   // Return the component of the line segment that resides inside a box with boundaries x in (box_x1 .. box_x2), y in
   // (box_y1 .. box_y2), which may potentially be the entire line segment.
@@ -200,7 +200,7 @@ function lineSegmentIntersectsBox (
 }
 
 export function generateCircleTriangleStrip (
-  radius,
+  radius: number,
   x = 0,
   y = 0,
   samples = 8
@@ -408,7 +408,7 @@ export function flattenVec2Array (arr) {
   return arr
 }
 
-export function fastAtan2 (y, x) {
+export function fastAtan2 (y: number, x: number): number {
   let abs_x = Math.abs(x)
   let abs_y = Math.abs(y)
 
@@ -437,7 +437,7 @@ export function fastAtan2 (y, x) {
  * @param x3 x-coordinate of the third point
  * @param y3 y-coordinate of the third point
  */
-function approxAngleBetween (x1, y1, x2, y2, x3, y3) {
+function approxAngleBetween (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): number {
   // (x1d, y1d) = p1 ---> p2
   let x1d = x2 - x1
   let y1d = y2 - y1
@@ -506,7 +506,7 @@ function pointLineSegmentDistanceSquared (px: number, py: number, ax: number, ay
  * @param x2 x-coordinate of p2
  * @param y2 y-coordinate of p2
  */
-function distanceSquared (x1, y1, x2, y2) {
+function distanceSquared (x1: number, y1: number, x2: number, y2: number): number {
   let tx = x2 - x1
   let ty = y2 - y1
 
@@ -521,6 +521,6 @@ function distanceSquared (x1, y1, x2, y2) {
  * @param y {number}
  * @returns {number} hypot(x, y)
  */
-export function fastHypot (x, y) {
+export function fastHypot (x: number, y: number): number {
   return Math.sqrt(x * x + y * y)
 }
