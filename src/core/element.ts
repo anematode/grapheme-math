@@ -1,10 +1,10 @@
 import { Eventful } from './eventful.js'
 import { getStringID, getVersionID } from '../utils.js'
 import { Props } from './props.js'
-import { Scene } from "./scene";
-import { RenderingInfo } from "./renderer_instruction";
+import { Scene } from "./scene.js";
+import { RenderingInfo } from "./renderer_instruction.js";
 
-type ElementOptions = {
+export type ElementOptions = {
   id?: string
 }
 

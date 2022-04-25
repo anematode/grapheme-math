@@ -1,6 +1,18 @@
 import { Pen } from "../other/pen.js";
 import { Vec2Like } from "../vec/vec2.js";
 import { BoundingBoxLike } from "../other/bounding_box.js";
+import { SceneDimensions } from "./scene";
+import { Color } from "../other/color";
+
+type BaseContextInstruction = {
+
+}
+
+type SceneContextInstruction = BaseContextInstruction & {
+  type: "scene"
+  dims: SceneDimensions
+  backgroundColor: Color
+}
 
 type BaseInstruction = {
   zIndex: number
@@ -24,7 +36,12 @@ export type DebugInstruction = BaseInstruction & {
 }
 
 export type RendererInstruction = PolylineRendererInstruction | DebugInstruction
+export type RendererContextInstruction = SceneContextInstruction
 
+/**
+ * General form of rendering info outputted by a given element
+ */
 export type RenderingInfo = {
-  instructions: RendererInstruction[]
+  contexts?: RendererContextInstruction[]
+  instructions?: RendererInstruction[]
 }

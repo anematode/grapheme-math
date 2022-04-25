@@ -8,11 +8,16 @@
 
 <script type="module" src="perf/perf.js"></script>
 
+<div id="container" style="background: lightgray; display: inline-block">
+
+</div>
+
 <script>
     function play() {
       renderer = new Grapheme.WebGLRenderer()
+      scene = new Grapheme.InteractiveScene()
 
-      document.body.appendChild(renderer.canvas)
+      document.getElementById('container').appendChild(scene.domElement)
     }
 </script>
 

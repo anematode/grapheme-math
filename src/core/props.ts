@@ -272,7 +272,7 @@ export class Props {
    * inheritable property, that will be noted
    * @returns {any}
    */
-  set (propName: string, value: any, as: AccessorNameBit, equalityCheck = 0, markChanged = true): any {
+  set (propName: string, value: any, as: AccessorNameBit = 0, equalityCheck = 0, markChanged = true): any {
     let store = this._getPropertyStore(propName)
 
     // Helper functions to abstract away the "user/program/real" concept

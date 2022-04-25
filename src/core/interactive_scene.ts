@@ -1,7 +1,32 @@
 /**
  * A scene endowed with an actual DOM element.
  */
+import { Scene } from "./scene";
+import { ElementInternalStore } from "./element";
+import { Vec2 } from "../vec/vec2";
+import { calculateRectShift } from "../other/text_utils";
+import { BoundingBox } from "../other/bounding_box";
+
+type InteractiveSceneInternal = ElementInternalStore & {
+  interactivityListeners: null | {
+    [key: string]: (evt: MouseEvent) => void
+  },
+  htmlElements: SceneHTMLBauble[]
+}
+
+type SceneHTMLBauble = {
+  content: string
+  type: "html" | "latex"
+  pos: Vec2, domElement: HTMLDivElement, w: number, h: number, claimed: boolean
+}
+
 export class InteractiveScene extends Scene {
+  domElement: HTMLDivElement
+  domCanvas: HTMLCanvasElement
+  bitmapRenderer: ImageBitmapRenderingContext
+
+  internal: InteractiveSceneInternal
+
   init (params) {
     super.init(params)
 
@@ -13,10 +38,10 @@ export class InteractiveScene extends Scene {
     this.domCanvas.id = this.id
 
     this.domElement.appendChild(this.domCanvas)
-    this.bitmapRenderer = this.domCanvas.getContext('bitmaprenderer')
+    this.bitmapRenderer = this.domCanvas.getContext('bitmaprenderer') ?? throwNoBitmapRenderer()
   }
 
-  #disableInteractivityListeners () {
+  _disableInteractivityListeners () {
     let internal = this.internal
     let interactivityListeners = internal.interactivityListeners
 
@@ -31,15 +56,15 @@ export class InteractiveScene extends Scene {
     internal.interactivityListeners = null
   }
 
-  #enableInteractivityListeners () {
-    this.#disableInteractivityListeners()
+  _enableInteractivityListeners () {
+    this._disableInteractivityListeners()
     let listeners = (this.internal.interactivityListeners = {})
 
     // Convert mouse event coords (which are relative to the top left corner of the page) to canvas coords
     const getSceneCoords = evt => {
-        let rect = this.domElement.getBoundingClientRect()
-        return new Vec2(evt.clientX - rect.x, evt.clientY - rect.y)
-      }
+      let rect = this.domElement.getBoundingClientRect()
+      return new Vec2(evt.clientX - rect.x, evt.clientY - rect.y)
+    }
 
     ;['mousedown', 'mousemove', 'mouseup', 'wheel'].forEach(eventName => {
       let listener
@@ -73,8 +98,8 @@ export class InteractiveScene extends Scene {
 
     if (!!internal.interactivityListeners !== interactivity) {
       interactivity
-        ? this.#enableInteractivityListeners()
-        : this.#disableInteractivityListeners()
+        ? this._enableInteractivityListeners()
+        : this._disableInteractivityListeners()
     }
   }
 
@@ -83,10 +108,6 @@ export class InteractiveScene extends Scene {
 
     this.toggleInteractivity()
     this.resizeCanvas()
-  }
-
-  getInterface () {
-    return interactiveSceneInterface
   }
 
   resizeCanvas () {
@@ -110,10 +131,11 @@ export class InteractiveScene extends Scene {
     let internal = this.internal, htmlElements
     let that = this // huzzah
 
-    if (!internal.htmlElements) internal.htmlElements = []
+    if (!internal.htmlElements)
+      internal.htmlElements = []
+
     htmlElements = internal.htmlElements
 
-    // A latex element is of the form { type: "html" | "latex", content: "...", pos: Vec2, domElement: (div), w: (number), h: (number), claimed: false }
     htmlElements.forEach(elem => elem.claimed = false)
 
     function addElementToDOM (html) {
@@ -130,7 +152,7 @@ export class InteractiveScene extends Scene {
       return { div, rect }
     }
 
-    function addElement (html, pos, dir, spacing, transform) {
+    function addElement (html, pos, dir, spacing, transform): SceneHTMLBauble {
       let { div, rect } = addElementToDOM(html)
 
       let shiftedRect = calculateRectShift(new BoundingBox(pos.x, pos.y, rect.width, rect.height), dir, spacing)
@@ -139,7 +161,10 @@ export class InteractiveScene extends Scene {
       div.style.top = shiftedRect.y + 'px'
       div.style.transform = transform
 
-      return { pos: new Vec2(shiftedRect.x, shiftedRect.y), domElement: div, w: rect.width, h: rect.height, claimed: true }
+      return {
+        type: "html", pos: new Vec2(shiftedRect.x, shiftedRect.y), domElement: div,
+        w: rect.width, h: rect.height, claimed: true, content: ""
+      }
     }
 
     main: for (const instruction of instructions) {
@@ -190,13 +215,18 @@ export class InteractiveScene extends Scene {
   }
 
   destroyHTMLElements () {
-    let children = Array.from(this.domElement.children)
+    let children = Array.from(this.domElement.children) as HTMLElement[]
 
     for (const child of children) {
       if (child.id !== this.id) {
         child.style.visibility = "none"
+
         this.domElement.removeChild(child)
       }
     }
   }
+}
+
+function throwNoBitmapRenderer(): never {
+  throw new Error("Browser does not support bitmap renderer")
 }

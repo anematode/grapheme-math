@@ -1,52 +1,18 @@
 import { Group } from './group.js'
-import { BoundingBox } from '../math/bounding_box.js'
-import { attachGettersAndSetters, constructInterface } from './interface.js'
-import { Color, Colors } from '../styles/definitions.js'
-
-// Example interface
-const sceneInterface = constructInterface({
-  interface: {
-    width: {
-      description: 'The width of the scene',
-      typecheck: { type: 'integer', min: 100, max: 16384 }
-    },
-    height: {
-      description: 'The height of the scene',
-      typecheck: { type: 'integer', min: 100, max: 16384 }
-    },
-    dpr: {
-      description: 'The device pixel ratio of the scene',
-      typecheck: { type: 'number', min: 1 / 32, max: 32 }
-      //setAs: "user"
-    },
-    backgroundColor: {
-      description: 'The color of the scene background',
-      setAs: 'user',
-      conversion: { type: 'Color' }
-    },
-    sceneDims: {
-      description: 'The dimensions of the scene',
-      readOnly: true
-    }
-  },
-  internal: {
-    width: { type: 'number', computed: 'default', default: 640 },
-    height: { type: 'number', computed: 'default', default: 480 },
-    dpr: { type: 'number', computed: 'default', default: 1 },
-    backgroundColor: {
-      type: 'Color',
-      computed: 'user',
-      default: Colors.TRANSPARENT
-    },
-    sceneDims: { type: 'SceneDimensions', computed: 'none' }
-  }
-})
+import { BoundingBox } from '../other/bounding_box.js'
 
 /**
  * Passed to children as the parameter "sceneDimensions"
  */
-class SceneDimensions {
-  constructor (width, height, dpr) {
+export class SceneDimensions {
+  width: number
+  height: number
+  dpr: number
+
+  canvasWidth: number
+  canvasHeight: number
+
+  constructor (width: number, height: number, dpr: number) {
     this.width = width
     this.height = height
     this.dpr = dpr
@@ -57,11 +23,31 @@ class SceneDimensions {
   }
 
   /**
-   * Get the bounding box of the entire scene.
-   * @returns {BoundingBox}
+   * Get the bounding box of the entire scene
+   * @returns
    */
-  getBoundingBox () {
+  getBoundingBox (): BoundingBox {
     return new BoundingBox(0, 0, this.width, this.height)
+  }
+
+  clone(): SceneDimensions {
+    return new SceneDimensions(this.width, this.height, this.dpr)
+  }
+}
+
+const DEFAULT_SCENE_DIMS = new SceneDimensions(640, 480, 1)
+const MIN_SIZE = 100, MAX_SIZE = 16384
+const MIN_DPR = 0.1, MAX_DPR = 16
+
+function checkDimInRange(d: number) {
+  if (typeof d !== "number" || Number.isNaN(d) || d < MIN_SIZE || d > MAX_SIZE) {
+    throw new RangeError(`Dimension ${d} is out of range [${MIN_SIZE}, ${MAX_SIZE}]`)
+  }
+}
+
+function checkDPRInRange(dpr: number) {
+  if (typeof dpr !== "number" || Number.isNaN(dpr) || dpr < MIN_DPR || dpr > MAX_DPR) {
+    throw new RangeError(`Device pixel ratio ${dpr} is out of range [${MIN_DPR}, ${MAX_DPR}]`)
   }
 }
 
@@ -71,14 +57,40 @@ class SceneDimensions {
  * element knows its scene directly as its .scene property.
  */
 export class Scene extends Group {
-  getInterface () {
-    return sceneInterface
-  }
-
-  init () {
+  init (params) {
     this.scene = this
 
+    this.props.set('sceneDims', new SceneDimensions(640, 480, 1))
     this.props.setPropertyInheritance('sceneDims', true)
+  }
+
+  /**
+   * Get the scene's dimensions
+   */
+  getDims (): SceneDimensions {
+    return this._getDims().clone()
+  }
+
+  _getDims (): SceneDimensions {
+    return this.props.get('sceneDims')
+  }
+
+  setWidth (w: number): Scene {
+    checkDimInRange(w)
+    this._getDims().width = w
+    return this
+  }
+
+  setHeight (h: number): Scene {
+    checkDimInRange(h)
+    this._getDims().height = h
+    return this
+  }
+
+  setDPR (dpr: number): Scene {
+    checkDPRInRange(dpr)
+    this._getDims().dpr = dpr
+    return this
   }
 
   /**
@@ -102,7 +114,7 @@ export class Scene extends Group {
   }
 
   updateProps () {
-    this.defaultComputeProps()
+    this._defaultComputeProps()
     this.calculateSceneDimensions()
   }
 
@@ -118,11 +130,11 @@ export class Scene extends Group {
     this.updateProps()
 
     this.internal.renderInfo = {
-      contexts: {
+      contexts: [{
         type: 'scene',
-        dims: this.get('sceneDims'),
-        backgroundColor: this.get('backgroundColor')
-      }
+        dims: this.props.get('sceneDims'),
+        backgroundColor: this.props.get('backgroundColor')
+      }]
     }
   }
 
