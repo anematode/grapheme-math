@@ -1,8 +1,8 @@
 import { Eventful } from './eventful.js'
 import { getStringID, getVersionID } from '../utils.js'
 import { Props } from './props.js'
-import { NullInterface } from './interface.js'
 import { Scene } from "./scene";
+import { RenderingInfo } from "./renderer_instruction";
 
 type ElementOptions = {
   id?: string
@@ -10,6 +10,7 @@ type ElementOptions = {
 
 export type ElementInternalStore = {
   version: number,
+  renderInfo?: RenderingInfo
 }
 
 /**
@@ -49,7 +50,7 @@ export class Element extends Eventful {
     this.id = opts.id ?? getStringID()
 
     if (typeof this.id !== 'string' || this.id.length === 0)
-      throw new TypeError('The element id must be a non-empty string.')
+      throw new TypeError('The element id must be a non-empty string')
 
     this.parent = null
     this.scene = null
@@ -61,13 +62,11 @@ export class Element extends Eventful {
 
     // Call the element-defined constructor
     this.init(opts)
-
-    // Call set on remaining parameters. Corollary: constructor-only parameters should not also be parameters (no "id")
-    this.set(opts)
   }
 
   /**
-   * Inherited function that is called when the element needs to be updated (usually to change how it's displayed)
+   * Derived class–implemented function that is called when the element needs to be updated (usually to change how
+   * it's displayed)
    */
   _update () {}
 
@@ -83,7 +82,7 @@ export class Element extends Eventful {
    * Apply a given function, accepting a single argument (the element)
    * @param callback The callback function
    */
-  apply (callback) {
+  apply (callback: (e: Element) => undefined) {
     callback(this)
   }
 
@@ -91,7 +90,7 @@ export class Element extends Eventful {
    * Inherit properties from the parent. If the updateStage is -1, then it indicates the child has not inherited any
    * properties yet at all, so we need to check them all.
    */
-  defaultInheritProps () {
+  _defaultInheritProps () {
     if (this.parent)
       this.props.inheritPropertiesFrom(
         this.parent.props,
@@ -99,50 +98,47 @@ export class Element extends Eventful {
       )
   }
 
+  /**
+   * Default rendering info information, which just pulls from internal.renderInfo
+   */
   getRenderingInfo () {
-    if (this.internal.renderInfo) return this.internal.renderInfo
+    if (this.internal.renderInfo)
+      return this.internal.renderInfo
   }
 
-  isChild (child, recursive = true) {
+  /**
+   * Check whether a given element is a child of this element
+   * @param child
+   * @param recursive Whether to search recursively, or just look for immediate children
+   */
+  isChild (child: Element, recursive = true) {
     return false
   }
 
+  /**
+   * Whether this element is a top-level scene
+   */
   isScene () {
     return false
   }
 
   init (params) {}
 
-  set (propName, value) {
-    this.getInterface().set(this, propName, value)
-  }
+  _defaultComputeProps () {
 
-  get (propName) {
-    return this.getInterface().get(this, propName)
-  }
-
-  getDict (propNames) {
-    return this.getInterface().getDict(this, propNames)
   }
 
   /**
-   * For all given properties, check which ones need to be filled in with default values.
+   * Recursively set the scene which this element belongs to
+   * @param scene The scene
    */
-  defaultComputeProps () {
-    let inter = this.getInterface()
-    const needsInitialize = this.updateStage === -1
-
-    inter.computeProps(this.props, needsInitialize)
-  }
-
-  getInterface () {
-    return NullInterface
-  }
-
-  setScene (scene) {
+  _setScene (scene) {
     this.scene = scene
   }
 
+  /**
+   * Stringify the props contents of this element
+   */
   stringify () {
     this.props.stringify()
   }
