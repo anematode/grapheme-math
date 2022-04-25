@@ -7,6 +7,10 @@ function _clampRGB (x: number): number {
   return (((x < 0) ? 0 : ((x > 255) ? 255 : x)) + 0.5) | 0
 }
 
+function throwBadColor (s: string): never {
+  throw new Error('Unrecognized colour ' + s)
+}
+
 export class Color {
   // Range: 0–255, inclusive
   r: number;
@@ -21,61 +25,97 @@ export class Color {
     this.a = a
   }
 
+  /**
+   * Convert RGB to color, clamping the values to the appropriate range. Each component should be in the range [0,255].
+   * @param r Red component
+   * @param g Green component
+   * @param b Blue component
+   */
   static rgb (r: number, g: number, b: number) {
     return new Color(_clampRGB(r), _clampRGB(g), _clampRGB(b), 255)
   }
 
+  /**
+   * Convert RGBA to color, clamping the values to the appropriate range. Each component should be in the range [0,255].
+   * @param r Red component
+   * @param g Green component
+   * @param b Blue component
+   * @param a Opacity component
+   */
   static rgba (r: number, g: number, b: number, a = 255) {
     return new Color(_clampRGB(r), _clampRGB(g), _clampRGB(b), _clampRGB(a))
   }
 
+  /**
+   * Convert HSL to Color. The hue should be in radians, the saturation in [0,1], and the luminance in [0,1].
+   * @param h Hue
+   * @param s Saturation
+   * @param l Luminance
+   */
   static hsl (h: number, s: number, l: number) {
-    let [ r, g, b ] = hslToRgb(h, s, l)
+    let [ r, g, b ] = hslToRgb(h * (1 / (2 * Math.PI)), s * (1 / 100), l * (1 / 100))
 
-    return new Color(r, g, b, 255)
+    return Color.rgb(r, g, b)
   }
 
-  static hsla (h: number, s: number, l: number, a: number) {
+  /**
+   * Convert HSLA to Color. The hue should be in radians, the saturation in [0,1], the luminance in [0,1], and the
+   * opacity in [0,255].
+   * @param h Hue
+   * @param s Saturation
+   * @param l Luminance
+   * @param a Opacity
+   */
+  static hsla (h: number, s: number, l: number, a: number): Color {
     let color = Color.hsl(h, s, l)
-    color.a = 255 * a
+    color.a = _clampRGB(a)
 
     return color
   }
 
+  /**
+   * Convert from hex string ("#231", "#00ff22" or "#00ff22aa") to Color.
+   * @param s Hex string
+   */
   static fromHex (s: string) {
-    let c = hexToRgb(s)
-    return new Color(c.r, c.g, c.b, c.a)
+    return hexToRgb(s)
   }
 
-  static fromCss (cssColorString: string): Color {
-    function throwBadColor (): never {
-      throw new Error('Unrecognized colour ' + cssColorString)
+  /**
+   * Convert from a (subset) of CSS color strings to a Color. Supported formats are hsla(degrees, percent, percent,
+   * [0,1]), hsl(...), rgb(...), rgba(...), named colors like "blue", and hex strings. An error is thrown on an unknown
+   * color.
+   * @param s CSS string
+   */
+  static fromCss (s: string): Color {
+    s = s.toLowerCase().replace(/\s+/g, '')
+    if (s.startsWith('#')) {
+      return Color.fromHex(s)
     }
 
-    cssColorString = cssColorString.toLowerCase().replace(/\s+/g, '')
-    if (cssColorString.startsWith('#')) {
-      return Color.fromHex(cssColorString)
-    }
-
-    let argsMatch = /\((.+)\)/g.exec(cssColorString)
+    let argsMatch = /\((.+)\)/g.exec(s)
 
     if (!argsMatch) {
-      let color = Colors[cssColorString.toUpperCase()]
+      let color = Colors[s.toUpperCase()]
 
-      return color ? color : throwBadColor()
+      return color ? color : throwBadColor(s)
     }
 
     let args = argsMatch[1].split(',').map(Number.parseFloat)
 
-    if (cssColorString.startsWith('rgb')) {
-      return Color.rgba(args[0], args[1], args[2], cssColorString.startsWith('rgba') ? (_clampRGB(args[3] * 255)) : 255)
-    } else if (cssColorString.startsWith('hsl')) {
-      let [ r, g, b ] = hslToRgb(args[0], args[1], args[2])
+    if (s.startsWith('rgb')) {
+      return Color.rgba(args[0], args[1], args[2], s.startsWith('rgba') ? (_clampRGB(args[3] * 255)) : 255)
+    } else if (s.startsWith('hsl')) {
+      // args[1] and args[2] are percentages and so must be scaled. args[0], the luminance, is in [0, 255]
+      args[0] *= Math.PI / 180
+      if (s[3] === 'a') {
+        return Color.hsla(args[0], args[1], args[2], args[3] * 255)
+      }
 
-      return Color.rgba(r, g, b, cssColorString.startsWith('hsla') ? (_clampRGB(args[3] * 255)) : 255)
-    } else {
-      throwBadColor()
+      return Color.hsl(args[0], args[1], args[2])
     }
+
+    throwBadColor(s)
   }
 
   static compose(...args: ColorSpecification[]): Color {
@@ -121,15 +161,9 @@ export class Color {
     }
   }
 
-  toJSON () {
-    return {
-      r: this.r,
-      g: this.g,
-      b: this.b,
-      a: this.a
-    }
-  }
-
+  /**
+   * Convert color to a CSS-style hex string
+   */
   hex (): string {
     const rnd = this.rounded()
     return `#${[rnd.r, rnd.g, rnd.b, rnd.a]
@@ -153,37 +187,34 @@ export class Color {
   }
 }
 
-function hexToRgb (hex: string) {
+function hexToRgb (hex: string): Color {
   hex = hex.replace(/#/g, '').trim()
   let r = 0, g = 0, b = 0, a = 255
 
-  if (hex.length === 3) {
+  if (hex.length === 3 || hex.length === 4) {
     r = Number.parseInt(hex[0], 16)
     g = Number.parseInt(hex[1], 16)
     b = Number.parseInt(hex[2], 16)
-  } else if (hex.length === 4) {
-    r = Number.parseInt(hex[0], 16)
-    g = Number.parseInt(hex[1], 16)
-    b = Number.parseInt(hex[2], 16)
-    a = Number.parseInt(hex[3], 16)
-  } else if (hex.length === 6) {
+    if (hex.length === 4) {
+      a = Number.parseInt(hex[3], 16)
+    }
+  } else if (hex.length === 6 || hex.length === 8) {
     r = Number.parseInt(hex.slice(0, 2), 16)
     g = Number.parseInt(hex.slice(2, 4), 16)
     b = Number.parseInt(hex.slice(4, 6), 16)
-  } else if (hex.length === 8) {
-    r = Number.parseInt(hex.slice(0, 2), 16)
-    g = Number.parseInt(hex.slice(2, 4), 16)
-    b = Number.parseInt(hex.slice(4, 6), 16)
-    a = Number.parseInt(hex.slice(6, 8), 16)
+
+    if (hex.length === 8) {
+      a = Number.parseInt(hex.slice(6, 8), 16)
+    }
   } else {
-    throw new Error('Unrecognized color ' + hex)
+    throwBadColor(hex)
   }
 
-  return { r, g, b, a }
+  return Color.rgba(r, g, b, a)
 }
 
 // Credit to https://stackoverflow.com/a/9493060/13458117
-function hue2Rgb (p, q, t) {
+function hue2Rgb (p: number, q: number, t: number): number {
   if (t < 0) t += 1
   if (t > 1) t -= 1
   if (t < 1 / 6) return p + (q - p) * 6 * t
@@ -192,7 +223,8 @@ function hue2Rgb (p, q, t) {
   return p
 }
 
-function hslToRgb (h, s, l) {
+function hslToRgb (h: number, s: number, l: number): [ number, number, number ] {
+  // h, s, l in [0,1]
   let r, g, b
 
   if (s === 0) {
