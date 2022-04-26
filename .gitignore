@@ -7,3 +7,4 @@ build/*
 # Allow
 !/build/main.js
 !/build/main.js.map
+*.wasm
