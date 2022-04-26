@@ -1,5 +1,6 @@
 import { isTypedArray, mod, TypedArray } from '../utils.js'
 import { BoundingBox } from '../other/bounding_box.js'
+import { roundUp } from "../fp/manip";
 
 /**
  * Test whether three points are in counterclockwise order
@@ -93,7 +94,7 @@ export function pointInTriangle (px: number, py: number, ax: number, ay: number,
   return u >= 0 && v >= 0 && u + v < 1
 }
 
-function lineSegmentIntersectsBox (
+export function lineSegmentIntersectsBox (
   x1: number,
   y1: number,
   x2: number,
@@ -523,4 +524,45 @@ function distanceSquared (x1: number, y1: number, x2: number, y2: number): numbe
  */
 export function fastHypot (x: number, y: number): number {
   return Math.sqrt(x * x + y * y)
+}
+
+/**
+ * Compute the bounding box of a flat 2D array. Could probably be sped up considerably but... whatever. Returns null
+ * when there are no valid points in the array. Ignores NaNs.
+ * @param v
+ */
+export function computeBoundingBox (v: Float32Array): BoundingBox | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
+  let len = v.length
+  let i = 0
+  for (; i < len; i += 4) {
+    // Unrolling the loop like this slightly improves efficiency
+    let x1 = v[i]
+    let y1 = v[i + 1]
+    let x2 = v[i + 2]
+    let y2 = v[i + 3]
+
+    minX = minX > x1 ? x1 : minX
+    minY = minY > y1 ? y1 : minY
+    maxX = maxX < x1 ? x1 : maxX
+    maxY = maxY < y1 ? y1 : maxY
+
+    minX = minX > x2 ? x2 : minX
+    minY = minY > y2 ? y2 : minY
+    maxX = maxX < x2 ? x2 : maxX
+    maxY = maxY < y2 ? y2 : maxY
+  }
+
+  if (i < len - 2) {
+    // Last two entries
+    let x2 = v[i], y2 = v[i + 1]
+    minX = minX > x2 ? x2 : minX
+    minY = minY > y2 ? y2 : minY
+    maxX = maxX < x2 ? x2 : maxX
+    maxY = maxY < y2 ? y2 : maxY
+  }
+
+  return (minX !== minX || minY !== minY) ? null :
+    new BoundingBox(minX, minY, roundUp(maxX) - minX, roundUp(maxY) - minY) // round up ensures the resultant bbox will contain it
 }

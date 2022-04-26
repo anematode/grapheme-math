@@ -203,7 +203,7 @@ export class Props {
       // if no such inheritable property, delete the local property (do not keep it as inheritable)
       if (
         !otherPropsStore ||
-        otherPropsStore.inherit < 1 ||
+        +otherPropsStore.inherit! < 1 ||
         otherPropsStore.value === undefined
       ) {
         propStore.value = undefined

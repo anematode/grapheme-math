@@ -13,19 +13,19 @@ const MAGIC_ROUND_C = 1.1113332476497816e-16 // just above machine epsilon / 2
  * Returns the next floating point number after x. For example, roundUp(0) returns Number.MIN_VALUE.
  * inf -> inf, -inf -> -min negative value, nan -> nan, -0, 0 -> min positive denormal, max negative denormal -> 0. This
  * function is pretty darn fast and if it's inlined, is probably 2-4 ns / call.
- * @param x Any floating-point number
+ * @param f Any floating-point number
  * @returns The next representable floating-point number, handling special cases
  */
-export function roundUp (x: number): number {
-  if (x >= -POSITIVE_NORMAL_MIN && x < POSITIVE_NORMAL_MIN) {
+export function roundUp (f: number): number {
+  if (f >= -POSITIVE_NORMAL_MIN && f < POSITIVE_NORMAL_MIN) {
     // denormal numbers
-    return x + POSITIVE_DENORMAL_MIN
-  } else if (x === -Infinity) {
+    return f + POSITIVE_DENORMAL_MIN
+  } else if (f === -Infinity) {
     // special case
     return -MAX_VALUE
   }
 
-  return x + Math.abs(x) * MAGIC_ROUND_C
+  return f + Math.abs(f) * MAGIC_ROUND_C
 }
 
 /**

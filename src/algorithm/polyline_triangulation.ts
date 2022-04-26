@@ -40,6 +40,10 @@ function fastAtan2 (y: number, x: number): number {
 
 // Float32Array is fine for compactness
 type PolylineVertexList = number[] | Float64Array | Float32Array
+export type PolylineTriangulationResult = {
+  vertices: null | Float32Array
+  vertexCount: number
+}
 
 /**
  * Convert an array of polyline vertices into a Float32Array of vertices to be rendered using WebGL.
@@ -47,7 +51,7 @@ type PolylineVertexList = number[] | Float64Array | Float32Array
  * @param pen {Object} A JSON representation of the pen. Could also be the pen object itself.
  * @param box {BoundingBox} The bounding box of the plot, used to optimize line dashes
  */
-export function calculatePolylineVertices (vertices: PolylineVertexList, pen: Pen, box: BoundingBox | null = null) {
+export function calculatePolylineVertices (vertices: PolylineVertexList, pen: Pen, box: BoundingBox | null = null): PolylineTriangulationResult {
   if (pen.dashPattern.length === 0) {
     return convertTriangleStrip(vertices, pen)
   } else {
@@ -55,14 +59,14 @@ export function calculatePolylineVertices (vertices: PolylineVertexList, pen: Pe
   }
 }
 
-export function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen) {
+function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): PolylineTriangulationResult {
   if (
     pen.thickness <= 0 ||
     pen.endcapRes < MIN_RES_ANGLE ||
     pen.joinRes < MIN_RES_ANGLE ||
     vertices.length <= 3
   ) {
-    return { glVertices: null, vertexCount: 0 }
+    return { vertices: null, vertexCount: 0 }
   }
 
   let index = -1
@@ -359,6 +363,5 @@ export function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen) {
     glVertices[++index] = y2 + th * v2x
   }
 
-  let ret = new Float32Array((index >= 0) ? glVertices.subarray(0, index) : [])
-  return ret
+  return { vertices: (index >= 0) ? glVertices : null, vertexCount: index / 2 }
 }

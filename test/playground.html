@@ -13,11 +13,21 @@
 </div>
 
 <script>
+    let data = new Float32Array(1e6)
+    for (let i = 0; i < data.length; ++i) data[i] = Math.random()
+
+    // benchmark(() => Grapheme.computeBoundingBox(data), { iterations: 100 })
+
     function play() {
       renderer = new Grapheme.WebGLRenderer()
       scene = new Grapheme.InteractiveScene()
 
       document.getElementById('container').appendChild(scene.domElement)
+
+      let polyline = new Grapheme.PolylineElement()
+      scene.add(polyline)
+
+
     }
 </script>
 

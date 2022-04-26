@@ -1,7 +1,7 @@
 import { leftZeroPad, staticImplements } from "../utils.js";
 import { CompositionType } from "./composition_type";
 
-export type ColorSpecification = Color | string | { r: number, g: number, b: number, a?: number }
+export type ColorLike = Color | string | { r: number, g: number, b: number, a?: number }
 
 function _clampRGB (x: number): number {
   return (((x < 0) ? 0 : ((x > 255) ? 255 : x)) + 0.5) | 0
@@ -118,7 +118,7 @@ export class Color {
     throwBadColor(s)
   }
 
-  static compose(...args: ColorSpecification[]): Color {
+  static compose(...args: ColorLike[]): Color {
     if (args.length === 0) {
       return Color.default()
     }
@@ -127,7 +127,7 @@ export class Color {
     return Color.fromObj(args[args.length - 1])
   }
 
-  static create(spec: ColorSpecification): Color {
+  static create(spec: ColorLike): Color {
     return Color.fromObj(spec)
   }
 
@@ -665,4 +665,4 @@ export const Colors = Object.freeze({
   }
 } as const)
 
-staticImplements<CompositionType<Color, ColorSpecification>>(Color)
+staticImplements<CompositionType<Color, ColorLike>>(Color)

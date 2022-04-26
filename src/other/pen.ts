@@ -1,4 +1,4 @@
-import { Color, ColorSpecification } from "./color.js";
+import { Color, ColorLike } from "./color.js";
 import { CompositionType } from "./composition_type.js";
 import { staticImplements } from "../utils.js";
 
@@ -8,7 +8,7 @@ import { staticImplements } from "../utils.js";
 export type PenLike = ({
   [key in keyof Pen]?: Pen[key]
 } & {
-  color: ColorSpecification
+  color: ColorLike
 }) | Pen
 
 /**
