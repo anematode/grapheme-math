@@ -92,12 +92,16 @@ export class InteractiveScene extends Scene {
     })
   }
 
-  toggleInteractivity () {
-    let internal = this.internal
-    let interactivity = this.props.get('interactivity')
+  setInteractivity (enable: boolean) {
+    this.props.set("interactivity", enable, 0, 1)
+    this._updateInteractivity()
+  }
 
-    if (!!internal.interactivityListeners !== interactivity) {
-      interactivity
+  _updateInteractivity () {
+    let enable = this.props.get("interactivity")
+    let internal = this.internal
+    if (!!internal.interactivityListeners !== enable) {
+      enable
         ? this._enableInteractivityListeners()
         : this._disableInteractivityListeners()
     }
@@ -106,19 +110,21 @@ export class InteractiveScene extends Scene {
   _update () {
     super._update()
 
-    this.toggleInteractivity()
+    this._updateInteractivity()
     this.resizeCanvas()
   }
 
   resizeCanvas () {
-    let sceneDims = this._getDims()
-    let c = this.domCanvas
+    if (this.props.hasChanged("sceneDims")) {
+      let sceneDims = this._getDims()
+      let c = this.domCanvas
 
-    c.width = sceneDims.canvasWidth
-    c.height = sceneDims.canvasHeight
+      c.width = sceneDims.canvasWidth
+      c.height = sceneDims.canvasHeight
 
-    c.style.width = sceneDims.width + 'px'
-    c.style.height = sceneDims.height + 'px'
+      c.style.width = sceneDims.width + 'px'
+      c.style.height = sceneDims.height + 'px'
+    }
   }
 
   addHTMLElement (element) {
