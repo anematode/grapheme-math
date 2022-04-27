@@ -2,7 +2,7 @@ import { mod } from '../utils.js'
 import { getDashedPolyline} from './dashed_polyline.js'
 import { fastHypot } from './miscellaneous_geometry.js'
 import { Pen } from "../other/pen.js";
-import { BoundingBox } from "../other/bounding_box";
+import { BoundingBox } from "../other/bounding_box.js";
 
 const MIN_RES_ANGLE = 0.05 // minimum angle in radians between roundings in a polyline
 const B = 4 / Math.PI
