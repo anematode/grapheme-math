@@ -1,9 +1,9 @@
 import { Element, ElementInternalStore } from "../core/element.js";
 import { Pen, PenLike } from "../other/pen.js";
-import { Color, ColorLike } from "../other/color";
-import { vec2ArrayConversion, Vec2ArrayLike } from "../vec/vec2";
-import { BoundingBox } from "../other/bounding_box";
-import { calculatePolylineVertices, PolylineTriangulationResult } from "../algorithm/polyline_triangulation";
+import { Color, ColorLike } from "../other/color.js";
+import { vec2ArrayConversion, Vec2ArrayLike } from "../vec/vec2.js";
+import { BoundingBox } from "../other/bounding_box.js";
+import { calculatePolylineVertices, PolylineTriangulationResult } from "../algorithm/polyline_triangulation.js";
 
 type PolylineElementInternal = ElementInternalStore & {
   // Triangle strip

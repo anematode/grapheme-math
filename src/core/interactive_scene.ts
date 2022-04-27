@@ -1,11 +1,11 @@
 /**
  * A scene endowed with an actual DOM element.
  */
-import { Scene } from "./scene";
-import { ElementInternalStore } from "./element";
-import { Vec2 } from "../vec/vec2";
-import { calculateRectShift } from "../other/text_utils";
-import { BoundingBox } from "../other/bounding_box";
+import { Scene } from "./scene.js";
+import { ElementInternalStore } from "./element.js";
+import { Vec2 } from "../vec/vec2.js";
+import { calculateRectShift } from "../other/text_utils.js";
+import { BoundingBox } from "../other/bounding_box.js";
 
 type InteractiveSceneInternal = ElementInternalStore & {
   interactivityListeners: null | {

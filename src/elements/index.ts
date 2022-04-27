@@ -1,2 +1,2 @@
-import { PolylineElement } from "./polyline_element";
+import { PolylineElement } from "./polyline_element.js";
 export { PolylineElement }

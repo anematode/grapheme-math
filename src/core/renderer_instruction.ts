@@ -1,8 +1,8 @@
 import { Pen } from "../other/pen.js";
 import { Vec2Like } from "../vec/vec2.js";
 import { BoundingBoxLike } from "../other/bounding_box.js";
-import { SceneDimensions } from "./scene";
-import { Color } from "../other/color";
+import { SceneDimensions } from "./scene.js";
+import { Color } from "../other/color.js";
 
 type BaseContextInstruction = {
 

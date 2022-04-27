@@ -1,5 +1,5 @@
 import { leftZeroPad, staticImplements } from "../utils.js";
-import { CompositionType } from "./composition_type";
+import { CompositionType } from "./composition_type.js";
 
 export type ColorLike = Color | string | { r: number, g: number, b: number, a?: number }
 

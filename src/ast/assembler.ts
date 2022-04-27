@@ -359,7 +359,7 @@ class TypecheckFragment implements CodeFragment {
     }
 
     let typecheckFast = env.importFunction(tc)
-    let typecheckVerbose = tcv ? env.importFunction(tcv) : '' // if no verbose typecheck available, don't include it
+    let typecheckVerbose = tcv ? env.importFunction(tcv) : "" // if no verbose typecheck available, don't include it
 
     let name = this.name
 

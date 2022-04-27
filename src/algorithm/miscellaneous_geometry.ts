@@ -550,7 +550,7 @@ export function _boundingBoxFlatF32 (v: Float32Array): BoundingBox | null {
     maxY = maxY < y2 ? y2 : maxY
   }
 
-  if (i < len - 2) {
+  if (i <= len - 2) {
     // Last two entries
     let x2 = v[i], y2 = v[i + 1]
     minX = minX > x2 ? x2 : minX
@@ -559,7 +559,7 @@ export function _boundingBoxFlatF32 (v: Float32Array): BoundingBox | null {
     maxY = maxY < y2 ? y2 : maxY
   }
 
-  return (minX !== minX || minY !== minY) ? null :
+  return (minX === Infinity || minY === Infinity) ? null :
     new BoundingBox(minX, minY, roundUp(maxX) - minX, roundUp(maxY) - minY) // round up ensures the resultant bbox will contain it
 }
 
