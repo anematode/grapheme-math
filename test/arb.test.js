@@ -1,5 +1,5 @@
 import {BigFloat, prettyPrintMantissa, validateMantissa} from "../build/arb/bigfloat.js"
-import {ROUNDING_MODE, roundingModeToString} from "../build/rounding_modes.js"
+import {ROUNDING_MODE, roundingModeToString} from "../build/other/rounding_modes.js"
 import {
   cartesianProduct,
   difficultMantissas,

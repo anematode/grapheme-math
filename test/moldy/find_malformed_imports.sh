@@ -1,1 +1,1 @@
- grep -e "import.*[^s]\"$" src -r
+grep -e "import.*[\'\"];\?$" src -r | (grep --line-buffered -v "js") | cat

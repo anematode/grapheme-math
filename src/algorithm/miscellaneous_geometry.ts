@@ -1,6 +1,7 @@
 import { isTypedArray, mod, TypedArray } from '../utils.js'
 import { BoundingBox } from '../other/bounding_box.js'
-import { roundUp } from "../fp/manip";
+import { roundUp } from "../fp/manip.js"
+import { WASM } from "./wasm/wasm_wrapper.js";
 
 /**
  * Test whether three points are in counterclockwise order
@@ -526,12 +527,7 @@ export function fastHypot (x: number, y: number): number {
   return Math.sqrt(x * x + y * y)
 }
 
-/**
- * Compute the bounding box of a flat 2D array. Could probably be sped up considerably but... whatever. Returns null
- * when there are no valid points in the array. Ignores NaNs.
- * @param v
- */
-export function computeBoundingBox (v: Float32Array): BoundingBox | null {
+export function _boundingBoxFlatF32 (v: Float32Array): BoundingBox | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
 
   let len = v.length
@@ -566,3 +562,8 @@ export function computeBoundingBox (v: Float32Array): BoundingBox | null {
   return (minX !== minX || minY !== minY) ? null :
     new BoundingBox(minX, minY, roundUp(maxX) - minX, roundUp(maxY) - minY) // round up ensures the resultant bbox will contain it
 }
+
+/**
+ * Compute the bounding box of a flat 2D array. Returns null if the input contains no valid points.
+ */
+export const computeBoundingBox = WASM.boundingBoxFlatF32 ?? _boundingBoxFlatF32
