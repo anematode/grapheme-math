@@ -27,7 +27,15 @@
       let polyline = new Grapheme.PolylineElement()
       scene.add(polyline)
 
+      test()
+    }
 
+
+    function test () {
+      WASM = Grapheme.WASM
+      let res = WASM.exports.bounding_box_flat_f32(0, 180)
+      console.log(chicken)
+      console.log("result", res)
     }
 </script>
 

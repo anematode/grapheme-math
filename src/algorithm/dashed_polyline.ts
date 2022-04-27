@@ -1,9 +1,6 @@
 // This code is pretty old, but surprisingly effective!
 import { fastHypot, lineSegmentIntersectsBox } from './miscellaneous_geometry.js'
 import { BoundingBox } from '../other/bounding_box.js'
-import { add } from "./wasm/wasm_instantiate.js";
-
-console.log(add)
 
 /**
  * The maximum number of vertices to be emitted by getDashedPolyline. This condition is here just to prevent dashed
