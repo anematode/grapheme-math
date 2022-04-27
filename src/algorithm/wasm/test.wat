@@ -1,6 +1,9 @@
 (module
-  (import "console" "log" (func $log (param i32)))
-  (memory 10000)
+  (import "console" "log" (func $logi32 (param i32)))
+  (import "console" "log" (func $logf32 (param f32)))
+  (import "console" "log" (func $logf64 (param f64)))
+
+  (memory $0 10000)
 
   ;; 0, 1, 2, 3 are the ultimate locations of minX, minY, maxX, maxY
   ;; data is read from the given start address, with a given length
@@ -10,6 +13,10 @@
     (local $minimum_known v128)
     (local $maximum_known v128)
     (local $cmp v128)
+    (local.set $minimum_known
+        (v128.const f32x4 +inf +inf +inf +inf))
+    (local.set $maximum_known
+        (v128.const f32x4 -inf -inf -inf -inf))
     (local.set $end_address
         (i32.add (local.get $start_address) (local.get $data_length)))
 
@@ -20,6 +27,8 @@
 
             v128.load                ;; get 4 items at a time
             local.set $cmp
+
+            local.get $start_address
 
             local.get $minimum_known
             local.get $cmp
@@ -45,7 +54,14 @@
      )
 
      i32.const 0
-     
+     local.get $minimum_known
+     v128.store
+     i32.const 16
+     local.get $maximum_known
+     v128.store
+
+     i32.const 0
    )
   (export "bounding_box_flat_f32" (func $bounding_box_flat_f32))
+  (export "memory" (memory $0))
 )

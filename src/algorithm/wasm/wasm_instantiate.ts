@@ -2,7 +2,7 @@ import { BoundingBox } from "../../other/bounding_box";
 import { roundUp } from "../../fp/manip";
 
 // base-64 encoded
-const WASM_CONTENTS = "AGFzbQEAAAABCwJgAX8AYAJ/fwF/Ag8BB2NvbnNvbGUDbG9nAAADAgEBBQMBAGQHGQEVYm91bmRpbmdfYm94X2ZsYXRfZjMyAAEKSQFHAgF/A3sgACABaiECAkADQCAAIAAQAP0ABAAhBSADIAX96gEhAyAEIAX96wEhBCAAQSBqIQAgACACTgRADAIFDAELCwtBAAs="
+const WASM_CONTENTS = "AGFzbQEAAAABEwRgAX8AYAF9AGABfABgAn9/AX8CKwMHY29uc29sZQNsb2cAAAdjb25zb2xlA2xvZwABB2NvbnNvbGUDbG9nAAIDAgEDBQQBAJBOByICFWJvdW5kaW5nX2JveF9mbGF0X2YzMgADBm1lbW9yeQIACowBAYkBAgF/A3v9DAAAgH8AAIB/AACAfwAAgH8hA/0MAACA/wAAgP8AAID/AACA/yEEIAAgAWohAkEAKgIAEAECQANAIAD9AAQAIQUgACoCABABIAMgBf3qASEDIAQgBf3rASEEIABBIGohACAAIAJOBEAMAgUMAQsLC0EAIAP9CwQAQRAgBP0LBABBAAs="
 
 function toBuffer (bin: string) {
   let buffer = new Uint8Array(bin.length)
@@ -47,18 +47,31 @@ function wasmInstanceMinimumMemory(bytes: number) {
 
 const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32 as Function;
 
+window.c = instance.exports
+
 function boundingBoxFlatF32 (arr: Float32Array): BoundingBox {
-  // Copy into buffer
-  wasmInstanceMinimumMemory(arr.length << 2)
+  wasmInstanceMinimumMemory(128 + arr.length << 2)
 
-  F32.set(arr)
+  // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
+  F32.set(arr, 8)
+  F32.fill(100)
+  bounding_box_flat_f32(32, arr.length)
 
-  bounding_box_flat_f32(128, arr.length)
+  window.F32 = F32
 
-  let xmin = F32[0]
-  let ymin = F32[1]
-  let xmax = F32[2]
-  let ymax = F32[3]
+  let xmin1 = F32[0]
+  let ymin1 = F32[1]
+  let xmin2 = F32[2]
+  let ymin2 = F32[3]
+  let xmax1 = F32[4]
+  let ymax1 = F32[5]
+  let xmax2 = F32[6]
+  let ymax2 = F32[7]
+
+  let xmin = xmin1 < xmin2 ? xmin1 : xmin2
+  let ymin = ymin1 < ymin2 ? ymin1 : ymin2
+  let xmax = xmax1 > xmax2 ? xmax1 : xmax2
+  let ymax = ymax1 > ymax2 ? ymax1 : ymax2
 
   return new BoundingBox(xmin, ymin, roundUp(xmax - xmin), roundUp(ymax - ymin))
 }

@@ -47,18 +47,31 @@ function wasmInstanceMinimumMemory(bytes: number) {
 
 const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32 as Function;
 
+window.c = instance.exports
+
 function boundingBoxFlatF32 (arr: Float32Array): BoundingBox {
-  // Copy into buffer
-  wasmInstanceMinimumMemory(arr.length << 2)
+  wasmInstanceMinimumMemory(128 + arr.length << 2)
 
-  // Load at byte 128 and call
-  F32.set(arr, 4)
-  bounding_box_flat_f32(128, arr.length)
+  // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
+  F32.set(arr, 8)
+  F32.fill(100)
+  bounding_box_flat_f32(32, arr.length)
 
-  let xmin = F32[0]
-  let ymin = F32[1]
-  let xmax = F32[2]
-  let ymax = F32[3]
+  window.F32 = F32
+
+  let xmin1 = F32[0]
+  let ymin1 = F32[1]
+  let xmin2 = F32[2]
+  let ymin2 = F32[3]
+  let xmax1 = F32[4]
+  let ymax1 = F32[5]
+  let xmax2 = F32[6]
+  let ymax2 = F32[7]
+
+  let xmin = xmin1 < xmin2 ? xmin1 : xmin2
+  let ymin = ymin1 < ymin2 ? ymin1 : ymin2
+  let xmax = xmax1 > xmax2 ? xmax1 : xmax2
+  let ymax = ymax1 > ymax2 ? ymax1 : ymax2
 
   return new BoundingBox(xmin, ymin, roundUp(xmax - xmin), roundUp(ymax - ymin))
 }
