@@ -2,7 +2,7 @@ import { BoundingBox } from "../../other/bounding_box";
 import { roundUp } from "../../fp/manip";
 
 // base-64 encoded
-const WASM_CONTENTS = "AGFzbQEAAAABEgRgAX8AYAF9AGABfABgAn9/AAIrAwdjb25zb2xlA2xvZwAAB2NvbnNvbGUDbG9nAAEHY29uc29sZQNsb2cAAgMCAQMFBAEAkE4HIgIVYm91bmRpbmdfYm94X2ZsYXRfZjMyAAMGbWVtb3J5AgAKkwEBkAECAX8De/0MAACAfwAAgH8AAIB/AACAfyED/QwAAID/AACA/wAAgP8AAID/IQQgACABaiECAkADQCAA/QAEACIFIAP96gEhAyAFIAT96wEhBCAAQRBq/QAEACIFIAP96gEhAyAFIAT96wEhBCAAQSBqIgAgAk4EQAwCBQwBCwsLQQAgA/0LBABBECAE/QsEAAs="
+const WASM_CONTENTS = "AGFzbQEAAAABEgRgAX8AYAF9AGABfABgAn9/AAIrAwdjb25zb2xlA2xvZwAAB2NvbnNvbGUDbG9nAAEHY29uc29sZQNsb2cAAgMCAQMFBAEAkE4HIgIVYm91bmRpbmdfYm94X2ZsYXRfZjMyAAMGbWVtb3J5AgAKkwEBkAECAX8De/0MAACAfwAAgH8AAIB/AACAfyED/QwAAID/AACA/wAAgP8AAID/IQQgACABaiECAkADQCADIAD9AAQAIgX96gEhAyAEIAX96wEhBCADIABBEGr9AAQAIgX96gEhAyAEIAX96wEhBCAAQSBqIgAgAk4EQAwCBQwBCwsLQQAgA/0LBABBECAE/QsEAAs="
 
 function toBuffer (bin: string) {
   let buffer = new Uint8Array(bin.length)
@@ -37,10 +37,14 @@ const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32 as Function
 
 
 function boundingBoxFlatF32 (arr: Float32Array): BoundingBox | null {
-  // wasmInstanceMinimumMemory(128 + arr.length << 2)
-
   // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
   HEAP_F32.set(arr, 8)
+
+  // Fill extra space with NaNs because the internal implementation doesn't take care of the edges
+  let len = arr.length | 0, endFill = (15 + len) & (~0b11)
+  for (let i = 8 + len; i < endFill; ++i) {
+    HEAP_F32[i] = NaN
+  }
 
   bounding_box_flat_f32(32, arr.length << 2)
 
@@ -66,7 +70,7 @@ function boundingBoxFlatF32 (arr: Float32Array): BoundingBox | null {
 }
 
 const WASM = {
-  HEAP_F32: HEAP_F32,
+  HEAP_F32,
   HEAP_F64,
   HEAP_I32,
   HEAP_U32,

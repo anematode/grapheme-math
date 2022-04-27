@@ -23,20 +23,25 @@
     ;; Unrolled, 4 vec2 entries / iter
     (block $loop
         (loop $main
+            ;; First 2 entries
+            local.get $minimum_known
             local.get $start_address
 
             v128.load
             local.tee $cmp
 
-            local.get $minimum_known
             f32x4.pmin
             local.set $minimum_known
 
-            local.get $cmp
             local.get $maximum_known
+            local.get $cmp
             f32x4.pmax
             local.set $maximum_known
 
+            ;; Second 2 entries
+            local.get $minimum_known
+
+            ;; Incr
             local.get $start_address
             i32.const 16
             i32.add
@@ -44,12 +49,11 @@
             v128.load
             local.tee $cmp
 
-            local.get $minimum_known
             f32x4.pmin
             local.set $minimum_known
 
-            local.get $cmp
             local.get $maximum_known
+            local.get $cmp
             f32x4.pmax
             local.set $maximum_known
 

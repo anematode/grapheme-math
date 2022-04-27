@@ -37,13 +37,11 @@ const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32 as Function
 
 
 function boundingBoxFlatF32 (arr: Float32Array): BoundingBox | null {
-  // wasmInstanceMinimumMemory(128 + arr.length << 2)
-
   // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
   HEAP_F32.set(arr, 8)
 
   // Fill extra space with NaNs because the internal implementation doesn't take care of the edges
-  let len = arr.length | 0, endFill = (7 + len) & (~0b11)
+  let len = arr.length | 0, endFill = (15 + len) & (~0b11)
   for (let i = 8 + len; i < endFill; ++i) {
     HEAP_F32[i] = NaN
   }
