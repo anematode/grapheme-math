@@ -192,6 +192,8 @@ function showTime(ms) {
   }
 }
 
+let benchName = 0
+
 /**
  *
  * @param f {Function}
@@ -203,7 +205,8 @@ export function benchmark(f, {
   warmupIterations = 100,
   inputs=[], // default is a single empty input; each input is an array
   exchangeLoops = false, // if true, run individual inputs multiple times in sequence; if false, run all inputs in sequence multiple times
-  deoptimize = true // TODO
+  deoptimize = true, // TODO
+  name = ++benchName
 } = {}) {
   if (typeof f !== "function") throw new TypeError("f must be a function")
 
@@ -267,6 +270,8 @@ export function benchmark(f, {
   } else {// TODO make others
     res = _benchmarkGeneric(f, iterations, inputs, exchangeLoops)
   }
+
+  res.name = name ?? f.name
 
   return {
     ...res,

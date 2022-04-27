@@ -83,6 +83,7 @@ const WASM = (function () {
       boundingBoxFlatF32
     }
   } catch (e) {
+    console.log(e)
     console.warn("WebAssembly not supported; default JS implementations will be used")
 
     return {}

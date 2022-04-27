@@ -1,43 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Playground</title>
-</head>
-<body>
+    <head>
+        <meta charset="UTF-8">
+        <title>Playground</title>
+    </head>
+    <body>
 
-<script type="module" src="perf/perf.js"></script>
+        <script type="module" src="perf/perf.js"></script>
 
-<div id="container" style="background: lightgray; display: inline-block">
+        <div id="container" style="background: lightgray; display: inline-block">
 
-</div>
+        </div>
 
-<script>
-    let data = new Float32Array(1e6)
-    for (let i = 0; i < data.length; ++i) data[i] = Math.random()
+        <script>
+            let data = new Float32Array(1e6)
+            for (let i = 0; i < data.length; ++i) data[i] = Math.random()
 
-    // benchmark(() => Grapheme.computeBoundingBox(data), { iterations: 100 })
+            function test() {
+                jsImpl = Grapheme._boundingBoxFlatF32
+                wasmImpl = Grapheme.computeBoundingBox
 
-    function play() {
-      renderer = new Grapheme.WebGLRenderer()
-      scene = new Grapheme.InteractiveScene()
+                console.log(
+                    benchmark(() => jsImpl(data), { iterations: 100, name: "js implementation" }).explain()
+                )
 
-      document.getElementById('container').appendChild(scene.domElement)
+                console.log(
+                    benchmark(() => wasmImpl(data), { iterations: 100, name: "wasm implementation" }).explain()
+                )
+            }
 
-      let polyline = new Grapheme.PolylineElement()
-      scene.add(polyline)
+            function play() {
+                renderer = new Grapheme.WebGLRenderer()
+                scene = new Grapheme.InteractiveScene()
 
-      test()
-    }
+                document.getElementById('container').appendChild(scene.domElement)
 
+                let polyline = new Grapheme.PolylineElement()
+                scene.add(polyline)
+            }
+        </script>
 
-    function test () {
-      WASM = Grapheme.WASM
-      let res = WASM.exports.bounding_box_flat_f32(0, 180)
-      console.log(chicken)
-      console.log("result", res)
-    }
-</script>
-
-</body>
+    </body>
 </html>

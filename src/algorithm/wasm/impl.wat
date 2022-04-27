@@ -5,7 +5,6 @@
 
   (memory $0 10000)
 
-  ;; 0, 1, 2, 3 are the ultimate locations of minX, minY, maxX, maxY
   ;; data is read from the given start address, with a given length
   (func $bounding_box_flat_f32 (param $start_address i32) (param $data_length i32)
 
