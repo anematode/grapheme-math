@@ -1,8 +1,8 @@
-wat2wasm test.wat
+wat2wasm impl.wat
 
 cp _wasm_wrapper.ts wasm_wrapper.ts
 
-b64encode=$(base64 test.wasm)
+b64encode=$(base64 impl.wasm)
 b64encode=$(echo ${b64encode//\//\\/})
 replace=$(echo "s/\$WASM_CONTENTS/$b64encode/g")
 

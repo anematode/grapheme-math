@@ -1,4 +1,4 @@
-import { Color } from "../build/algorithm/miscellaneous_geometry.js"
+import { WASM } from
 import {expect} from "chai"
 
 describe("computeBoundingBox", () => {
