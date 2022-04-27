@@ -15,9 +15,8 @@ function toBuffer (bin: string) {
   return buffer
 }
 
-window.chicken = ""
 function log(o) {
-  window.chicken += o + '\n'
+  console.log(o)
 }
 
 const module = new WebAssembly.Module(toBuffer(atob(WASM_CONTENTS)))
@@ -34,7 +33,6 @@ const HEAP_I32 = new Int32Array(memory.buffer)
 const HEAP_U32 = new Uint32Array(memory.buffer)
 
 const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32 as Function;
-
 
 function boundingBoxFlatF32 (arr: Float32Array): BoundingBox | null {
   // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima

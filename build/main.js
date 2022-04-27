@@ -16,19 +16,19 @@
      * Returns the next floating point number after x. For example, roundUp(0) returns Number.MIN_VALUE.
      * inf -> inf, -inf -> -min negative value, nan -> nan, -0, 0 -> min positive denormal, max negative denormal -> 0. This
      * function is pretty darn fast and if it's inlined, is probably 2-4 ns / call.
-     * @param x Any floating-point number
+     * @param f Any floating-point number
      * @returns The next representable floating-point number, handling special cases
      */
-    function roundUp(x) {
-        if (x >= -POSITIVE_NORMAL_MIN && x < POSITIVE_NORMAL_MIN) {
+    function roundUp(f) {
+        if (f >= -POSITIVE_NORMAL_MIN && f < POSITIVE_NORMAL_MIN) {
             // denormal numbers
-            return x + POSITIVE_DENORMAL_MIN;
+            return f + POSITIVE_DENORMAL_MIN;
         }
-        else if (x === -Infinity) {
+        else if (f === -Infinity) {
             // special case
             return -MAX_VALUE;
         }
-        return x + Math.abs(x) * MAGIC_ROUND_C;
+        return f + Math.abs(f) * MAGIC_ROUND_C;
     }
     /**
      * Returns the previous floating point number before x. Equivalent to -roundUp(-x)
@@ -340,6 +340,65 @@
         }
         return randFourLetter() + '-' + randFourLetter();
     }
+    /**
+     * Simple deep equals. Uses Object.is-type equality, though. Doesn't handle circularity or any of the fancy new containers
+     * @param x {*}
+     * @param y {*}
+     * @param lookForEqualsMethod {boolean} Whether to look for a method "equals()" on x to use instead of the standard method of comparison
+     * @returns {boolean}
+     */
+    function deepEquals(x, y, lookForEqualsMethod = false) {
+        if (typeof x !== 'object' || x === null)
+            return Object.is(x, y);
+        if (lookForEqualsMethod && x.equals)
+            return x.equals(y);
+        if (x.constructor !== y.constructor)
+            return false;
+        if (Array.isArray(x) && Array.isArray(y)) {
+            if (x.length !== y.length)
+                return false;
+            for (let i = x.length - 1; i >= 0; --i) {
+                if (!deepEquals(x[i], y[i], lookForEqualsMethod))
+                    return false;
+            }
+            return true;
+        }
+        // The only other thing of consequence to us. Could probably handle other weird objects too, but meh.
+        if (isTypedArray(x) && isTypedArray(y)) {
+            if (x.length !== y.length)
+                return false;
+            if (x instanceof Float32Array || x instanceof Float64Array) {
+                for (let i = x.length - 1; i >= 0; --i) {
+                    const xv = x[i];
+                    // What a beautiful way to test for same valueness between floats!
+                    if ((xv !== y[i] && !(xv !== xv && y[i] !== y[i])) ||
+                        (xv === 0 && 1 / xv !== 1 / y[i]))
+                        return false;
+                }
+            }
+            else {
+                for (let i = x.length - 1; i >= 0; --i) {
+                    if (x[i] !== y[i])
+                        return false;
+                }
+            }
+            return true;
+        }
+        if (x instanceof Map || x instanceof Set)
+            return false; // Just in case
+        // x and y are just objects
+        const keys = Object.keys(x);
+        if (Object.keys(y).length !== keys.length)
+            return false;
+        for (const key of keys) {
+            // fails if y is Object.create(null)
+            if (!y.hasOwnProperty(key))
+                return false;
+            if (!deepEquals(x[key], y[key]))
+                return false;
+        }
+        return true;
+    }
     function isTypedArray(arr) {
         return ArrayBuffer.isView(arr) && !(arr instanceof DataView);
     }
@@ -360,14 +419,6 @@
             return str;
         char = (_a = char[0]) !== null && _a !== void 0 ? _a : '0';
         return char.repeat(len - str.length) + str;
-    }
-    /**
-     * Get the next power of two after a number, accepting positive numbers in a reasonable range. If the number is itself
-     * a power of two, then it is returned.
-     * @param n Number in range [1, 2^31]
-     */
-    function nextPowerOfTwo(n) {
-        return 1 << Math.ceil(Math.log2(n));
     }
     const warnings = new Map();
     /**
@@ -4303,10 +4354,6 @@
         if (err)
             raiseParserError(s, { index: i }, 'unbalanced parentheses/brackets');
     }
-    // Exclude valid variables if needed later
-    function isValidVariableName(str) {
-        return true;
-    }
     const trimRight = ('trimRight' in String.prototype) ? (s) => s.trimRight() : (s) => {
         return s.replace(/\s+$/, '');
     };
@@ -5602,6 +5649,12 @@
         }));
     }
 
+    function _clampRGB(x) {
+        return (((x < 0) ? 0 : ((x > 255) ? 255 : x)) + 0.5) | 0;
+    }
+    function throwBadColor(s) {
+        throw new Error('Unrecognized colour ' + s);
+    }
     class Color {
         constructor(r, g, b, a) {
             this.r = r;
@@ -5609,78 +5662,94 @@
             this.b = b;
             this.a = a;
         }
-        rounded() {
-            return {
-                r: Math.round(this.r),
-                g: Math.round(this.g),
-                b: Math.round(this.b),
-                a: Math.round(this.a)
-            };
-        }
-        toJSON() {
-            return {
-                r: this.r,
-                g: this.g,
-                b: this.b,
-                a: this.a
-            };
-        }
-        hex() {
-            const rnd = this.rounded();
-            return `#${[rnd.r, rnd.g, rnd.b, rnd.a]
-            .map(x => leftZeroPad(x.toString(16), 2))
-            .join('')}`;
-        }
-        toNumber() {
-            return this.r * 0x1000000 + this.g * 0x10000 + this.b * 0x100 + this.a;
-        }
-        clone() {
-            return new Color(this.r, this.g, this.b, this.a);
-        }
+        /**
+         * Convert RGB to color, clamping the values to the appropriate range. Each component should be in the range [0,255].
+         * @param r Red component
+         * @param g Green component
+         * @param b Blue component
+         */
         static rgb(r, g, b) {
-            return new Color(r, g, b, 255);
+            return new Color(_clampRGB(r), _clampRGB(g), _clampRGB(b), 255);
         }
+        /**
+         * Convert RGBA to color, clamping the values to the appropriate range. Each component should be in the range [0,255].
+         * @param r Red component
+         * @param g Green component
+         * @param b Blue component
+         * @param a Opacity component
+         */
         static rgba(r, g, b, a = 255) {
-            return new Color(r, g, b, a);
+            return new Color(_clampRGB(r), _clampRGB(g), _clampRGB(b), _clampRGB(a));
         }
+        /**
+         * Convert HSL to Color. The hue should be in radians, the saturation in [0,1], and the luminance in [0,1].
+         * @param h Hue
+         * @param s Saturation
+         * @param l Luminance
+         */
         static hsl(h, s, l) {
-            let [r, g, b] = hslToRgb(h, s, l);
-            return new Color(r, g, b, 255);
+            let [r, g, b] = hslToRgb(h * (1 / (2 * Math.PI)), s * (1 / 100), l * (1 / 100));
+            return Color.rgb(r, g, b);
         }
+        /**
+         * Convert HSLA to Color. The hue should be in radians, the saturation in [0,1], the luminance in [0,1], and the
+         * opacity in [0,255].
+         * @param h Hue
+         * @param s Saturation
+         * @param l Luminance
+         * @param a Opacity
+         */
         static hsla(h, s, l, a) {
             let color = Color.hsl(h, s, l);
-            color.a = 255 * a;
+            color.a = _clampRGB(a);
             return color;
         }
+        /**
+         * Convert from hex string ("#231", "#00ff22" or "#00ff22aa") to Color.
+         * @param s Hex string
+         */
         static fromHex(s) {
-            let c = hexToRgb(s);
-            return new Color(c.r, c.g, c.b, c.a);
+            return hexToRgb(s);
         }
-        static fromCss(cssColorString) {
-            function throwBadColor() {
-                throw new Error('Unrecognized colour ' + cssColorString);
+        /**
+         * Convert from a (subset) of CSS color strings to a Color. Supported formats are hsla(degrees, percent, percent,
+         * [0,1]), hsl(...), rgb(...), rgba(...), named colors like "blue", and hex strings. An error is thrown on an unknown
+         * color.
+         * @param s CSS string
+         */
+        static fromCss(s) {
+            s = s.toLowerCase().replace(/\s+/g, '');
+            if (s.startsWith('#')) {
+                return Color.fromHex(s);
             }
-            cssColorString = cssColorString.toLowerCase().replace(/\s+/g, '');
-            if (cssColorString.startsWith('#')) {
-                return Color.fromHex(cssColorString);
-            }
-            let argsMatch = /\((.+)\)/g.exec(cssColorString);
+            let argsMatch = /\((.+)\)/g.exec(s);
             if (!argsMatch) {
-                let color = Colors[cssColorString.toUpperCase()];
-                return color ? color : throwBadColor();
+                let color = Colors[s.toUpperCase()];
+                return color ? color : throwBadColor(s);
             }
-            let args = argsMatch[1].split(',').map(parseFloat);
-            if (cssColorString.startsWith('rgb')) {
-                let values = args.map(s => s * 255);
-                return Color.rgba(values[0], values[1], values[2], cssColorString.startsWith('rgba') ? values[3] : 255);
+            let args = argsMatch[1].split(',').map(Number.parseFloat);
+            if (s.startsWith('rgb')) {
+                return Color.rgba(args[0], args[1], args[2], s.startsWith('rgba') ? (_clampRGB(args[3] * 255)) : 255);
             }
-            else if (cssColorString.startsWith('hsl')) {
-                let [r, g, b] = hslToRgb(args[0], args[1], args[2]);
-                return Color.rgba(r, g, b, cssColorString.startsWith('hsla') ? args[3] : 255);
+            else if (s.startsWith('hsl')) {
+                // args[1] and args[2] are percentages and so must be scaled. args[0], the luminance, is in [0, 255]
+                args[0] *= Math.PI / 180;
+                if (s[3] === 'a') {
+                    return Color.hsla(args[0], args[1], args[2], args[3] * 255);
+                }
+                return Color.hsl(args[0], args[1], args[2]);
             }
-            else {
-                throwBadColor();
+            throwBadColor(s);
+        }
+        static compose(...args) {
+            if (args.length === 0) {
+                return Color.default();
             }
+            // Use the last specification
+            return Color.fromObj(args[args.length - 1]);
+        }
+        static create(spec) {
+            return Color.fromObj(spec);
         }
         /**
          * Permissively convert an object to a color; returns black if conversion failed
@@ -5700,36 +5769,59 @@
         static default() {
             return Color.rgba(0, 0, 0, 255);
         }
+        rounded() {
+            return {
+                r: (this.r + 0.5) | 0,
+                g: (this.g + 0.5) | 0,
+                b: (this.b + 0.5) | 0,
+                a: (this.a + 0.5) | 0
+            };
+        }
+        /**
+         * Convert color to a CSS-style hex string
+         */
+        hex() {
+            const rnd = this.rounded();
+            return `#${[rnd.r, rnd.g, rnd.b, rnd.a]
+            .map(x => leftZeroPad(x.toString(16), 2))
+            .join('')}`;
+        }
+        /**
+         * Convert this color into a packed hex number (including an opacity value)
+         */
+        toNumber() {
+            return this.r * 0x1000000 + this.g * 0x10000 + this.b * 0x100 + this.a;
+        }
+        clone() {
+            return new Color(this.r, this.g, this.b, this.a);
+        }
+        equals(c) {
+            return c.r === this.r && c.g === this.g && c.b === this.b && c.a === this.a;
+        }
     }
     function hexToRgb(hex) {
         hex = hex.replace(/#/g, '').trim();
         let r = 0, g = 0, b = 0, a = 255;
-        if (hex.length === 3) {
+        if (hex.length === 3 || hex.length === 4) {
             r = Number.parseInt(hex[0], 16);
             g = Number.parseInt(hex[1], 16);
             b = Number.parseInt(hex[2], 16);
+            if (hex.length === 4) {
+                a = Number.parseInt(hex[3], 16);
+            }
         }
-        else if (hex.length === 4) {
-            r = Number.parseInt(hex[0], 16);
-            g = Number.parseInt(hex[1], 16);
-            b = Number.parseInt(hex[2], 16);
-            a = Number.parseInt(hex[3], 16);
-        }
-        else if (hex.length === 6) {
+        else if (hex.length === 6 || hex.length === 8) {
             r = Number.parseInt(hex.slice(0, 2), 16);
             g = Number.parseInt(hex.slice(2, 4), 16);
             b = Number.parseInt(hex.slice(4, 6), 16);
-        }
-        else if (hex.length === 8) {
-            r = Number.parseInt(hex.slice(0, 2), 16);
-            g = Number.parseInt(hex.slice(2, 4), 16);
-            b = Number.parseInt(hex.slice(4, 6), 16);
-            a = Number.parseInt(hex.slice(6, 8), 16);
+            if (hex.length === 8) {
+                a = Number.parseInt(hex.slice(6, 8), 16);
+            }
         }
         else {
-            throw new Error('Unrecognized color ' + hex);
+            throwBadColor(hex);
         }
-        return { r, g, b, a };
+        return Color.rgba(r, g, b, a);
     }
     // Credit to https://stackoverflow.com/a/9493060/13458117
     function hue2Rgb(p, q, t) {
@@ -5746,6 +5838,7 @@
         return p;
     }
     function hslToRgb(h, s, l) {
+        // h, s, l in [0,1]
         let r, g, b;
         if (s === 0) {
             r = g = b = l; // achromatic
@@ -5760,7 +5853,7 @@
         return [255 * r, 255 * g, 255 * b];
     }
     const rgb = Color.rgb;
-    const Colors = {
+    const Colors = Object.freeze({
         get LIGHTSALMON() {
             return rgb(255, 160, 122);
         },
@@ -6181,7 +6274,7 @@
         get TRANSPARENT() {
             return new Color(0, 0, 0, 0);
         }
-    };
+    });
 
     function approxAtan(x) {
         if (x > 1)
@@ -6563,234 +6656,18 @@
         return new BolusPromise(null, bolus, startTime, timeout, timeStep, onProgress, onCleanup, usePostMessage);
     }
 
-    // A rather common operation for generating texture atlases and the like.
-    // Credit to the authors of github.com/mapbox/potpack. I will be writing a better version soon
-    function potpack(boxes) {
-        // calculate total box area and maximum box width
-        let area = 0;
-        let maxWidth = 0;
-        for (const box of boxes) {
-            area += box.w * box.h;
-            maxWidth = Math.max(maxWidth, box.w);
-        }
-        // sort the boxes for insertion by height, descending
-        boxes.sort((a, b) => b.h - a.h);
-        // aim for a squarish resulting container,
-        // slightly adjusted for sub-100% space utilization
-        const startWidth = Math.max(Math.ceil(Math.sqrt(area / 0.95)), maxWidth);
-        // start with a single empty space, unbounded at the bottom
-        const spaces = [{ x: 0, y: 0, w: startWidth, h: Infinity }];
-        let width = 0;
-        let height = 0;
-        for (const box of boxes) {
-            // look through spaces backwards so that we check smaller spaces first
-            for (let i = spaces.length - 1; i >= 0; i--) {
-                const space = spaces[i];
-                // look for empty spaces that can accommodate the current box
-                if (box.w > space.w || box.h > space.h)
-                    continue;
-                // found the space; add the box to its top-left corner
-                // |-------|-------|
-                // |  box  |       |
-                // |_______|       |
-                // |         space |
-                // |_______________|
-                box.x = space.x;
-                box.y = space.y;
-                height = Math.max(height, box.y + box.h);
-                width = Math.max(width, box.x + box.w);
-                if (box.w === space.w && box.h === space.h) {
-                    // space matches the box exactly; remove it
-                    const last = spaces.pop();
-                    if (i < spaces.length)
-                        spaces[i] = last;
-                }
-                else if (box.h === space.h) {
-                    // space matches the box height; update it accordingly
-                    // |-------|---------------|
-                    // |  box  | updated space |
-                    // |_______|_______________|
-                    space.x += box.w;
-                    space.w -= box.w;
-                }
-                else if (box.w === space.w) {
-                    // space matches the box width; update it accordingly
-                    // |---------------|
-                    // |      box      |
-                    // |_______________|
-                    // | updated space |
-                    // |_______________|
-                    space.y += box.h;
-                    space.h -= box.h;
-                }
-                else {
-                    // otherwise the box splits the space into two spaces
-                    // |-------|-----------|
-                    // |  box  | new space |
-                    // |_______|___________|
-                    // | updated space     |
-                    // |___________________|
-                    spaces.push({
-                        x: space.x + box.w,
-                        y: space.y,
-                        w: space.w - box.w,
-                        h: box.h
-                    });
-                    space.y += box.h;
-                    space.h -= box.h;
-                }
-                break;
-            }
-        }
-        return {
-            w: width,
-            h: height,
-            fill: area / (width * height) || 0 // space utilization
-        };
-    }
-
-    class TextRenderer {
-        constructor() {
-            this.canvas = document.createElement('canvas');
-            let ctx = this.canvas.getContext('2d');
-            if (!ctx)
-                throw new Error('Could not create canvas context');
-            this.ctx = ctx;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'alphabetic';
-        }
-        /**
-         * Clear out all previous text stores. In the future, when doing a dynamic text packing, this will be called sometimes
-         * to do a reallocation.
-         */
-        clearText() {
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        }
-        getMetrics(textInfo) {
-            const { ctx } = this;
-            const { fontSize, font } = textInfo.style;
-            ctx.font = `${fontSize}px ${font}`;
-            return ctx.measureText(textInfo.text);
-        }
-        resizeCanvas(width, height) {
-            this.canvas.width = width;
-            this.canvas.height = height;
-            const { ctx } = this;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'alphabetic';
-        }
-        drawText(textInfos) {
-            var _a, _b;
-            const { ctx } = this;
-            const padding = 2; // Extra padding to allow for various antialiased pixels to spill over
-            // Sort by font to avoid excess ctx.font modifications
-            textInfos.sort((c1, c2) => c1.style.font < c2.style.font);
-            // Compute where to place the text. Note that the text instructions are mutated in this process (in fact, the point
-            // of this process is to provide the instruction compiler with enough info to get the correct vertices)
-            const rects = [];
-            for (const draw of textInfos) {
-                const metrics = this.getMetrics(draw);
-                let shadowDiameter = (_a = 2 * draw.style.shadowRadius) !== null && _a !== void 0 ? _a : 0;
-                const width = Math.ceil(metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight) +
-                    shadowDiameter +
-                    padding;
-                const height = Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) +
-                    shadowDiameter +
-                    padding;
-                draw.metrics = metrics;
-                draw.rect = { w: width, h: height };
-                rects.push(draw.rect);
-            }
-            const { w: packedWidth, h: packedHeight } = potpack(rects);
-            // Powers of two are generally nicer when working with textures
-            const canvasWidth = nextPowerOfTwo(packedWidth), canvasHeight = nextPowerOfTwo(packedHeight);
-            this.resizeCanvas(canvasWidth, canvasHeight);
-            this.clearText();
-            ctx.fillStyle = 'black';
-            // Each draw is now { metrics: TextMetrics, rect: {w, h, x, y}, text, style }
-            for (const draw of textInfos) {
-                const style = draw.style;
-                ctx.font = `${style.fontSize}px ${style.font}`;
-                const shadowRadius = (_b = draw.style.shadowRadius) !== null && _b !== void 0 ? _b : 0;
-                let x = draw.rect.x + draw.metrics.actualBoundingBoxLeft + shadowRadius;
-                let y = draw.rect.y + draw.metrics.actualBoundingBoxAscent + shadowRadius;
-                // Stroke text behind the text with white
-                if (shadowRadius) {
-                    ctx.strokeStyle = 'white';
-                    ctx.lineWidth = shadowRadius;
-                    ctx.strokeText(draw.text, x, y);
-                    ctx.fillStyle = 'black';
-                }
-                ctx.fillText(draw.text, x, y);
-                // The actual texture coordinates used should be minus the padding (which is only used for potpack)
-                draw.rect.w -= padding;
-                draw.rect.h -= padding;
-            }
-        }
-    }
-
-    function generateRectangleTriangleStrip(rect) {
-        const { x, y, w, h } = rect;
-        const points = [x, y, x + w, y, x, y + h, x + w, y + h];
-        return new Float32Array(points);
-    }
-    function generateRectangleDebug(rect) {
-        const { x, y, w, h } = rect;
-        const points = [x, y, x + w, y, x + w, y + h, x, y + h, x, y, x + w, y + w];
-        return new Float32Array(points);
-    }
-    function _flattenVec2ArrayInternal(arr) {
-        var _a;
-        const out = [];
-        for (let i = 0; i < arr.length; ++i) {
-            let item = arr[i];
-            if (item === null || item === undefined) {
-                out.push(NaN, NaN);
-            }
-            else if (item.x !== undefined && item.y !== undefined) {
-                out.push(item.x, item.y);
-            }
-            else if (item[0] !== undefined) {
-                out.push(+item[0], (_a = item[1]) !== null && _a !== void 0 ? _a : 0);
-            }
-            else {
-                if (typeof item === 'number')
-                    out.push(item);
-                else
-                    throw new TypeError(`Error when converting array to flattened Vec2 array: Unknown item ${item} at index ${i} in given array`);
-            }
-        }
-        return out;
-    }
-    // Given some arbitrary array of Vec2s, turn it into the regularized format [x1, y1, x2, y2, ..., xn, yn]. The end of
-    // one polyline and the start of another is done by one pair of numbers being NaN, NaN.
-    function flattenVec2Array(arr) {
-        if (isTypedArray(arr))
-            return arr;
-        for (let i = 0; i < arr.length; ++i) {
-            if (typeof arr[i] !== 'number')
-                return _flattenVec2ArrayInternal(arr);
-        }
-        return arr;
-    }
     /**
-     * Compute Math.hypot(x, y), but since all the values of x and y we're using here are not extreme, we don't have to
-     * handle overflows and underflows with much accuracy at all. We can thus use the straightforward calculation.
-     * Chrome: 61.9 ms/iteration for 1e7 calculations for fastHypot; 444 ms/iteration for Math.hypot
-     * @param x {number}
-     * @param y {number}
-     * @returns {number} hypot(x, y)
+     * Generic Vec2 class, reinventing the wheel...
      */
-    function fastHypot(x, y) {
-        return Math.sqrt(x * x + y * y);
-    }
-
-    // Another one of these, yada yada, reinventing the wheel, yay
     class Vec2 {
         constructor(x, y) {
             this.x = x;
             this.y = y;
         }
+        /**
+         * Permissively convert to Vec2 from an arbitrary object, ideally something that is Vec2Like
+         * @param obj
+         */
         static fromObj(obj) {
             let x = NaN, y = NaN;
             if (Array.isArray(obj)) {
@@ -6866,6 +6743,354 @@
         }
         lengthSquared() {
             return this.x * this.x + this.y * this.y;
+        }
+    }
+    function throwInconvertibleElement(elem, i) {
+        throw new TypeError(`Expected input to be convertible to a flat array of Vec2s, found element ${elem} at index ${i}`);
+    }
+    function throwOddLengthArray(len) {
+        throw new Error(`Expected input to be convertible to a flat array of Vec2s, got array of odd length ${len}`);
+    }
+    function vec2NonFlatArrayConversion(arr, f32 = true, throwOnError = false) {
+        let ret = new (f32 ? Float32Array : Float64Array)(arr.length * 2);
+        let retIndex = -1;
+        for (let i = 0; i < arr.length; ++i) {
+            let elem = arr[i];
+            if (elem.x) {
+                ret[++retIndex] = elem.x;
+                ret[++retIndex] = elem.y;
+            }
+            else if (Array.isArray(elem)) {
+                if (elem.length !== 2) {
+                    if (throwOnError)
+                        throwInconvertibleElement(elem, i);
+                    return;
+                }
+                ret[++retIndex] = elem[0];
+                ret[++retIndex] = elem[1];
+            }
+            else {
+                if (throwOnError)
+                    throwInconvertibleElement(elem, i);
+                return;
+            }
+        }
+        return ret;
+    }
+    /**
+     * Flatten a given array relatively permissively into an flat array; returns undefined if the conversion failed
+     * @param obj
+     * @param f32
+     * @param throwOnError
+     */
+    function vec2ArrayConversion(obj, f32 = true, throwOnError = false) {
+        if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; ++i) {
+                if (typeof obj[i] !== 'number') {
+                    return vec2NonFlatArrayConversion(obj);
+                }
+            }
+            // Obj is just an array of numbers
+            if (obj.length % 2 === 1) {
+                if (throwOnError)
+                    throwOddLengthArray(obj.length);
+                return;
+            }
+            return new (f32 ? Float32Array : Float64Array)(obj);
+        }
+        else if (isTypedArray(obj)) {
+            if (obj.length % 2 === 1) {
+                if (throwOnError)
+                    throwOddLengthArray(obj.length);
+                return;
+            }
+            if (f32 && obj instanceof Float32Array)
+                return obj;
+            if (!f32 && obj instanceof Float64Array)
+                return obj;
+            return new (f32 ? Float32Array : Float64Array)(obj);
+        }
+        if (throwOnError)
+            throw new TypeError(`Could not convert object into flat Vec2 array`);
+    }
+
+    /**
+     * Here lies madness.
+     *
+     * Grapheme's renderer is going to be pretty monolithic, with a lot of interdependent moving parts. As such, I'm going
+     * to keep it mostly contained within one class, perhaps with some helper classes. Doing so will also help eliminate
+     * fluff and make optimization easy and expressive. In any case, the renderer is effectively a state machine of various
+     * draw calls. The final call to copy the internal buffer to the screen uses transferFromImageBitmap, which is
+     * asynchronous and thus allows WebGL to proceed in a a separate thread—as it is implemented by modern browsers.
+     *
+     * On the surface, Grapheme's rendering sequence is simple: the renderer traverses through the scene, calls
+     * getRenderingInfo() on every element, compiles a list of all the instructions (which look something like
+     * "draw this set of triangles", "draw this text"), and runs them all, returning the final product. But if the rendering
+     * pipeline were so simple, there would be little point in using WebGL at all. Why not just use Canvas2D? Why learn such
+     * a painful API? The name of the game is parallelism and optimization. Where WebGL excels is low-level control
+     * and rapid parallel computation. Its weaknesses are in a lack of builtin functions (lacking text, for example) and
+     * high complexity and verbosity,
+     *
+     * Imagine we did indeed render a scene instruction by instruction. We come across a line, so we switch to the polyline
+     * program, load in the vertices into a buffer, and drawArrays -- draw it to the canvas. We then come across a piece of
+     * text. WebGL cannot render text, so we switch over to a Canvas2D context and draw a piece of text onto a blank canvas.
+     * We then load the blank canvas as a texture into WebGL and switch to the text program, loading in a set of vertices
+     * specifying where the text is, and calling drawArrays. We then come across a couple hundred polylines in a row. For
+     * each polyline, we copy its data to the buffer and render it.
+     *
+     * There are two serious problems here. One is that loading buffers and textures is slow, for various
+     * reasons. Another is that parallelism is seriously lacking. We have to call drawArrays several hundred times for those
+     * polylines, and each call has a large constant overhead.
+     *
+     * The renderer thus has several difficult jobs: minimizing buffer and texture loading, and combining consecutive calls
+     * into one large drawArrays call. Accomplishing these jobs (and a few more) requires somewhat intricate work,
+     * which should of course be designed to allow more esoteric draw calls -- for a Mandelbrot set, say -- to still be
+     * handled with consistency. There is no perfect solution, but there are certainly gains to be made. As with the props
+     * of Grapheme elements, the problem is made easier by high-level abstraction. The renderer should produce a comparable
+     * result when optimized, compared to when every call is made individually. (They need not be exactly the same, for
+     * reasons that will become apparent.)
+     *
+     * Even more annoying is that the WebGL context may suddenly crash and all its buffers and programs lost in the ether.
+     * The renderer thus has to be able to handle such data loss without indefinitely screwing up the rendering process. So
+     * I have my work cut out, but that's exciting.
+     *
+     * The current thinking is a z-index based system with heuristic reallocation of changing and unchanging buffers. Given
+     * a list of elements and each element's instructions, we are allowed to rearrange the instructions under certain
+     * conditions: 1. instructions are drawn in order of z-index and 2. specific instructions within a given z-index may
+     * specify that they must be rendered in the order in which they appear in the instruction list. The latter condition
+     * allows deterministic ordering of certain instructions on the same z-index, which is useful when that suborder does
+     * matter (like when two instructions for a given element are intended to be one on top of the other). Otherwise, the
+     * instructions may be freely rearranged and (importantly) combined into larger operations that look the same.
+     *
+     * Already, such a sorting system is very helpful. Text elements generally specify a z-index of Infinity, while
+     * gridlines might specify a z-index of 0 to be behind most things, and a draggable point might have an index of 20. A
+     * simple algorithm to render a static image is to sort by z-index, then within each z-index group triangle draw calls
+     * with the same color together, and group text draw calls together. We then proceed to render each z-index's grouped
+     * calls in order.
+     *
+     * For a static scene, such a rendering system would work great. But in a dynamic scene, constantly reoptimizing the
+     * entire scene as a result of changing some inconsequential little geometry would be stupid. Ideally, changing a little
+     * geometry would merely update a single buffer or subsection of a buffer. Yet some changes do require a complete re-
+     * distribution of instructions; if the scene's size doubled, for example, and all the elements changed substantially.
+     * We can certainly cache information from the previous rendering process of a scene, but what do we cache? How do we
+     * ensure stability and few edge cases? How do we deal with context loss?
+     *
+     * The first step is to understand exactly what instructions are. *Anonymous* instructions have a type, some data, and
+     * an element id (which element it originated from). *Normal* instructions have a type, some data, an element id, an
+     * instruction id, and a version. The point of normal instructions is to represent a sort of "draw concept", where after
+     * an update, that instruction may have changed slightly, but will still have the same id. The instruction associated
+     * with a function plot, for example, will have some numerical ID, and when the plot changes somehow, the version will
+     * increase, but the numerical ID will remain the same. Conceptually, this means that the instruction to draw the
+     * function plot has been rewritten, and the old data is basically irrelevant -- and buffers associated with that
+     * data can and should be reused or reallocated.
+     *
+     * Anonymous instructions, on the other hand, have no concept of "versioning". Anonymous instructions are
+     * entirely reallocated or deleted every time their element updates. These instructions are generally used to indicate
+     * instructions which are very prone to change and where its values should be tied solely to the element updating.
+     */
+    // Functions taken from Mozilla docs
+    function createShaderFromSource(gl, shaderType, shaderSource) {
+        var _a;
+        const shader = gl.createShader(shaderType);
+        let err;
+        if (!shader) {
+            err = "Failed to create shader";
+        }
+        else {
+            gl.shaderSource(shader, shaderSource);
+            gl.compileShader(shader);
+            const succeeded = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (succeeded)
+                return shader;
+            err = ((_a = gl.getShaderInfoLog(shader)) !== null && _a !== void 0 ? _a : "Failed to create shader or get info log");
+        }
+        gl.deleteShader(shader);
+        throw new Error("createShaderFromSource: " + err);
+    }
+    function createGLProgram(gl, vertexShader, fragShader) {
+        var _a;
+        const program = gl.createProgram();
+        let err;
+        if (!program) {
+            err = "Failed to create program";
+        }
+        else {
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragShader);
+            gl.linkProgram(program);
+            const succeeded = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (succeeded)
+                return program;
+            err = (_a = gl.getProgramInfoLog(program)) !== null && _a !== void 0 ? _a : "Failed to create program or get info log-";
+        }
+        gl.deleteProgram(program);
+        throw new Error("createGLProgram: " + err);
+    }
+    class WebGLRenderer {
+        constructor() {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl2');
+            if (!gl) {
+                throw new Error("WebGL2 not supported");
+            }
+            this.canvas = canvas;
+            this.gl = gl;
+            /**
+             * Map between scene ids and known information about them
+             * @type {Map<string, {}>}
+             */
+            this.sceneCaches = new Map();
+            this.programs = new Map();
+            this.buffers = new Map();
+            this.textures = new Map();
+            this.vaos = new Map();
+        }
+        /**
+         * Create and link a program and store it in the form { glProgram, attribs, uniforms }, where glProgram is the
+         * underlying program and attributes and uniforms are a dictionary of attributes and uniforms from the program. The
+         * attributes are given as an object, of manually assigned indices; these are required and will not be assigned
+         * automatically. Returns null on failure—does not throw
+         * @param programName
+         * @param vertexShaderSource
+         * @param fragShaderSource
+         * @param attributeBindings
+         * @param uniformNames
+         * @return GLProgramStore
+         */
+        createProgram(programName, vertexShaderSource, fragShaderSource, attributeBindings, uniformNames) {
+            this.deleteProgram(programName);
+            const { gl } = this;
+            const glProgram = createGLProgram(gl, createShaderFromSource(gl, gl.VERTEX_SHADER, vertexShaderSource), createShaderFromSource(gl, gl.FRAGMENT_SHADER, fragShaderSource));
+            for (let name in attributeBindings) {
+                let loc = attributeBindings[name];
+                gl.bindAttribLocation(glProgram, loc, name);
+            }
+            const uniforms = {};
+            for (const name of uniformNames) {
+                let loc = gl.getUniformLocation(glProgram, name);
+                if (!loc) {
+                    gl.deleteProgram(glProgram);
+                    throw new Error(`Unable to find uniform ${name}`);
+                }
+                uniforms[name] = loc;
+            }
+            const program = { program: glProgram, attributes: attributeBindings, uniforms };
+            this.programs.set(programName, program);
+            return program;
+        }
+        /**
+         * Get the program of a given name, returning undefined if it does not exist
+         * @param programName
+         * @returns
+         */
+        getProgram(programName) {
+            var _a;
+            return (_a = this.programs.get(programName)) !== null && _a !== void 0 ? _a : null;
+        }
+        /**
+         * Delete a program, including the underlying GL program
+         * @param programName {string}
+         */
+        deleteProgram(programName) {
+            const program = this.getProgram(programName);
+            if (program) {
+                this.gl.deleteProgram(program.program);
+                this.programs.delete(programName);
+            }
+        }
+        getTexture(textureName) {
+            var _a;
+            return (_a = this.textures.get(textureName)) !== null && _a !== void 0 ? _a : null;
+        }
+        deleteTexture(textureName) {
+            let texture = this.getTexture(textureName);
+            if (texture !== undefined) {
+                this.gl.deleteTexture(this.getTexture(textureName));
+                this.textures.delete(textureName);
+            }
+        }
+        createTexture(textureName) {
+            this.deleteTexture(textureName);
+            const texture = this.gl.createTexture();
+            if (!texture)
+                return null;
+            const store = { texture };
+            this.textures.set(textureName, store);
+            return store;
+        }
+        getBuffer(bufferName) {
+            var _a;
+            return (_a = this.buffers.get(bufferName)) !== null && _a !== void 0 ? _a : null;
+        }
+        /**
+         * Create a buffer with a given name, returning the existing buffer if one exists
+         * @param bufferName
+         */
+        createBuffer(bufferName) {
+            let buffer = this.getBuffer(bufferName);
+            if (!buffer) {
+                let glBuffer = this.gl.createBuffer();
+                if (!glBuffer)
+                    return null;
+                buffer = { buffer: glBuffer };
+                this.buffers.set(bufferName, buffer);
+            }
+            return buffer;
+        }
+        deleteBuffer(bufferName) {
+            const buffer = this.getBuffer(bufferName);
+            if (buffer) {
+                this.buffers.delete(bufferName);
+                this.gl.deleteBuffer(buffer);
+            }
+        }
+        /**
+         * Resize and clear the canvas simultaneously. The canvas is only manually cleared if the dimensions haven't changed,
+         * since the buffer will be erased.
+         * @param width
+         * @param height
+         * @param dpr
+         * @param clear {Color}
+         */
+        clearAndResizeCanvas(width, height, dpr = 1, clear = Colors.TRANSPARENT) {
+            const { canvas } = this;
+            this.dpr = dpr;
+            if (canvas.width === width && canvas.height === height) {
+                // No need to reset the canvas
+                this.clearCanvas(clear);
+            }
+            else {
+                canvas.width = width;
+                canvas.height = height;
+                // If the given color is not plain transparent black, we need to set the canvas color directly
+                if (!clear.equals(Colors.TRANSPARENT)) {
+                    this.clearCanvas(clear);
+                }
+            }
+            this.gl.viewport(0, 0, width, height);
+        }
+        /**
+         * Clear the canvas to the given color
+         * @param clearColor
+         */
+        clearCanvas(clearColor = Colors.TRANSPARENT) {
+            const gl = this.gl;
+            gl.clearColor(clearColor.r / 255, clearColor.g / 255, clearColor.b / 255, clearColor.a / 255);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        /**
+         * Overall scaling from pixel space to clip space ((-1,-1) bottom left; (1,1) top right). In other words, the distance
+         * between two pixels horizontally is v.x in clip space, and vertically, v.y.
+         */
+        getXYScale() {
+            let { canvas, dpr } = this;
+            return new Vec2(2 / canvas.width * dpr, -2 / canvas.height * dpr);
+        }
+        renderDOMScene(scene) {
+            createImageBitmap(this.canvas).then(bitmap => {
+                console.log(bitmap);
+                scene.bitmapRenderer.transferFromImageBitmap(bitmap);
+            });
         }
     }
 
@@ -7078,1787 +7303,6 @@
         }
     });
 
-    // Thanks Emscripten for the names!
-    // Scratch buffer for large operations where the length of the resultant array is unknown. There is no "malloc" here, so
-    // operations should copy their result to a new array once they are done (which should be relatively fast, since
-    // it's just a memcpy)
-    let HEAP = new ArrayBuffer(0x1000000);
-    let HEAPF32 = new Float32Array(HEAP);
-
-    const ENDCAP_TYPES = {
-        butt: 0,
-        round: 1,
-        square: 2
-    };
-    const JOIN_TYPES = {
-        bevel: 0,
-        miter: 2,
-        round: 1,
-        dynamic: 3
-    };
-    const MIN_RES_ANGLE = 0.05; // minimum angle in radians between roundings in a polyline
-    const B = 4 / Math.PI;
-    const C = -4 / Math.PI ** 2;
-    function fastSin(x) {
-        // crude, but good enough for this
-        x %= 6.28318530717;
-        if (x < -3.14159265)
-            x += 6.28318530717;
-        else if (x > 3.14159265)
-            x -= 6.28318530717;
-        return B * x + C * x * (x < 0 ? -x : x);
-    }
-    function fastCos(x) {
-        return fastSin(x + 1.570796326794);
-    }
-    function fastAtan2(y, x) {
-        let abs_x = x < 0 ? -x : x;
-        let abs_y = y < 0 ? -y : y;
-        let a = abs_x < abs_y ? abs_x / abs_y : abs_y / abs_x;
-        let s = a * a;
-        let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
-        if (abs_y > abs_x)
-            r = 1.57079637 - r;
-        if (x < 0)
-            r = 3.14159265 - r;
-        if (y < 0)
-            r = -r;
-        return r;
-    }
-    const glVertices = HEAPF32;
-    function convertTriangleStrip(vertices, pen) {
-        if (pen.thickness <= 0 ||
-            pen.endcapRes < MIN_RES_ANGLE ||
-            pen.joinRes < MIN_RES_ANGLE ||
-            vertices.length <= 3) {
-            return { glVertices: null, vertexCount: 0 };
-        }
-        let index = -1;
-        let origVertexCount = vertices.length / 2;
-        let th = pen.thickness / 2;
-        let maxMiterLength = th / fastCos(pen.joinRes / 2);
-        let endcap = ENDCAP_TYPES[pen.endcap];
-        let join = JOIN_TYPES[pen.join];
-        if (endcap === undefined || join === undefined) {
-            throw new Error('Undefined endcap or join.');
-        }
-        // p1 -- p2 -- p3, generating vertices for point p2
-        let x1 = 0, x2, x3 = vertices[0], y1 = 0, y2, y3 = vertices[1];
-        let v1x = 0, v1y = 0, v2x = 0, v2y = 0, v1l = 0, v2l = 0, b1_x, b1_y, scale, dis;
-        for (let i = 0; i < origVertexCount; ++i) {
-            x1 = i !== 0 ? x2 : NaN; // Previous vertex
-            x2 = x3; // Current vertex
-            x3 = i !== origVertexCount - 1 ? vertices[2 * i + 2] : NaN; // Next vertex
-            y1 = i !== 0 ? y2 : NaN; // Previous vertex
-            y2 = y3; // Current vertex
-            y3 = i !== origVertexCount - 1 ? vertices[2 * i + 3] : NaN; // Next vertex
-            if (Math.abs(x3) > 16384 || Math.abs(y3) > 16384) {
-                // Temporary
-                x3 = NaN;
-                y3 = NaN;
-            }
-            if (isNaN(x2) || isNaN(y2)) {
-                continue;
-            }
-            if (isNaN(x1) || isNaN(y1)) {
-                // The start of every endcap has two duplicate vertices for triangle strip reasons
-                v2x = x3 - x2;
-                v2y = y3 - y2;
-                v2l = fastHypot(v2x, v2y);
-                if (v2l < 1e-8) {
-                    v2x = 1;
-                    v2y = 0;
-                }
-                else {
-                    v2x /= v2l;
-                    v2y /= v2l;
-                }
-                if (isNaN(v2x) || isNaN(v2y)) {
-                    continue;
-                } // undefined >:(
-                if (endcap === 1) {
-                    // rounded endcap
-                    let theta = fastAtan2(v2y, v2x) + Math.PI / 2;
-                    let steps_needed = Math.ceil(Math.PI / pen.endcapRes);
-                    let o_x = x2 - th * v2y, o_y = y2 + th * v2x;
-                    let theta_c = theta + (1 / steps_needed) * Math.PI;
-                    // Duplicate first vertex
-                    let x = glVertices[++index] = x2 + th * fastCos(theta_c);
-                    let y = glVertices[++index] = y2 + th * fastSin(theta_c);
-                    glVertices[++index] = x;
-                    glVertices[++index] = y;
-                    glVertices[++index] = o_x;
-                    glVertices[++index] = o_y;
-                    for (let i = 2; i <= steps_needed; ++i) {
-                        let theta_c = theta + (i / steps_needed) * Math.PI;
-                        glVertices[++index] = x2 + th * fastCos(theta_c);
-                        glVertices[++index] = y2 + th * fastSin(theta_c);
-                        glVertices[++index] = o_x;
-                        glVertices[++index] = o_y;
-                    }
-                    continue;
-                }
-                else if (endcap === 2) {
-                    let x = glVertices[++index] = x2 - th * v2x + th * v2y;
-                    let y = glVertices[++index] = y2 - th * v2y - th * v2x;
-                    glVertices[++index] = x;
-                    glVertices[++index] = y;
-                    glVertices[++index] = x2 - th * v2x - th * v2y;
-                    glVertices[++index] = y2 - th * v2y + th * v2x;
-                    continue;
-                }
-                else {
-                    // no endcap
-                    let x = glVertices[++index] = x2 + th * v2y;
-                    let y = glVertices[++index] = y2 - th * v2x;
-                    glVertices[++index] = x;
-                    glVertices[++index] = y;
-                    glVertices[++index] = x2 - th * v2y;
-                    glVertices[++index] = y2 + th * v2x;
-                    continue;
-                }
-            }
-            if (isNaN(x3) || isNaN(y3)) {
-                // ending endcap
-                v1x = x2 - x1;
-                v1y = y2 - y1;
-                v1l = v2l;
-                if (v1l < 1e-8) {
-                    v1x = 1;
-                    v1y = 0;
-                }
-                else {
-                    v1x /= v1l;
-                    v1y /= v1l;
-                }
-                if (isNaN(v1x) || isNaN(v1y)) {
-                    continue;
-                } // undefined >:(
-                glVertices[++index] = x2 + th * v1y;
-                glVertices[++index] = y2 - th * v1x;
-                glVertices[++index] = x2 - th * v1y;
-                glVertices[++index] = y2 + th * v1x;
-                if (endcap === 1) {
-                    let theta = fastAtan2(v1y, v1x) + (3 * Math.PI) / 2;
-                    let steps_needed = Math.ceil(Math.PI / pen.endcapRes);
-                    let o_x = x2 - th * v1y, o_y = y2 + th * v1x;
-                    for (let i = 1; i <= steps_needed; ++i) {
-                        let theta_c = theta + (i / steps_needed) * Math.PI;
-                        glVertices[++index] = x2 + th * fastCos(theta_c);
-                        glVertices[++index] = y2 + th * fastSin(theta_c);
-                        glVertices[++index] = o_x;
-                        glVertices[++index] = o_y;
-                    }
-                }
-                // Duplicate last vertex of ending endcap
-                glVertices[index + 1] = glVertices[index - 1];
-                glVertices[index + 2] = glVertices[index];
-                index += 2;
-                continue;
-            }
-            // all vertices are defined, time to draw a joinerrrrr
-            if (join === 2 || join === 3) {
-                // find the two angle bisectors of the angle formed by v1 = p1 -> p2 and v2 = p2 -> p3
-                v1x = x1 - x2;
-                v1y = y1 - y2;
-                v2x = x3 - x2;
-                v2y = y3 - y2;
-                v1l = v2l;
-                v2l = fastHypot(v2x, v2y);
-                b1_x = v2l * v1x + v1l * v2x;
-                b1_y = v2l * v1y + v1l * v2y;
-                scale = 1 / fastHypot(b1_x, b1_y);
-                if (scale === Infinity || scale === -Infinity) {
-                    b1_x = -v1y;
-                    b1_y = v1x;
-                    scale = 1 / fastHypot(b1_x, b1_y);
-                }
-                b1_x *= scale;
-                b1_y *= scale;
-                scale = (th * v1l) / (b1_x * v1y - b1_y * v1x);
-                if (join === 2 || Math.abs(scale) < maxMiterLength) {
-                    // Draw a miter. But the length of the miter is massive and we're in dynamic mode (3), we exit this if statement and do a rounded join
-                    b1_x *= scale;
-                    b1_y *= scale;
-                    glVertices[++index] = x2 - b1_x;
-                    glVertices[++index] = y2 - b1_y;
-                    glVertices[++index] = x2 + b1_x;
-                    glVertices[++index] = y2 + b1_y;
-                    continue;
-                }
-            }
-            v2x = x3 - x2;
-            v2y = y3 - y2;
-            dis = fastHypot(v2x, v2y);
-            if (dis < 0.001) {
-                v2x = 1;
-                v2y = 0;
-            }
-            else {
-                v2x /= dis;
-                v2y /= dis;
-            }
-            v1x = x2 - x1;
-            v1y = y2 - y1;
-            dis = fastHypot(v1x, v1y);
-            if (dis === 0) {
-                v1x = 1;
-                v1y = 0;
-            }
-            else {
-                v1x /= dis;
-                v1y /= dis;
-            }
-            glVertices[++index] = x2 + th * v1y;
-            glVertices[++index] = y2 - th * v1x;
-            glVertices[++index] = x2 - th * v1y;
-            glVertices[++index] = y2 + th * v1x;
-            if (join === 1 || join === 3) {
-                let a1 = fastAtan2(-v1y, -v1x) - Math.PI / 2;
-                let a2 = fastAtan2(v2y, v2x) - Math.PI / 2;
-                // if right turn, flip a2
-                // if left turn, flip a1
-                let start_a, end_a;
-                if (mod(a1 - a2, 2 * Math.PI) < Math.PI) {
-                    // left turn
-                    start_a = Math.PI + a1;
-                    end_a = a2;
-                }
-                else {
-                    start_a = Math.PI + a2;
-                    end_a = a1;
-                }
-                let angle_subtended = mod(end_a - start_a, 2 * Math.PI);
-                let steps_needed = Math.ceil(angle_subtended / pen.joinRes);
-                for (let i = 0; i <= steps_needed; ++i) {
-                    let theta_c = start_a + (angle_subtended * i) / steps_needed;
-                    glVertices[++index] = x2 + th * fastCos(theta_c);
-                    glVertices[++index] = y2 + th * fastSin(theta_c);
-                    glVertices[++index] = x2;
-                    glVertices[++index] = y2;
-                }
-            }
-            glVertices[++index] = x2 + th * v2y;
-            glVertices[++index] = y2 - th * v2x;
-            glVertices[++index] = x2 - th * v2y;
-            glVertices[++index] = y2 + th * v2x;
-        }
-        let ret = new Float32Array((index >= 0) ? glVertices.subarray(0, index) : []);
-        return ret;
-    }
-
-    class Pen {
-        constructor() {
-            this.color = new Color(0, 0, 0, 255);
-            this.thickness = 2;
-            this.dashPattern = [];
-            this.dashOffset = 0;
-            this.endcap = 'round';
-            this.endcapRes = 1;
-            this.join = 'dynamic';
-            this.joinRes = 1;
-            this.useNative = false;
-            this.visible = true;
-        }
-    }
-
-    function earcut(data, holeIndices, dim) {
-        dim = dim || 2;
-        var hasHoles = holeIndices && holeIndices.length, outerLen = hasHoles ? holeIndices[0] * dim : data.length, outerNode = linkedList(data, 0, outerLen, dim, true), triangles = [];
-        if (!outerNode || outerNode.next === outerNode.prev)
-            return triangles;
-        var minX, minY, maxX, maxY, x, y, invSize;
-        if (hasHoles)
-            outerNode = eliminateHoles(data, holeIndices, outerNode, dim);
-        // if the shape is not too simple, we'll use z-order curve hash later; calculate polygon bbox
-        if (data.length > 80 * dim) {
-            minX = maxX = data[0];
-            minY = maxY = data[1];
-            for (var i = dim; i < outerLen; i += dim) {
-                x = data[i];
-                y = data[i + 1];
-                if (x < minX)
-                    minX = x;
-                if (y < minY)
-                    minY = y;
-                if (x > maxX)
-                    maxX = x;
-                if (y > maxY)
-                    maxY = y;
-            }
-            // minX, minY and invSize are later used to transform coords into integers for z-order calculation
-            invSize = Math.max(maxX - minX, maxY - minY);
-            invSize = invSize !== 0 ? 1 / invSize : 0;
-        }
-        earcutLinked(outerNode, triangles, dim, minX, minY, invSize);
-        return triangles;
-    }
-    // create a circular doubly linked list from polygon points in the specified winding order
-    function linkedList(data, start, end, dim, clockwise) {
-        var i, last;
-        if (clockwise === (signedArea(data, start, end, dim) > 0)) {
-            for (i = start; i < end; i += dim)
-                last = insertNode(i, data[i], data[i + 1], last);
-        }
-        else {
-            for (i = end - dim; i >= start; i -= dim)
-                last = insertNode(i, data[i], data[i + 1], last);
-        }
-        if (last && equals(last, last.next)) {
-            removeNode(last);
-            last = last.next;
-        }
-        return last;
-    }
-    // eliminate colinear or duplicate points
-    function filterPoints(start, end) {
-        if (!start)
-            return start;
-        if (!end)
-            end = start;
-        var p = start, again;
-        do {
-            again = false;
-            if (!p.steiner && (equals(p, p.next) || area(p.prev, p, p.next) === 0)) {
-                removeNode(p);
-                p = end = p.prev;
-                if (p === p.next)
-                    break;
-                again = true;
-            }
-            else {
-                p = p.next;
-            }
-        } while (again || p !== end);
-        return end;
-    }
-    // main ear slicing loop which triangulates a polygon (given as a linked list)
-    function earcutLinked(ear, triangles, dim, minX, minY, invSize, pass) {
-        if (!ear)
-            return;
-        // interlink polygon nodes in z-order
-        if (!pass && invSize)
-            indexCurve(ear, minX, minY, invSize);
-        var stop = ear, prev, next;
-        // iterate through ears, slicing them one by one
-        while (ear.prev !== ear.next) {
-            prev = ear.prev;
-            next = ear.next;
-            if (invSize ? isEarHashed(ear, minX, minY, invSize) : isEar(ear)) {
-                // cut off the triangle
-                triangles.push(prev.i / dim);
-                triangles.push(ear.i / dim);
-                triangles.push(next.i / dim);
-                removeNode(ear);
-                // skipping the next vertex leads to less sliver triangles
-                ear = next.next;
-                stop = next.next;
-                continue;
-            }
-            ear = next;
-            // if we looped through the whole remaining polygon and can't find any more ears
-            if (ear === stop) {
-                // try filtering points and slicing again
-                if (!pass) {
-                    earcutLinked(filterPoints(ear), triangles, dim, minX, minY, invSize, 1);
-                    // if this didn't work, try curing all small self-intersections locally
-                }
-                else if (pass === 1) {
-                    ear = cureLocalIntersections(filterPoints(ear), triangles, dim);
-                    earcutLinked(ear, triangles, dim, minX, minY, invSize, 2);
-                    // as a last resort, try splitting the remaining polygon into two
-                }
-                else if (pass === 2) {
-                    splitEarcut(ear, triangles, dim, minX, minY, invSize);
-                }
-                break;
-            }
-        }
-    }
-    // check whether a polygon node forms a valid ear with adjacent nodes
-    function isEar(ear) {
-        var a = ear.prev, b = ear, c = ear.next;
-        if (area(a, b, c) >= 0)
-            return false; // reflex, can't be an ear
-        // now make sure we don't have other points inside the potential ear
-        var p = ear.next.next;
-        while (p !== ear.prev) {
-            if (pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-                area(p.prev, p, p.next) >= 0)
-                return false;
-            p = p.next;
-        }
-        return true;
-    }
-    function isEarHashed(ear, minX, minY, invSize) {
-        var a = ear.prev, b = ear, c = ear.next;
-        if (area(a, b, c) >= 0)
-            return false; // reflex, can't be an ear
-        // triangle bbox; min & max are calculated like this for speed
-        var minTX = a.x < b.x ? (a.x < c.x ? a.x : c.x) : (b.x < c.x ? b.x : c.x), minTY = a.y < b.y ? (a.y < c.y ? a.y : c.y) : (b.y < c.y ? b.y : c.y), maxTX = a.x > b.x ? (a.x > c.x ? a.x : c.x) : (b.x > c.x ? b.x : c.x), maxTY = a.y > b.y ? (a.y > c.y ? a.y : c.y) : (b.y > c.y ? b.y : c.y);
-        // z-order range for the current triangle bbox;
-        var minZ = zOrder(minTX, minTY, minX, minY, invSize), maxZ = zOrder(maxTX, maxTY, minX, minY, invSize);
-        var p = ear.prevZ, n = ear.nextZ;
-        // look for points inside the triangle in both directions
-        while (p && p.z >= minZ && n && n.z <= maxZ) {
-            if (p !== ear.prev && p !== ear.next &&
-                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-                area(p.prev, p, p.next) >= 0)
-                return false;
-            p = p.prevZ;
-            if (n !== ear.prev && n !== ear.next &&
-                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y) &&
-                area(n.prev, n, n.next) >= 0)
-                return false;
-            n = n.nextZ;
-        }
-        // look for remaining points in decreasing z-order
-        while (p && p.z >= minZ) {
-            if (p !== ear.prev && p !== ear.next &&
-                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-                area(p.prev, p, p.next) >= 0)
-                return false;
-            p = p.prevZ;
-        }
-        // look for remaining points in increasing z-order
-        while (n && n.z <= maxZ) {
-            if (n !== ear.prev && n !== ear.next &&
-                pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y) &&
-                area(n.prev, n, n.next) >= 0)
-                return false;
-            n = n.nextZ;
-        }
-        return true;
-    }
-    // go through all polygon nodes and cure small local self-intersections
-    function cureLocalIntersections(start, triangles, dim) {
-        var p = start;
-        do {
-            var a = p.prev, b = p.next.next;
-            if (!equals(a, b) && intersects(a, p, p.next, b) && locallyInside(a, b) && locallyInside(b, a)) {
-                triangles.push(a.i / dim);
-                triangles.push(p.i / dim);
-                triangles.push(b.i / dim);
-                // remove two nodes involved
-                removeNode(p);
-                removeNode(p.next);
-                p = start = b;
-            }
-            p = p.next;
-        } while (p !== start);
-        return filterPoints(p);
-    }
-    // try splitting polygon into two and triangulate them independently
-    function splitEarcut(start, triangles, dim, minX, minY, invSize) {
-        // look for a valid diagonal that divides the polygon into two
-        var a = start;
-        do {
-            var b = a.next.next;
-            while (b !== a.prev) {
-                if (a.i !== b.i && isValidDiagonal(a, b)) {
-                    // split the polygon in two by the diagonal
-                    var c = splitPolygon(a, b);
-                    // filter colinear points around the cuts
-                    a = filterPoints(a, a.next);
-                    c = filterPoints(c, c.next);
-                    // run earcut on each half
-                    earcutLinked(a, triangles, dim, minX, minY, invSize);
-                    earcutLinked(c, triangles, dim, minX, minY, invSize);
-                    return;
-                }
-                b = b.next;
-            }
-            a = a.next;
-        } while (a !== start);
-    }
-    // link every hole into the outer loop, producing a single-ring polygon without holes
-    function eliminateHoles(data, holeIndices, outerNode, dim) {
-        var queue = [], i, len, start, end, list;
-        for (i = 0, len = holeIndices.length; i < len; i++) {
-            start = holeIndices[i] * dim;
-            end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
-            list = linkedList(data, start, end, dim, false);
-            if (list === list.next)
-                list.steiner = true;
-            queue.push(getLeftmost(list));
-        }
-        queue.sort(compareX);
-        // process holes from left to right
-        for (i = 0; i < queue.length; i++) {
-            outerNode = eliminateHole(queue[i], outerNode);
-            outerNode = filterPoints(outerNode, outerNode.next);
-        }
-        return outerNode;
-    }
-    function compareX(a, b) {
-        return a.x - b.x;
-    }
-    // find a bridge between vertices that connects hole with an outer ring and and link it
-    function eliminateHole(hole, outerNode) {
-        var bridge = findHoleBridge(hole, outerNode);
-        if (!bridge) {
-            return outerNode;
-        }
-        var bridgeReverse = splitPolygon(bridge, hole);
-        // filter collinear points around the cuts
-        var filteredBridge = filterPoints(bridge, bridge.next);
-        filterPoints(bridgeReverse, bridgeReverse.next);
-        // Check if input node was removed by the filtering
-        return outerNode === bridge ? filteredBridge : outerNode;
-    }
-    // David Eberly's algorithm for finding a bridge between hole and outer polygon
-    function findHoleBridge(hole, outerNode) {
-        var p = outerNode, hx = hole.x, hy = hole.y, qx = -Infinity, m;
-        // find a segment intersected by a ray from the hole's leftmost point to the left;
-        // segment's endpoint with lesser x will be potential connection point
-        do {
-            if (hy <= p.y && hy >= p.next.y && p.next.y !== p.y) {
-                var x = p.x + (hy - p.y) * (p.next.x - p.x) / (p.next.y - p.y);
-                if (x <= hx && x > qx) {
-                    qx = x;
-                    if (x === hx) {
-                        if (hy === p.y)
-                            return p;
-                        if (hy === p.next.y)
-                            return p.next;
-                    }
-                    m = p.x < p.next.x ? p : p.next;
-                }
-            }
-            p = p.next;
-        } while (p !== outerNode);
-        if (!m)
-            return null;
-        if (hx === qx)
-            return m; // hole touches outer segment; pick leftmost endpoint
-        // look for points inside the triangle of hole point, segment intersection and endpoint;
-        // if there are no points found, we have a valid connection;
-        // otherwise choose the point of the minimum angle with the ray as connection point
-        var stop = m, mx = m.x, my = m.y, tanMin = Infinity, tan;
-        p = m;
-        do {
-            if (hx >= p.x && p.x >= mx && hx !== p.x &&
-                pointInTriangle(hy < my ? hx : qx, hy, mx, my, hy < my ? qx : hx, hy, p.x, p.y)) {
-                tan = Math.abs(hy - p.y) / (hx - p.x); // tangential
-                if (locallyInside(p, hole) &&
-                    (tan < tanMin || (tan === tanMin && (p.x > m.x || (p.x === m.x && sectorContainsSector(m, p)))))) {
-                    m = p;
-                    tanMin = tan;
-                }
-            }
-            p = p.next;
-        } while (p !== stop);
-        return m;
-    }
-    // whether sector in vertex m contains sector in vertex p in the same coordinates
-    function sectorContainsSector(m, p) {
-        return area(m.prev, m, p.prev) < 0 && area(p.next, m, m.next) < 0;
-    }
-    // interlink polygon nodes in z-order
-    function indexCurve(start, minX, minY, invSize) {
-        var p = start;
-        do {
-            if (p.z === null)
-                p.z = zOrder(p.x, p.y, minX, minY, invSize);
-            p.prevZ = p.prev;
-            p.nextZ = p.next;
-            p = p.next;
-        } while (p !== start);
-        p.prevZ.nextZ = null;
-        p.prevZ = null;
-        sortLinked(p);
-    }
-    // Simon Tatham's linked list merge sort algorithm
-    // http://www.chiark.greenend.org.uk/~sgtatham/algorithms/listsort.html
-    function sortLinked(list) {
-        var i, p, q, e, tail, numMerges, pSize, qSize, inSize = 1;
-        do {
-            p = list;
-            list = null;
-            tail = null;
-            numMerges = 0;
-            while (p) {
-                numMerges++;
-                q = p;
-                pSize = 0;
-                for (i = 0; i < inSize; i++) {
-                    pSize++;
-                    q = q.nextZ;
-                    if (!q)
-                        break;
-                }
-                qSize = inSize;
-                while (pSize > 0 || (qSize > 0 && q)) {
-                    if (pSize !== 0 && (qSize === 0 || !q || p.z <= q.z)) {
-                        e = p;
-                        p = p.nextZ;
-                        pSize--;
-                    }
-                    else {
-                        e = q;
-                        q = q.nextZ;
-                        qSize--;
-                    }
-                    if (tail)
-                        tail.nextZ = e;
-                    else
-                        list = e;
-                    e.prevZ = tail;
-                    tail = e;
-                }
-                p = q;
-            }
-            tail.nextZ = null;
-            inSize *= 2;
-        } while (numMerges > 1);
-        return list;
-    }
-    // z-order of a point given coords and inverse of the longer side of data bbox
-    function zOrder(x, y, minX, minY, invSize) {
-        // coords are transformed into non-negative 15-bit integer range
-        x = 32767 * (x - minX) * invSize;
-        y = 32767 * (y - minY) * invSize;
-        x = (x | (x << 8)) & 0x00FF00FF;
-        x = (x | (x << 4)) & 0x0F0F0F0F;
-        x = (x | (x << 2)) & 0x33333333;
-        x = (x | (x << 1)) & 0x55555555;
-        y = (y | (y << 8)) & 0x00FF00FF;
-        y = (y | (y << 4)) & 0x0F0F0F0F;
-        y = (y | (y << 2)) & 0x33333333;
-        y = (y | (y << 1)) & 0x55555555;
-        return x | (y << 1);
-    }
-    // find the leftmost node of a polygon ring
-    function getLeftmost(start) {
-        var p = start, leftmost = start;
-        do {
-            if (p.x < leftmost.x || (p.x === leftmost.x && p.y < leftmost.y))
-                leftmost = p;
-            p = p.next;
-        } while (p !== start);
-        return leftmost;
-    }
-    // check if a point lies within a convex triangle
-    function pointInTriangle(ax, ay, bx, by, cx, cy, px, py) {
-        return (cx - px) * (ay - py) - (ax - px) * (cy - py) >= 0 &&
-            (ax - px) * (by - py) - (bx - px) * (ay - py) >= 0 &&
-            (bx - px) * (cy - py) - (cx - px) * (by - py) >= 0;
-    }
-    // check if a diagonal between two polygon nodes is valid (lies in polygon interior)
-    function isValidDiagonal(a, b) {
-        return a.next.i !== b.i && a.prev.i !== b.i && !intersectsPolygon(a, b) && // dones't intersect other edges
-            (locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b) && // locally visible
-                (area(a.prev, a, b.prev) || area(a, b.prev, b)) || // does not create opposite-facing sectors
-                equals(a, b) && area(a.prev, a, a.next) > 0 && area(b.prev, b, b.next) > 0); // special zero-length case
-    }
-    // signed area of a triangle
-    function area(p, q, r) {
-        return (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
-    }
-    // check if two points are equal
-    function equals(p1, p2) {
-        return p1.x === p2.x && p1.y === p2.y;
-    }
-    // check if two segments intersect
-    function intersects(p1, q1, p2, q2) {
-        var o1 = sign(area(p1, q1, p2));
-        var o2 = sign(area(p1, q1, q2));
-        var o3 = sign(area(p2, q2, p1));
-        var o4 = sign(area(p2, q2, q1));
-        if (o1 !== o2 && o3 !== o4)
-            return true; // general case
-        if (o1 === 0 && onSegment(p1, p2, q1))
-            return true; // p1, q1 and p2 are collinear and p2 lies on p1q1
-        if (o2 === 0 && onSegment(p1, q2, q1))
-            return true; // p1, q1 and q2 are collinear and q2 lies on p1q1
-        if (o3 === 0 && onSegment(p2, p1, q2))
-            return true; // p2, q2 and p1 are collinear and p1 lies on p2q2
-        if (o4 === 0 && onSegment(p2, q1, q2))
-            return true; // p2, q2 and q1 are collinear and q1 lies on p2q2
-        return false;
-    }
-    // for collinear points p, q, r, check if point q lies on segment pr
-    function onSegment(p, q, r) {
-        return q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) && q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y);
-    }
-    function sign(num) {
-        return num > 0 ? 1 : num < 0 ? -1 : 0;
-    }
-    // check if a polygon diagonal intersects any polygon segments
-    function intersectsPolygon(a, b) {
-        var p = a;
-        do {
-            if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i &&
-                intersects(p, p.next, a, b))
-                return true;
-            p = p.next;
-        } while (p !== a);
-        return false;
-    }
-    // check if a polygon diagonal is locally inside the polygon
-    function locallyInside(a, b) {
-        return area(a.prev, a, a.next) < 0 ?
-            area(a, b, a.next) >= 0 && area(a, a.prev, b) >= 0 :
-            area(a, b, a.prev) < 0 || area(a, a.next, b) < 0;
-    }
-    // check if the middle point of a polygon diagonal is inside the polygon
-    function middleInside(a, b) {
-        var p = a, inside = false, px = (a.x + b.x) / 2, py = (a.y + b.y) / 2;
-        do {
-            if (((p.y > py) !== (p.next.y > py)) && p.next.y !== p.y &&
-                (px < (p.next.x - p.x) * (py - p.y) / (p.next.y - p.y) + p.x))
-                inside = !inside;
-            p = p.next;
-        } while (p !== a);
-        return inside;
-    }
-    // link two polygon vertices with a bridge; if the vertices belong to the same ring, it splits polygon into two;
-    // if one belongs to the outer ring and another to a hole, it merges it into a single ring
-    function splitPolygon(a, b) {
-        var a2 = new Node(a.i, a.x, a.y), b2 = new Node(b.i, b.x, b.y), an = a.next, bp = b.prev;
-        a.next = b;
-        b.prev = a;
-        a2.next = an;
-        an.prev = a2;
-        b2.next = a2;
-        a2.prev = b2;
-        bp.next = b2;
-        b2.prev = bp;
-        return b2;
-    }
-    // create a node and optionally link it with previous one (in a circular doubly linked list)
-    function insertNode(i, x, y, last) {
-        var p = new Node(i, x, y);
-        if (!last) {
-            p.prev = p;
-            p.next = p;
-        }
-        else {
-            p.next = last.next;
-            p.prev = last;
-            last.next.prev = p;
-            last.next = p;
-        }
-        return p;
-    }
-    function removeNode(p) {
-        p.next.prev = p.prev;
-        p.prev.next = p.next;
-        if (p.prevZ)
-            p.prevZ.nextZ = p.nextZ;
-        if (p.nextZ)
-            p.nextZ.prevZ = p.prevZ;
-    }
-    function Node(i, x, y) {
-        // vertex index in coordinates array
-        this.i = i;
-        // vertex coordinates
-        this.x = x;
-        this.y = y;
-        // previous and next vertex nodes in a polygon ring
-        this.prev = null;
-        this.next = null;
-        // z-order curve value
-        this.z = null;
-        // previous and next nodes in z-order
-        this.prevZ = null;
-        this.nextZ = null;
-        // indicates whether this is a steiner point
-        this.steiner = false;
-    }
-    // return a percentage difference between the polygon area and its triangulation area;
-    // used to verify correctness of triangulation
-    earcut.deviation = function (data, holeIndices, dim, triangles) {
-        var hasHoles = holeIndices && holeIndices.length;
-        var outerLen = hasHoles ? holeIndices[0] * dim : data.length;
-        var polygonArea = Math.abs(signedArea(data, 0, outerLen, dim));
-        if (hasHoles) {
-            for (var i = 0, len = holeIndices.length; i < len; i++) {
-                var start = holeIndices[i] * dim;
-                var end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
-                polygonArea -= Math.abs(signedArea(data, start, end, dim));
-            }
-        }
-        var trianglesArea = 0;
-        for (i = 0; i < triangles.length; i += 3) {
-            var a = triangles[i] * dim;
-            var b = triangles[i + 1] * dim;
-            var c = triangles[i + 2] * dim;
-            trianglesArea += Math.abs((data[a] - data[c]) * (data[b + 1] - data[a + 1]) -
-                (data[a] - data[b]) * (data[c + 1] - data[a + 1]));
-        }
-        return polygonArea === 0 && trianglesArea === 0 ? 0 :
-            Math.abs((trianglesArea - polygonArea) / polygonArea);
-    };
-    function signedArea(data, start, end, dim) {
-        var sum = 0;
-        for (var i = start, j = end - dim; i < end; i += dim) {
-            sum += (data[j] - data[i]) * (data[i + 1] + data[j + 1]);
-            j = i;
-        }
-        return sum;
-    }
-    // turn a polygon in a multi-dimensional array form (e.g. as in GeoJSON) into a form Earcut accepts
-    earcut.flatten = function (data) {
-        var dim = data[0][0].length, result = { vertices: [], holes: [], dimensions: dim }, holeIndex = 0;
-        for (var i = 0; i < data.length; i++) {
-            for (var j = 0; j < data[i].length; j++) {
-                for (var d = 0; d < dim; d++)
-                    result.vertices.push(data[i][j][d]);
-            }
-            if (i > 0) {
-                holeIndex += data[i - 1].length;
-                result.holes.push(holeIndex);
-            }
-        }
-        return result;
-    };
-
-    // Given a top-level scene, construct a bunch of information about the scene, outputting a map of context ids ->
-    /**
-     * Validate, shallow clone instructions and change their zIndex, et cetera
-     * @param instruction
-     */
-    function adjustInstruction(instruction) {
-        const type = instruction.type;
-        if (!type)
-            throw new Error('Instruction does not have a type. Erroneous instruction: ' +
-                JSON.stringify(instruction));
-        let out = Object.assign({}, instruction);
-        let zIndex = out.zIndex;
-        let escapeContext = out.escapeContext;
-        // Fill in zIndex value for sorting
-        if (zIndex === undefined) {
-            if (type === 'text') {
-                out.zIndex = Infinity;
-            }
-            else {
-                out.zIndex = 0;
-            }
-        }
-        if (escapeContext === undefined) {
-            // Default text value
-            if (type === 'text') {
-                out.escapeContext = 'top';
-            }
-        }
-        else if (escapeContext) {
-            // Validate
-            if (typeof escapeContext !== 'string') {
-                throw new Error('Instruction has an invalid escape context value. Erroneous instruction: ' +
-                    JSON.stringify(instruction));
-            }
-        }
-        return out;
-    }
-    /**
-     * Return whether a given context is the correct context to escape to, depending on what information is provided.
-     * @param context
-     * @param escapeContext
-     */
-    function matchEscapeContext(context, escapeContext) {
-        if (typeof escapeContext === 'string') {
-            return context.id === escapeContext;
-        }
-        else if (typeof escapeContext === 'object') {
-            let type = escapeContext.type;
-            if (!type)
-                throw new Error('escapeContext has insufficient information to determine which context to escape to');
-            return context.info.type !== type;
-        }
-        else {
-            throw new TypeError(`Invalid escapeContext value ${escapeContext}`);
-        }
-    }
-    class SceneGraph {
-        constructor() {
-            /**
-             * Mapping of <context id> -> <context info>, where contexts are specific subsets of the rendering sequence created
-             * by certain groups that allow for operations to be applied to multiple elements. Example: a plot may create a
-             * context to scissor element within its boundaries. The context info also contains rendering instructions for that
-             * context (incl. buffers and such). The scene graph contains a lot of information!
-             * @type {Map<string, {}>}
-             */
-            this.contextMap = new Map();
-            this.id = getStringID();
-            /**
-             * The renderer this graph is attached to. Certain instructions don't need the renderer to be involved, so this
-             * is optional allowing for static analysis of scenes detached from any specific renderer.
-             * @type {WebGLRenderer|null}
-             */
-            this.renderer = null;
-            /**
-             * Resources used by this scene graph
-             * @type {{}}
-             */
-            this.resources = {
-                textures: {},
-                buffers: {}
-            };
-        }
-        destroyAll() {
-            this.contextMap.clear();
-        }
-        /**
-         * Construct a graph from scratch
-         * @param scene
-         * @returns {*}
-         */
-        constructFromScene(scene) {
-            this.destroyAll();
-            const contextMap = this.contextMap;
-            let topContext = {
-                parent: null,
-                id: 'top',
-                info: { type: 'top' },
-                children: [],
-                contextDepth: 0
-            };
-            contextMap.set('top', topContext);
-            let currentContext = topContext;
-            let contextDepth = 0;
-            recursivelyBuild(scene);
-            // Recurse through the scene elements, not yet handling zIndex and escapeContext
-            function recursivelyBuild(elem) {
-                var _a, _b;
-                let children = elem.children;
-                let info = elem.getRenderingInfo();
-                let instructions = info === null || info === void 0 ? void 0 : info.instructions;
-                let contexts = info === null || info === void 0 ? void 0 : info.contexts;
-                let initialContext = currentContext;
-                if (contexts) {
-                    // Time to build contexts
-                    contexts = Array.isArray(contexts) ? contexts : [contexts];
-                    for (const c of contexts) {
-                        contextDepth++;
-                        let newContext = {
-                            type: 'context',
-                            id: (_a = c.id) !== null && _a !== void 0 ? _a : elem.id + '-' + getVersionID(),
-                            parent: currentContext,
-                            children: [],
-                            info: c,
-                            zIndex: (_b = c.zIndex) !== null && _b !== void 0 ? _b : 0,
-                            contextDepth,
-                            escapeContext: c.type === 'escapeContext' ? c.escapeContext : null
-                        };
-                        contextMap.set(newContext.id, newContext);
-                        currentContext.children.push(newContext);
-                        currentContext = newContext;
-                    }
-                }
-                if (instructions) {
-                    instructions = Array.isArray(instructions)
-                        ? instructions
-                        : [instructions];
-                    currentContext.children.push({
-                        id: elem.id,
-                        instructions
-                    });
-                }
-                if (children) {
-                    let childrenLen = children.length;
-                    for (let i = 0; i < childrenLen; ++i) {
-                        recursivelyBuild(children[i]);
-                    }
-                }
-                currentContext = initialContext;
-                contextDepth = currentContext.contextDepth;
-            }
-            return this;
-        }
-        computeInstructions() {
-            // For each context compute a list of instructions that the renderer should run
-            var _a;
-            const { contextMap } = this;
-            const contexts = Array.from(contextMap.values()).sort((a, b) => b.contextDepth - a.contextDepth);
-            for (const c of contexts) {
-                const children = c.children;
-                const instructions = [];
-                const escapingInstructions = [];
-                // eventually, instructions will have the structure {child: id, instructions: [], zIndex: (number)}. zIndex of text
-                // instructions is assumed to be Infinity and unspecified zIndex is 0. For now we'll just have a flat map
-                for (const child of children) {
-                    if (child.children) {
-                        // Is context
-                        let contextInstruction = {
-                            type: 'context',
-                            id: child.id,
-                            zIndex: (_a = child.zIndex) !== null && _a !== void 0 ? _a : 0,
-                            escapeContext: child.escapeContext
-                        };
-                        if (child.escapeContext) {
-                            escapingInstructions.push(contextInstruction);
-                        }
-                        else {
-                            instructions.push(contextInstruction);
-                            // Add escaped instructions
-                            for (const inst of child.escapingInstructions) {
-                                if (matchEscapeContext(c, inst.escapeContext))
-                                    instructions.push(inst);
-                                else
-                                    escapingInstructions.push(inst);
-                            }
-                        }
-                    }
-                    else {
-                        for (const instruction of child.instructions) {
-                            if (!instruction)
-                                continue;
-                            let adj = adjustInstruction(instruction);
-                            if (adj.escapeContext) {
-                                escapingInstructions.push(adj);
-                            }
-                            else {
-                                instructions.push(adj);
-                            }
-                        }
-                    }
-                }
-                c.instructions = instructions;
-                c.escapingInstructions = escapingInstructions;
-            }
-            for (const c of contextMap.values()) {
-                c.instructions.sort((a, b) => a.zIndex - b.zIndex);
-            }
-        }
-        /**
-         * Execute a callback on each context of the scene graph
-         * @param callback
-         */
-        forEachContext(callback) {
-            for (const context of this.contextMap.values())
-                callback(context);
-        }
-        /**
-         * Return an array of all text instructions, to be used to generate a text texture
-         * @returns {Array}
-         */
-        getTextInstructions() {
-            let ret = [];
-            this.forEachContext(c => {
-                const instructions = c.instructions;
-                for (let i = instructions.length - 1; i >= 0; --i) {
-                    if (instructions[i].type === 'text')
-                        ret.push(instructions[i]);
-                }
-            });
-            return ret;
-        }
-        loadTextAtlas(img) {
-            const renderer = this.renderer;
-            const gl = renderer.gl;
-            let name = '__' + this.id + '-text';
-            let texture = renderer.getTexture(name);
-            let needsInitialize = !texture;
-            if (needsInitialize) {
-                texture = renderer.createTexture(name);
-            }
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            if (needsInitialize) {
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            }
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-            this.resources.textAtlas = {
-                id: name,
-                width: img.width,
-                height: img.height
-            };
-        }
-        destroyTextAtlas() {
-            const renderer = this.renderer;
-            renderer.gl;
-            let name = '__' + this.id + '-text';
-            renderer.deleteTexture(name);
-        }
-        freeCompiledInstructions(inst) {
-            if (!inst)
-                return;
-            for (const i of inst) {
-                if (i.vao) {
-                    this.renderer.deleteVAO(i.vao);
-                }
-                if (i.buffers) {
-                    i.buffers.forEach(b => this.renderer.deleteBuffer(b));
-                }
-            }
-        }
-        compile() {
-            // Convert context instructions into a series of renderable instructions, generating appropriate vertex arrays and
-            // textures. Until this step, the scene graph is independent of the renderer.
-            const renderer = this.renderer;
-            if (!renderer)
-                throw new Error('Compiling a scene graph requires the graph to be attached to a renderer.');
-            const gl = renderer.gl;
-            const textRenderer = renderer.textRenderer;
-            const textInstructions = this.getTextInstructions();
-            if (textInstructions.length !== 0) {
-                textRenderer.drawText(textInstructions);
-                this.loadTextAtlas(textRenderer.canvas);
-            }
-            this.forEachContext(context => {
-                var _a, _b, _c;
-                this.freeCompiledInstructions(context.compiledInstructions);
-                const instructions = context.instructions;
-                const compiledInstructions = [];
-                switch (context.info.type) {
-                    case 'scene':
-                    case 'scissor':
-                        compiledInstructions.push(context.info);
-                        break;
-                }
-                // Super simple (and hella inefficient) for now
-                for (const instruction of instructions) {
-                    switch (instruction.type) {
-                        case 'context':
-                            compiledInstructions.push(instruction);
-                            break;
-                        case 'polyline': {
-                            const pen = (_a = instruction.pen) !== null && _a !== void 0 ? _a : Pen.default;
-                            let vertices = convertTriangleStrip(flattenVec2Array(instruction.vertices), pen);
-                            let color = pen.color;
-                            let buffName = context.id + '-' + getVersionID();
-                            let vaoName = context.id + '-' + getVersionID();
-                            let buff = renderer.createBuffer(buffName);
-                            let vao = renderer.createVAO(vaoName);
-                            gl.bindVertexArray(vao);
-                            gl.bindBuffer(gl.ARRAY_BUFFER, buff);
-                            gl.enableVertexAttribArray(0 /* position buffer */);
-                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                            let compiled = {
-                                type: 'triangle_strip',
-                                vao: vaoName,
-                                buffers: [buffName],
-                                vertexCount: vertices.length / 2,
-                                color
-                            };
-                            compiledInstructions.push(compiled);
-                            break;
-                        }
-                        case 'text': {
-                            let tcName = context.id + '-' + getVersionID();
-                            let scName = context.id + '-' + getVersionID();
-                            let vaoName = context.id + '-' + getVersionID();
-                            let textureCoords = renderer.createBuffer(tcName);
-                            let sceneCoords = renderer.createBuffer(scName);
-                            let vao = renderer.createVAO(vaoName);
-                            gl.bindVertexArray(vao);
-                            gl.bindBuffer(gl.ARRAY_BUFFER, sceneCoords);
-                            gl.enableVertexAttribArray(0 /* position buffer */);
-                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-                            let pos = instruction.pos, rect = instruction.rect;
-                            // Round to pixels so it looks nicer
-                            rect = { x: pos.x | 0, y: pos.y | 0, w: rect.w, h: rect.h };
-                            gl.bufferData(gl.ARRAY_BUFFER, generateRectangleTriangleStrip(rect), gl.STATIC_DRAW);
-                            gl.bindBuffer(gl.ARRAY_BUFFER, textureCoords);
-                            gl.enableVertexAttribArray(1 /* texture coords buffer */);
-                            gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
-                            gl.bufferData(gl.ARRAY_BUFFER, generateRectangleTriangleStrip(instruction.rect), gl.STATIC_DRAW);
-                            let compiled = {
-                                type: 'text',
-                                vao: vaoName,
-                                buffers: [tcName, scName],
-                                vertexCount: 4,
-                                text: instruction.text
-                            };
-                            compiledInstructions.push(compiled);
-                            break;
-                        }
-                        /*case 'latex': {
-                          let compiledStr = katex.renderToString(instruction.latex)
-              
-                          let compiled = {
-                            type: 'latex',
-                            html: compiledStr,
-                            content: instruction.latex,
-                            pos: instruction.pos,
-                            dir: instruction.dir ?? "C",
-                            spacing: instruction.spacing ?? 0,
-                            scale: instruction.scale ?? 1
-                          }
-                          compiledInstructions.push(compiled)
-              
-                          break
-                        }*/
-                        case 'triangle_strip': {
-                            let vertices = instruction.vertices;
-                            let color = (_b = instruction.color) !== null && _b !== void 0 ? _b : Colors.BLACK;
-                            let buffName = context.id + '-' + getVersionID();
-                            let vaoName = context.id + '-' + getVersionID();
-                            let buff = renderer.createBuffer(buffName);
-                            let vao = renderer.createVAO(vaoName);
-                            gl.bindVertexArray(vao);
-                            gl.bindBuffer(gl.ARRAY_BUFFER, buff);
-                            gl.enableVertexAttribArray(0 /* position buffer */);
-                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                            let compiled = {
-                                type: 'triangle_strip',
-                                vao: vaoName,
-                                buffers: [buffName],
-                                vertexCount: vertices.length / 2,
-                                color
-                            };
-                            compiledInstructions.push(compiled);
-                            break;
-                        }
-                        case 'polygon': {
-                            let vertices = instruction.vertices;
-                            let triangulatedVertices = earcut(vertices);
-                            let color = (_c = instruction.color) !== null && _c !== void 0 ? _c : Colors.BLACK;
-                            let vertexBufferName = context.id + '-' + getVersionID();
-                            let indexBufferName = context.id + '-' + getVersionID();
-                            let vaoName = context.id + '-' + getVersionID();
-                            let vertexBuffer = renderer.createBuffer(vertexBufferName);
-                            let indexBuffer = renderer.createBuffer(indexBufferName);
-                            let vao = renderer.createVAO(vaoName);
-                            gl.bindVertexArray(vao);
-                            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-                            gl.enableVertexAttribArray(0 /* position buffer */);
-                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-                            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(triangulatedVertices), gl.STATIC_DRAW);
-                            let compiled = {
-                                type: 'triangles',
-                                mode: 'elements',
-                                vao: vaoName,
-                                buffers: [vertexBufferName],
-                                vertexCount: triangulatedVertices.length,
-                                color
-                            };
-                            compiledInstructions.push(compiled);
-                            break;
-                        }
-                        case 'debug': {
-                            let buffName = context.id + '-' + getVersionID();
-                            let vaoName = context.id + '-' + getVersionID();
-                            let buff = renderer.createBuffer(buffName);
-                            let vao = renderer.createVAO(vaoName);
-                            gl.bindVertexArray(vao);
-                            gl.bindBuffer(gl.ARRAY_BUFFER, buff);
-                            gl.enableVertexAttribArray(0 /* position buffer */);
-                            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-                            let vertices;
-                            if (instruction.rect) {
-                                let rect = BoundingBox.fromObj(instruction.rect);
-                                if (!rect)
-                                    throw new Error('Invalid rectangle debug instruction');
-                                vertices = generateRectangleDebug(rect);
-                            }
-                            else if (instruction.polyline) {
-                                vertices = new Float32Array(flattenVec2Array(instruction.polyline));
-                            }
-                            else {
-                                throw new Error('Unrecognized debug instruction');
-                            }
-                            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                            let compiled = {
-                                type: 'line_strip',
-                                vao: vaoName,
-                                buffers: [buffName],
-                                vertexCount: vertices.length / 2,
-                                color: Colors.RED
-                            };
-                            compiledInstructions.push(compiled);
-                            break;
-                        }
-                        default:
-                            throw new Error(`Unsupported instruction type ${instruction.type}`);
-                    }
-                }
-                gl.bindVertexArray(null);
-                compiledInstructions.push({ type: 'pop_context' });
-                context.compiledInstructions = compiledInstructions;
-            });
-        }
-        // Yield a list of all compiled instructions
-        forEachCompiledInstruction(callback, contextID = 'top') {
-            let ctx = this.contextMap.get(contextID);
-            if (ctx.compiledInstructions) {
-                for (const instruction of ctx.compiledInstructions) {
-                    if (instruction.type === 'context') {
-                        this.forEachCompiledInstruction(callback, instruction.id);
-                    }
-                    else {
-                        callback(instruction);
-                    }
-                }
-            }
-        }
-        destroy() {
-            this.forEachContext(c => this.freeCompiledInstructions(c.compiledInstructions));
-            this.destroyTextAtlas();
-        }
-    }
-
-    /**
-     * Here lies madness.
-     *
-     * Grapheme's renderer is going to be pretty monolithic, with a lot of interdependent moving parts. As such, I'm going
-     * to keep it mostly contained within one class, perhaps with some helper classes. Doing so will also help eliminate
-     * fluff and make optimization easy and expressive.
-     *
-     * On the surface, Grapheme's rendering sequence is simple: the renderer traverses through the scene, calls
-     * getRenderingInfo() on every element, compiles a list of all the instructions (which look something like
-     * "draw this set of triangles", "draw this text"), and runs them all, returning the final product. But if the rendering
-     * pipeline were so simple, there would be little point in using WebGL at all. Why not just use Canvas2D? Why learn such
-     * a painful API? The name of the game is parallelism and optimization. Where WebGL excels is low-level control
-     * and rapid parallel computation. Its weaknesses are in a lack of builtin functions (lacking text, for example) and
-     * high complexity and verbosity,
-     *
-     * Imagine we did indeed render a scene instruction by instruction. We come across a line, so we switch to the polyline
-     * program, load in the vertices into a buffer, and drawArrays -- draw it to the canvas. We then come across a piece of
-     * text. WebGL cannot render text, so we switch over to a Canvas2D context and draw a piece of text onto a blank canvas.
-     * We then load the blank canvas as a texture into WebGL and switch to the text program, loading in a set of vertices
-     * specifying where the text is, and calling drawArrays. We then come across a couple hundred polylines in a row. For
-     * each polyline, we copy its data to the buffer and render it.
-     *
-     * There are two serious problems here. One is that loading buffers and textures is slow, for various
-     * reasons. Another is that parallelism is seriously lacking. We have to call drawArrays several hundred times for those
-     * polylines, and each call has a large constant overhead.
-     *
-     * The renderer thus has several difficult jobs: minimizing buffer and texture loading, and combining consecutive calls
-     * into one large drawArrays call. Accomplishing these jobs (and a few more) requires somewhat intricate work,
-     * which should of course be designed to allow more esoteric draw calls -- for a Mandelbrot set, say -- to still be
-     * handled with consistency. There is no perfect solution, but there are certainly gains to be made. As with the props
-     * of Grapheme elements, the problem is made easier by high-level abstraction. The renderer should produce a comparable
-     * result when optimized, compared to when every call is made individually. (They need not be exactly the same, for
-     * reasons that will become apparent.)
-     *
-     * Even more annoying is that the WebGL context may suddenly crash and all its buffers and programs lost in the ether.
-     * The renderer thus has to be able to handle such data loss without indefinitely screwing up the rendering process. So
-     * I have my work cut out, but that's exciting.
-     *
-     * The current thinking is a z-index based system with heuristic reallocation of changing and unchanging buffers. Given
-     * a list of elements and each element's instructions, we are allowed to rearrange the instructions under certain
-     * conditions: 1. instructions are drawn in order of z-index and 2. specific instructions within a given z-index may
-     * specify that they must be rendered in the order in which they appear in the instruction list. The latter condition
-     * allows deterministic ordering of certain instructions on the same z-index, which is useful when that suborder does
-     * matter (like when two instructions for a given element are intended to be one on top of the other). Otherwise, the
-     * instructions may be freely rearranged and (importantly) combined into larger operations that look the same.
-     *
-     * Already, such a sorting system is very helpful. Text elements generally specify a z-index of Infinity, while
-     * gridlines might specify a z-index of 0 to be behind most things, and a draggable point might have an index of 20. A
-     * simple algorithm to render a static image is to sort by z-index, then within each z-index group triangle draw calls
-     * with the same color together, and group text draw calls together. We then proceed to render each z-index's grouped
-     * calls in order.
-     *
-     * For a static scene, such a rendering system would work great. But in a dynamic scene, constantly reoptimizing the
-     * entire scene as a result of changing some inconsequential little geometry would be stupid. Ideally, changing a little
-     * geometry would merely update a single buffer or subsection of a buffer. Yet some changes do require a complete re-
-     * distribution of instructions; if the scene's size doubled, for example, and all the elements changed substantially.
-     * We can certainly cache information from the previous rendering process of a scene, but what do we cache? How do we
-     * ensure stability and few edge cases? How do we deal with context loss?
-     *
-     * The first step is to understand exactly what instructions are. *Anonymous* instructions have a type, some data, and
-     * an element id (which element it originated from). *Normal* instructions have a type, some data, an element id, an
-     * instruction id, and a version. The point of normal instructions is to represent a sort of "draw concept", where after
-     * an update, that instruction may have changed slightly, but will still have the same id. The instruction associated
-     * with a function plot, for example, will have some numerical ID, and when the plot changes somehow, the version will
-     * increase, but the numerical ID will remain the same. Conceptually, this means that the instruction to draw the
-     * function plot has been rewritten, and the old data is basically irrelevant -- and buffers associated with that
-     * data can and should be reused or reallocated.
-     *
-     * Anonymous instructions, on the other hand, have no concept of "versioning". Anonymous instructions are
-     * entirely reallocated or deleted every time their element updates. These instructions are generally used to indicate
-     * instructions which are very prone to change and where its values should be tied solely to the element updating.
-     */
-    // Functions taken from Mozilla docs
-    function createShaderFromSource(gl, shaderType, shaderSource) {
-        const shader = gl.createShader(shaderType);
-        gl.shaderSource(shader, shaderSource);
-        gl.compileShader(shader);
-        const succeeded = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
-        if (succeeded)
-            return shader;
-        const err = new Error(gl.getShaderInfoLog(shader));
-        gl.deleteShader(shader);
-        throw err;
-    }
-    function createGLProgram(gl, vertexShader, fragShader) {
-        const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragShader);
-        gl.linkProgram(program);
-        const succeeded = gl.getProgramParameter(program, gl.LINK_STATUS);
-        if (succeeded)
-            return program;
-        const err = new Error(gl.getProgramInfoLog(program));
-        gl.deleteProgram(program);
-        throw err;
-    }
-    const MonochromaticGeometryProgram = {
-        vert: `
-precision highp float;
-attribute vec2 vertexPosition;
-// Transforms a vertex from pixel coordinates to clip space
-uniform vec2 xyScale;
-vec2 displacement = vec2(-1, 1);
-         
-void main() {
-   gl_Position = vec4(vertexPosition * xyScale + displacement, 0, 1);
-}`,
-        frag: `precision highp float;
-uniform vec4 color;
-        
-void main() {
-   gl_FragColor = color;
-}`
-    };
-    const TextProgram = {
-        vert: `
-precision highp float;
-attribute vec2 vertexPosition;
-attribute vec2 texCoords;
-        
-uniform vec2 xyScale;
-uniform vec2 textureSize;
-        
-varying vec2 texCoord;
-vec2 displace = vec2(-1, 1);
-         
-void main() {
-  gl_Position = vec4(vertexPosition * xyScale + displace, 0, 1);
-  texCoord = texCoords / textureSize;
-}`,
-        frag: `
-precision highp float;
-        
-uniform vec4 color;
-uniform sampler2D textAtlas;
-        
-varying vec2 texCoord;
-        
-void main() {
-  gl_FragColor = texture2D(textAtlas, texCoord);
-}`
-    };
-    /**
-     * Currently accepted draw calls:
-     *
-     * Triangle strip: { type: "triangle_strip", vertices: Float32Array, color: { r: (int), g: (int), b: (int), a: (int) } }
-     * Debug: { type: "debug" }
-     * Text: { type: "text", font: (string), x: (float), y: (float), color: { r: ... } }
-     */
-    class WebGLRenderer {
-        constructor() {
-            const canvas = document.createElement('canvas');
-            const gl = canvas.getContext('webgl2');
-            if (!gl) {
-                throw new Error("WebGL2 not supported");
-            }
-            /**
-             * The main rendering buffer
-             * @type {HTMLCanvasElement}
-             */
-            this.canvas = canvas;
-            /**
-             * The renderer's WebGL context. Assuming WebGL2 for now
-             * @type {WebGLRenderingContext}
-             */
-            this.gl = gl;
-            /**
-             * Map between scene ids and known information about them
-             * @type {Map<string, {}>}
-             */
-            this.sceneCaches = new Map();
-            /**
-             * A mapping between program names and valid programs. When the context is lost, this map is reset
-             * @type {Map<string, { glProgram: WebGLProgram, attribs: {}, uniforms: {} }>}
-             */
-            this.programs = new Map();
-            this.buffers = new Map();
-            this.textures = new Map();
-            this.vaos = new Map();
-            this.textRenderer = new TextRenderer();
-        }
-        /**
-         * Create and link a program and store it in the form { glProgram, attribs, uniforms }, where glProgram is the
-         * underlying program and attribs and uniforms are a dictionary of attributes and uniforms from the program. The
-         * attributes are given as an object, of manually assigned indices
-         * @param programName {string}
-         * @param vertexShaderSource {string}
-         * @param fragShaderSource {string}
-         * @param attributeBindings {{}}
-         * @param uniformNames {string[]}
-         * @return  {{glProgram: WebGLProgram, attribs: {}, uniforms: {}}} The program
-         */
-        createProgram(programName, vertexShaderSource, fragShaderSource, attributeBindings = {}, uniformNames = []) {
-            this.deleteProgram(programName);
-            const { gl } = this;
-            const glProgram = createGLProgram(gl, createShaderFromSource(gl, gl.VERTEX_SHADER, vertexShaderSource), createShaderFromSource(gl, gl.FRAGMENT_SHADER, fragShaderSource));
-            for (let name in attributeBindings) {
-                let loc = attributeBindings[name];
-                gl.bindAttribLocation(glProgram, loc, name);
-            }
-            const uniforms = {};
-            for (const name of uniformNames) {
-                uniforms[name] = gl.getUniformLocation(glProgram, name);
-            }
-            const program = { glProgram, attribs: attributeBindings, uniforms };
-            this.programs.set(programName, program);
-            return program;
-        }
-        /**
-         * Get the program of a given name, returning undefined if it does not exist
-         * @param programName {string}
-         * @returns {{glProgram: WebGLProgram, attribs: {}, uniforms: {}}}
-         */
-        getProgram(programName) {
-            return this.programs.get(programName);
-        }
-        /**
-         * Delete a program, including the underlying GL program
-         * @param programName {string}
-         */
-        deleteProgram(programName) {
-            const program = this.getProgram(programName);
-            if (program) {
-                this.gl.deleteProgram(program.glProgram);
-                this.programs.delete(programName);
-            }
-        }
-        getTexture(textureName) {
-            return this.textures.get(textureName);
-        }
-        deleteTexture(textureName) {
-            let texture = this.getTexture(textureName);
-            if (texture !== undefined) {
-                this.gl.deleteTexture(this.getTexture(textureName));
-                this.textures.delete(textureName);
-            }
-        }
-        createTexture(textureName) {
-            this.deleteTexture(textureName);
-            const texture = this.gl.createTexture();
-            this.textures.set(textureName, texture);
-            return texture;
-        }
-        getBuffer(bufferName) {
-            return this.buffers.get(bufferName);
-        }
-        createBuffer(bufferName) {
-            let buffer = this.getBuffer(bufferName);
-            if (!buffer) {
-                buffer = this.gl.createBuffer();
-                this.buffers.set(bufferName, buffer);
-            }
-            return buffer;
-        }
-        deleteBuffer(bufferName) {
-            const buffer = this.getBuffer(bufferName);
-            if (buffer !== undefined) {
-                this.buffers.delete(bufferName);
-                this.gl.deleteBuffer(buffer);
-            }
-        }
-        getVAO(vaoName) {
-            return this.vaos.get(vaoName);
-        }
-        createVAO(vaoName) {
-            let vao = this.getVAO(vaoName);
-            if (!vao) {
-                vao = this.gl.createVertexArray();
-                this.vaos.set(vaoName, vao);
-            }
-            return vao;
-        }
-        deleteVAO(vaoName) {
-            const vao = this.getVAO(vaoName);
-            if (vao !== undefined) {
-                this.vaos.delete(vaoName);
-                this.gl.deleteVertexArray(vao);
-            }
-        }
-        monochromaticGeometryProgram() {
-            let program = this.getProgram('__MonochromaticGeometry');
-            if (!program) {
-                const programDesc = MonochromaticGeometryProgram;
-                program = this.createProgram('__MonochromaticGeometry', programDesc.vert, programDesc.frag, { vertexPosition: 0 }, ['xyScale', 'color']);
-            }
-            return program;
-        }
-        textProgram() {
-            let program = this.getProgram('__Text');
-            if (!program) {
-                const programDesc = TextProgram;
-                program = this.createProgram('__Text', programDesc.vert, programDesc.frag, { vertexPosition: 0, texCoords: 1 }, ['textureSize', 'xyScale', 'textAtlas', 'color']);
-            }
-            return program;
-        }
-        /**
-         * Resize and clear the canvas, only clearing if the dimensions haven't changed, since the buffer will be erased.
-         * @param width
-         * @param height
-         * @param dpr
-         * @param clear {Color}
-         */
-        clearAndResizeCanvas(width, height, dpr = 1, clear = Colors.TRANSPARENT) {
-            const { canvas } = this;
-            this.dpr = dpr;
-            if (canvas.width === width && canvas.height === height) {
-                this.clearCanvas(clear);
-            }
-            else {
-                canvas.width = width;
-                canvas.height = height;
-                // lol, use the given background color
-                if (clear.r || clear.g || clear.b || clear.a) {
-                    this.clearCanvas(clear);
-                }
-            }
-            this.gl.viewport(0, 0, width, height);
-        }
-        clearCanvas(clearColor) {
-            const { gl } = this;
-            gl.clearColor(clearColor.r / 255, clearColor.g / 255, clearColor.b / 255, clearColor.a / 255);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-        }
-        getXYScale() {
-            let { canvas, dpr } = this;
-            return [2 / canvas.width * dpr, -2 / canvas.height * dpr];
-        }
-        renderScene(scene, log = false) {
-            scene.updateAll();
-            const graph = new SceneGraph();
-            graph.renderer = this;
-            let startTime = performance.now();
-            let globalStartTime = startTime;
-            graph.constructFromScene(scene);
-            let endTime = performance.now();
-            let additionalHTML = [];
-            if (log)
-                console.log(`Construction time: ${endTime - startTime}ms`);
-            startTime = performance.now();
-            graph.computeInstructions();
-            endTime = performance.now();
-            if (log)
-                console.log(`Instruction compute time: ${endTime - startTime}ms`);
-            startTime = performance.now();
-            graph.compile();
-            endTime = performance.now();
-            if (log)
-                console.log(`Instruction compile time: ${endTime - startTime}ms`);
-            const { gl } = this;
-            let scissorTest = false;
-            let scissorBox = null;
-            // Contains instructions for how to reset the state back to how it was before a context was entered
-            const contexts = [];
-            const setScissor = (enabled, box) => {
-                scissorTest = enabled;
-                scissorBox = box;
-                let dpr = this.dpr;
-                if (enabled) {
-                    gl.enable(gl.SCISSOR_TEST);
-                }
-                else {
-                    gl.disable(gl.SCISSOR_TEST);
-                }
-                if (box) {
-                    // GL scissoring is from bottom left corner, not top left. One of those annoying cases where we care about dpr
-                    // since we're working in pixels, not CSS pixels
-                    gl.scissor(dpr * box.x, this.canvas.height - dpr * (box.y + box.h), dpr * box.w, dpr * box.h);
-                }
-            };
-            startTime = performance.now();
-            gl.enable(gl.BLEND);
-            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-            graph.forEachCompiledInstruction(instruction => {
-                var _a;
-                let primitiveEnum = 0;
-                switch (instruction.type) {
-                    case 'scene': {
-                        const { dims, backgroundColor } = instruction;
-                        this.clearAndResizeCanvas(dims.canvasWidth, dims.canvasHeight, dims.dpr, backgroundColor);
-                        contexts.push(null);
-                        break;
-                    }
-                    case 'scissor': {
-                        contexts.push({
-                            type: 'set_scissor',
-                            enable: scissorTest,
-                            scissor: scissorBox
-                        });
-                        setScissor(true, instruction.scissor);
-                        break;
-                    }
-                    case 'text': {
-                        const program = this.textProgram();
-                        gl.useProgram(program.glProgram);
-                        gl.bindVertexArray(this.getVAO(instruction.vao));
-                        let { id: atlasID, width: atlasWidth, height: atlasHeight } = graph.resources.textAtlas;
-                        let texture = this.getTexture(atlasID);
-                        gl.activeTexture(gl.TEXTURE0);
-                        gl.bindTexture(gl.TEXTURE_2D, texture);
-                        gl.uniform1i(program.uniforms.textAtlas, 0);
-                        gl.uniform2f(program.uniforms.textureSize, atlasWidth, atlasHeight);
-                        gl.uniform2fv(program.uniforms.xyScale, this.getXYScale());
-                        gl.drawArrays(gl.TRIANGLE_STRIP, 0, instruction.vertexCount);
-                        break;
-                    }
-                    case 'latex': {
-                        additionalHTML.push(instruction);
-                        break;
-                    }
-                    case 'triangle_strip': // LOL
-                        primitiveEnum++;
-                    case 'triangles':
-                        primitiveEnum++;
-                    case 'line_strip':
-                        primitiveEnum += 2;
-                    case 'lines':
-                        primitiveEnum++;
-                        {
-                            const program = this.monochromaticGeometryProgram();
-                            gl.useProgram(program.glProgram);
-                            gl.bindVertexArray(this.getVAO(instruction.vao));
-                            const color = instruction.color;
-                            gl.uniform4f(program.uniforms.color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
-                            gl.uniform2fv(program.uniforms.xyScale, this.getXYScale());
-                            const mode = (_a = instruction.mode) !== null && _a !== void 0 ? _a : "arrays";
-                            if (mode === "arrays") {
-                                gl.drawArrays(primitiveEnum, 0, instruction.vertexCount);
-                            }
-                            else if (mode === "elements") {
-                                gl.drawElements(primitiveEnum, instruction.vertexCount, gl.UNSIGNED_SHORT, 0);
-                            }
-                            break;
-                        }
-                    case 'pop_context': {
-                        const popped = contexts.pop();
-                        if (!popped)
-                            break;
-                        switch (popped.type) {
-                            case 'set_scissor': {
-                                setScissor(popped.enabled, popped.scissor);
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                    default:
-                        throw new Error(`Unknown instruction type ${instruction.type}`);
-                }
-            });
-            endTime = performance.now();
-            if (log)
-                console.log(`Render time: ${endTime - globalStartTime}ms`);
-            graph.destroy();
-            if (additionalHTML.length && scene.domElement) {
-                scene.setHTMLElements(additionalHTML);
-            }
-        }
-        renderDOMScene(scene) {
-            this.renderScene(scene);
-            createImageBitmap(this.canvas).then(bitmap => {
-                scene.bitmapRenderer.transferFromImageBitmap(bitmap);
-            });
-        }
-    }
-
     class LinearPlot2DTransform {
         /**
          * Parameters beginning with p are the bounding box in pixel coordinates. Those beginning with g are the bounding box
@@ -8974,6 +7418,2040 @@ void main() {
         }
     }
 
+    /**
+     * Describes how a line should be drawn. Opacity should be set through color and is not tracked separately.
+     */
+    class Pen {
+        constructor() {
+        }
+        static compose(...args) {
+            let p = Pen.default();
+            // Later arguments are given more precedence
+            for (let spec of args) {
+                if (spec.color !== undefined)
+                    p.color = Color.fromObj(spec.color);
+                if (spec.thickness !== undefined)
+                    p.thickness = spec.thickness;
+                if (spec.dashPattern !== undefined)
+                    p.dashPattern = spec.dashPattern;
+                if (spec.dashOffset !== undefined)
+                    p.dashOffset = spec.dashOffset;
+                if (spec.endcap !== undefined)
+                    p.endcap = spec.endcap;
+                if (spec.endcapRes !== undefined)
+                    p.endcapRes = spec.endcapRes;
+                if (spec.join !== undefined)
+                    p.join = spec.join;
+                if (spec.joinRes !== undefined)
+                    p.joinRes = spec.joinRes;
+                if (spec.useNative !== undefined)
+                    p.useNative = spec.useNative;
+                if (spec.visible !== undefined)
+                    p.visible = spec.visible;
+            }
+            p.color = p.color.clone();
+            return p;
+        }
+        static create(params) {
+            return Pen.compose(params);
+        }
+        static default() {
+            let p = new Pen();
+            p.color = new Color(0, 0, 0, 255);
+            p.thickness = 2;
+            p.dashPattern = [];
+            p.dashOffset = 0;
+            p.endcap = 'round';
+            p.endcapRes = 1;
+            p.join = 'dynamic';
+            p.joinRes = 1;
+            p.useNative = false;
+            p.visible = true;
+            return p;
+        }
+        static fromObj(o) {
+            if (typeof o === 'string')
+                return _interpretStringAsPen(o);
+            return Pen.compose(Pen.default(), o);
+        }
+        _toJoinTypeEnum() {
+            return Pen.JOIN_TYPES[this.join];
+        }
+        _toEndcapTypeEnum() {
+            return Pen.ENDCAP_TYPES[this.endcap];
+        }
+    }
+    // Enum for endcaps
+    Pen.ENDCAP_TYPES = Object.freeze({
+        butt: 0,
+        round: 1,
+        square: 2
+    });
+    // Enum for join types
+    Pen.JOIN_TYPES = Object.freeze({
+        bevel: 0,
+        miter: 2,
+        round: 1,
+        dynamic: 3
+    });
+    // TODO
+    function _interpretStringAsPen(str) {
+        try {
+            let color = Color.fromCss(str);
+            return Pen.fromObj({ color });
+        }
+        catch (_a) {
+            return Pen.default();
+        }
+    }
+
+    /**
+     * A base class to use for event listeners and the like. Supports things like addEventListener(eventName, callback),
+     * triggerEvent(name, ?data), removeEventListener( ... ), removeEventListeners(?name). Listeners are called with
+     * data and this as parameters. If a listener returns true, the event does not propagate to any other listeners.
+     */
+    class Eventful {
+        constructor() {
+            this.eventListeners = new Map();
+        }
+        /**
+         * Register an event listener to a given event name. It will be given lower priority than the ones that came before.
+         * The callbacks will be given a single parameter "data".
+         * @param eventName The name of the event
+         * @param callback The callback(s) to register
+         * @returns Returns self (for chaining)
+         */
+        addEventListener(eventName, callback) {
+            if (Array.isArray(callback)) {
+                for (const c of callback)
+                    this.addEventListener(eventName, c);
+                return this;
+            }
+            else if (typeof callback === 'function') {
+                if (typeof eventName !== 'string' || !eventName)
+                    throw new TypeError('Invalid event name');
+                let listeners = this.eventListeners.get(eventName);
+                if (!listeners) {
+                    listeners = [];
+                    this.eventListeners.set(eventName, listeners);
+                }
+                if (!listeners.includes(callback))
+                    listeners.push(callback);
+                return this;
+            }
+            else
+                throw new TypeError('Invalid callback');
+        }
+        /**
+         * Get the event listeners under "eventName", cloned so that they can be derped around with
+         * @param eventName {string} Name of the event whose listeners we want
+         * @returns {Array<function>}
+         */
+        getEventListeners(eventName) {
+            const listeners = this.eventListeners.get(eventName);
+            return Array.isArray(listeners) ? listeners.slice() : [];
+        }
+        /**
+         * Whether there are any event listeners registered for the given name
+         * @param eventName
+         * @returns {boolean} Whether any listeners are registered for that event
+         */
+        hasEventListenersFor(eventName) {
+            return Array.isArray(this.eventListeners.get(eventName));
+        }
+        /**
+         * Remove an event listener from the given event. Fails silently if that listener is not registered.
+         * @param eventName {string} The name of the event
+         * @param callback {function} The callback to remove
+         * @returns {Eventful} Returns self (for chaining)
+         */
+        removeEventListener(eventName, callback) {
+            if (Array.isArray(callback)) {
+                for (const c of callback)
+                    this.removeEventListener(eventName, c);
+                return this;
+            }
+            const listeners = this.eventListeners.get(eventName);
+            if (Array.isArray(listeners)) {
+                const index = listeners.indexOf(callback);
+                if (index !== -1)
+                    listeners.splice(index, 1);
+                if (listeners.length === 0)
+                    this.eventListeners.delete(eventName);
+            }
+            return this;
+        }
+        /**
+         * Remove all event listeners for a given event. Fails silently if there are no listeners registered for that event.
+         * @param eventName {string} The name of the event whose listeners should be cleared
+         * @returns {Eventful} Returns self (for chaining)
+         */
+        removeEventListeners(eventName) {
+            this.eventListeners.delete(eventName);
+            return this;
+        }
+        /**
+         * Trigger the listeners registered under an event name, passing (data, this, eventName) to each. Returns true if
+         * some listener returned true, stopping propagation; returns false otherwise
+         * @param eventName {string} Name of the event to be triggered
+         * @param data {any} Optional data parameter to be passed to listeners
+         * @returns {boolean} Whether any listener stopped propagation
+         */
+        triggerEvent(eventName, data) {
+            if (this.eventListeners.size === 0)
+                return false;
+            const listeners = this.eventListeners.get(eventName);
+            if (Array.isArray(listeners)) {
+                for (let i = 0; i < listeners.length; ++i) {
+                    if (listeners[i](data))
+                        return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    class Props {
+        constructor() {
+            this.store = new Map();
+            this.proxy = new Proxy(this, proxyHandlers);
+            this.hasChangedProperties = 0;
+            this.hasChangedInheritableProperties = 0;
+        }
+        static toBit(as) {
+            switch (as) {
+                case 'program':
+                    return 2;
+                case 'user':
+                    return 1;
+                case 'real':
+                case 'default':
+                    return 0;
+            }
+            throw new Error(`Unknown accessor name ${as}`);
+        }
+        _getPropertyStore(propName) {
+            return this.store.get(propName);
+        }
+        _setPropertyStore(propName, value) {
+            this.store.set(propName, value);
+        }
+        /**
+         * Create a property store for a given prop, returning the store. It returns the already-existing store, if appropriate.
+         * @param propName
+         * @returns Property store associated with the given property name
+         */
+        _createPropertyStore(propName) {
+            let existing = this._getPropertyStore(propName);
+            if (!existing) {
+                existing = { value: undefined, changed: 0 };
+                this._setPropertyStore(propName, existing);
+            }
+            return existing;
+        }
+        /**
+         * Deletes a property store wholesale, not trying to account for changed values and the like.
+         * @param propName
+         */
+        _deletePropertyStore(propName) {
+            this.store.delete(propName);
+        }
+        _forEachStore(callback) {
+            for (let value of this.store.values()) {
+                callback(value);
+            }
+        }
+        /**
+         * Call the function with the name and (real) value of each property
+         * @param callback
+         */
+        forEachProperty(callback) {
+            for (let [key, value] of this.store.entries()) {
+                callback(key, value);
+            }
+        }
+        /**
+         * Get a list of all properties, including ones which are undefined but still have a store
+         */
+        listProperties() {
+            return Array.from(this.store.keys());
+        }
+        /**
+         * Returns whether a property has changed relative to the last marked update
+         * @param propName
+         */
+        hasChanged(propName) {
+            var _a;
+            return !!((_a = this._getPropertyStore(propName)) === null || _a === void 0 ? void 0 : _a.changed);
+        }
+        /**
+         * Returns whether any property of a list of properties has changed, locally speaking.
+         * @param propList
+         */
+        haveChanged(propList) {
+            return (!!this.hasChangedProperties && propList.some(prop => this.hasChanged(prop)));
+        }
+        /**
+         * Returns whether a given property is inheritable (i.e., an inherit value of 1 or 2).
+         * @param propName
+         * @returns
+         */
+        isPropertyInheritable(propName) {
+            var _a;
+            return !!((_a = this._getPropertyStore(propName)) === null || _a === void 0 ? void 0 : _a.inherit);
+        }
+        /**
+         * Returns a list of properties which have changed, locally speaking.
+         */
+        listChangedProperties() {
+            return this.listProperties().filter(prop => this.hasChanged(prop));
+        }
+        /**
+         * Returns a list of properties which are to be inherited (i.e., an inherit of 1 or 2).
+         */
+        listInheritableProperties() {
+            return this.listProperties().filter(prop => this.isPropertyInheritable(prop));
+        }
+        /**
+         * Inherit all inheritable properties from a given props. The function does this by comparing the local inherited
+         * prop's version to the given props's version. If the local version is lower, the property and version are copied,
+         * and the changed status is set to true. If updateAll is set to true, the function makes sure to check that the
+         * actual list of inherited properties is synchronized, because it normally only checks the local inheritable
+         * properties and compares them. In fact, it only checks the local inheritable properties with inherit: 1, which
+         * indicates it came from a parent rather than being defined in the current element.
+         * @param props {Props}
+         * @param updateAll {boolean} Whether to force a complete update, in which the inheritable properties are verifiably
+         * synced with the top element's properties. This usually happens after an element is added to a group, or after a
+         * group's inheritance signature has changed.
+         */
+        inheritPropertiesFrom(props, updateAll = false) {
+            // Early exit condition, where if no inheritable properties have changed, we need not do anything
+            if (!(updateAll || props.hasChangedInheritableProperties))
+                return;
+            updateAll = updateAll || props.hasChangedInheritableProperties === 2;
+            // We recalculate all local properties whose inheritance is 1, indicating they were inherited from above. Properties
+            // not found above are deleted, properties found above are copied if their version is greater than or equal to the
+            // version of the current property. This ensures that this props does not have any extraneous properties or any
+            // incorrect/nonupdated values.
+            for (const [propName, propStore] of this.store.entries()) {
+                if (propStore.inherit !== 1)
+                    continue;
+                const otherPropsStore = props._getPropertyStore(propName);
+                // if no such inheritable property, delete the local property (do not keep it as inheritable)
+                if (!otherPropsStore ||
+                    +otherPropsStore.inherit < 1 ||
+                    otherPropsStore.value === undefined) {
+                    propStore.value = undefined;
+                    propStore.changed |= 0b1;
+                    propStore.inherit = 0;
+                    this.markHasChangedProperties();
+                    this.markHasChangedInheritableProperties();
+                }
+                // Value has been changed!
+                if (propStore.version === undefined || otherPropsStore.version > propStore.version) {
+                    propStore.version = otherPropsStore.version;
+                    propStore.value = otherPropsStore.value;
+                    propStore.changed |= 0b1;
+                    this.markHasChangedProperties();
+                    this.markHasChangedInheritableProperties();
+                }
+            }
+            // If updateAll is true, we run through all the given properties and inherit all 1s and 2s.
+            if (updateAll) {
+                for (const [propName, propStore] of props.store.entries()) {
+                    if (!propStore.inherit || propStore.value === undefined)
+                        continue;
+                    let ourPropStore = this._getPropertyStore(propName);
+                    // Where things are actually inherited!!
+                    if (!ourPropStore ||
+                        (ourPropStore.inherit === 1 &&
+                            (ourPropStore.version === undefined || propStore.version > ourPropStore.version))) {
+                        if (!ourPropStore) {
+                            ourPropStore = this._createPropertyStore(propName);
+                            // Goes around set
+                            ourPropStore.inherit = 1;
+                            ourPropStore.value = propStore.value;
+                            this.markHasChangedInheritanceSignature();
+                        }
+                        ourPropStore.version = propStore.version;
+                        ourPropStore.value = propStore.value;
+                        ourPropStore.changed |= 0b1;
+                        this.markHasChangedProperties();
+                    }
+                }
+            }
+        }
+        /**
+         * This function sets the value of a property. It is meant mostly for internal use. If prompted, it will check to see
+         * whether the value given and the current value are strictly equal, or deeply equal, and if so, not mark the property
+         * as changed. By default, this check is turned off, meaning all value assignments are marked as "changed". The third
+         * parameter indicates whether the value should be directly modified, or
+         * @param propName {string} The name of the property
+         * @param value {any} The value of the property
+         * @param as {number} Which value to change. 0 if real, 1 if user, 2 if program
+         * @param equalityCheck {number} What type of equality check to perform against the current value, if any, to assess
+         * the changed value. 0 - no check, 1 - strict equals, 2 - deep equals, 3 - deep equals, looking for "equals()" methods
+         * @param markChanged {boolean} Whether to actually mark the value as changed. In turn, if the property is a changed
+         * inheritable property, that will be noted
+         * @returns {any}
+         */
+        set(propName, value, as = 0, equalityCheck = 0, markChanged = true) {
+            let store = this._getPropertyStore(propName);
+            // Helper functions to abstract away the "user/program/real" concept
+            function getStoreValue() {
+                store = store;
+                switch (as) {
+                    case 0:
+                        return store.value;
+                    case 1:
+                        return store.userValue;
+                    case 2:
+                        return store.programValue;
+                }
+            }
+            function _setStoreValue(v) {
+                store = store;
+                switch (as) {
+                    case 0:
+                        store.value = v;
+                        break;
+                    case 1:
+                        store.userValue = v;
+                        break;
+                    case 2:
+                        store.programValue = v;
+                        break;
+                }
+            }
+            if (value === undefined) {
+                // Special case of deletion. If the property exists, we set its value to undefined, and if that property is
+                // defined to be inheritable, we set this.hasChangedInheritableProperties to 2. Note that an inherited property
+                // cannot be deleted, as that would be inconsistent; it can only be overridden.
+                // trivial case, don't do anything
+                if (!store || getStoreValue() === undefined)
+                    return value;
+                if (store.inherit === 1) {
+                    // If the store has an inheritance value of 1, we don't do anything
+                    return value;
+                }
+                else if (store.inherit === 2) {
+                    // If the property has inheritance 2, we keep it as undefined and notify that the signature of inheritable properties has
+                    // changed.
+                    _setStoreValue(undefined);
+                    // If setting the real value, need to change the version
+                    if (as === 0) {
+                        store.version = getVersionID();
+                        if (markChanged)
+                            this.markHasChangedInheritanceSignature();
+                    }
+                }
+                else {
+                    // Set its value to undefined
+                    _setStoreValue(undefined);
+                }
+                if (markChanged) {
+                    // Mark which bit has changed
+                    store.changed |= 1 << as;
+                    this.hasChangedProperties |= 1 << as;
+                }
+                return undefined;
+            }
+            // Otherwise, we need to get a property store
+            if (!store)
+                store = this._createPropertyStore(propName);
+            // We reject assignments to an inherited property. This can be overridden by setting the property's inheritance
+            // status.
+            if (store.inherit === 1)
+                return value;
+            if (equalityCheck !== 0) {
+                let storeValue = getStoreValue();
+                // Perform various equality checks
+                if (equalityCheck === 1 && storeValue === value)
+                    return value;
+                else if (equalityCheck > 1 && deepEquals(storeValue, value, equalityCheck === 3))
+                    return value;
+            }
+            // Set the value and changed values
+            _setStoreValue(value);
+            if (markChanged) {
+                store.changed |= 1 << as;
+                this.hasChangedProperties |= 1 << as;
+                // For values to be inherited, store the version of this value. Only for inherit: 2 properties
+                if (store.inherit === 2 && as === 0) {
+                    store.version = getVersionID();
+                    this.markHasChangedInheritableProperties();
+                }
+            }
+            return value;
+        }
+        markHasChangedProperties() {
+            this.hasChangedProperties |= 0b1;
+        }
+        markHasChangedInheritableProperties() {
+            let c = this.hasChangedInheritableProperties;
+            this.hasChangedInheritableProperties = (c > 1) ? c : 1;
+        }
+        markHasChangedInheritanceSignature() {
+            this.hasChangedInheritableProperties = 2;
+        }
+        configureProperty(propName, opts = {}) {
+            if (opts.inherit !== undefined) {
+                this.setPropertyInheritance(propName, opts.inherit);
+            }
+        }
+        configureProperties(propNames, opts = {}) {
+            for (const propName of propNames)
+                this.configureProperty(propName, opts);
+        }
+        /**
+         * Set a property's inheritance to 2 (if inherit is true) or 0
+         * @param propName {string}
+         * @param inherit {boolean}
+         * @return {Props}
+         */
+        setPropertyInheritance(propName, inherit = false) {
+            // Force a property store to be created with undefined value
+            const store = this._createPropertyStore(propName);
+            let currentInheritance = !!store.inherit;
+            if (currentInheritance === inherit)
+                return this;
+            if (inherit) {
+                store.version = getVersionID();
+                store.inherit = 2;
+            }
+            else {
+                delete store.version;
+                delete store.inherit;
+            }
+            if (store.value !== undefined)
+                this.hasChangedInheritableProperties = 2;
+            return this;
+        }
+        /**
+         * Get the value of a property.
+         * @param propName {string}
+         * @param as {number} 0 if getting the real value, 1 if getting the user value, 2 if getting the program value
+         * @returns {*}
+         */
+        get(propName, as = 0) {
+            let store = this._getPropertyStore(propName);
+            if (!store)
+                return undefined;
+            switch (as) {
+                case 0:
+                    return store.value;
+                case 1:
+                    return store.userValue;
+                case 2:
+                    return store.programValue;
+            }
+        }
+        getUserValue(propName) {
+            return this.get(propName, 1);
+        }
+        getProgramValue(propName) {
+            return this.get(propName, 2);
+        }
+        /**
+         * Get the values of a list of properties.
+         * @param propNameList
+         */
+        getProperties(propNameList) {
+            return propNameList.map(propName => this.get(propName));
+        }
+        /**
+         * Mark all properties as locally updated (changed = false).
+         */
+        markAllUpdated(bitmask = 0b111) {
+            bitmask = ~bitmask;
+            this.hasChangedProperties &= bitmask;
+            this._forEachStore(store => {
+                store.changed &= bitmask;
+            });
+        }
+        /**
+         * Mark a specific property as locally updated (changed = false).
+         * @param propName
+         */
+        markPropertyUpdated(propName) {
+            const store = this._getPropertyStore(propName);
+            if (store)
+                store.changed = 0;
+        }
+        /**
+         * Mark a given property (if it exists) as changed.
+         * @param propName {string}
+         */
+        markChanged(propName) {
+            let store = this._getPropertyStore(propName);
+            if (!store)
+                return;
+            store.changed |= 0b1;
+            this.hasChangedProperties |= 0b1;
+            // If the store is inheritable, we need to generate a version ID
+            if (store.inherit) {
+                store.version = getVersionID();
+                this.markHasChangedInheritableProperties();
+            }
+        }
+        /**
+         * Mark that no more inheritance is necessary. This function should only be called by the scene
+         */
+        _markGlobalUpdateComplete() {
+            if (this.hasChangedProperties)
+                this.markAllUpdated();
+            this.hasChangedInheritableProperties = 0;
+        }
+        stringify() {
+            const obj = {};
+            for (const [propName, propStore] of this.store) {
+                obj[propName] = propStore;
+            }
+            console.log(JSON.stringify(obj, null, 4));
+        }
+    }
+    const proxyHandlers = {
+        get: (target, propName) => {
+            return target.get(propName);
+        },
+        set: (target, propName, value) => {
+            target.set(propName, value);
+            return true;
+        }
+    };
+
+    /**
+     * The element class.
+     */
+    class Element extends Eventful {
+        constructor(opts = {}) {
+            var _a;
+            super(); // Eventful
+            this.id = (_a = opts.id) !== null && _a !== void 0 ? _a : getStringID();
+            if (typeof this.id !== 'string' || this.id.length === 0)
+                throw new TypeError('The element id must be a non-empty string');
+            this.parent = null;
+            this.scene = null;
+            this.props = new Props();
+            this.updateStage = -1;
+            this.internal = {
+                version: getVersionID()
+            };
+            // Call the element-defined constructor
+            this.init(opts);
+        }
+        /**
+         * Derived class–implemented function that is called when the element needs to be updated (usually to change how
+         * it's displayed)
+         */
+        _update() { }
+        /**
+         * Add a given element as a child to this element. Fails on elements that are not groups.
+         * @param e Element to add
+         */
+        add(e) {
+            throw new Error("Element is not a group and does not support having children");
+        }
+        /**
+         * Apply a given function, accepting a single argument (the element)
+         * @param callback The callback function
+         */
+        apply(callback) {
+            callback(this);
+        }
+        /**
+         * Inherit properties from the parent. If the updateStage is -1, then it indicates the child has not inherited any
+         * properties yet at all, so we need to check them all.
+         */
+        _defaultInheritProps() {
+            if (this.parent)
+                this.props.inheritPropertiesFrom(this.parent.props, this.updateStage === -1);
+        }
+        /**
+         * Default rendering info information, which just pulls from internal.renderInfo
+         */
+        getRenderingInfo() {
+            if (this.internal.renderInfo)
+                return this.internal.renderInfo;
+        }
+        /**
+         * Check whether a given element is a child of this element
+         * @param child
+         * @param recursive Whether to search recursively, or just look for immediate children
+         */
+        isChild(child, recursive = true) {
+            return false;
+        }
+        /**
+         * Whether this element is a top-level scene
+         */
+        isScene() {
+            return false;
+        }
+        init(params) { }
+        _defaultComputeProps() {
+        }
+        /**
+         * Recursively set the scene which this element belongs to
+         * @param scene The scene
+         */
+        _setScene(scene) {
+            this.scene = scene;
+        }
+        /**
+         * Stringify the props contents of this element
+         */
+        stringify() {
+            this.props.stringify();
+        }
+        update() {
+            // If some properties have changed, set the update stage accordingly. We use .min in case the update stage is -1
+            if (this.props.hasChangedProperties)
+                this.updateStage = Math.min(this.updateStage, 0);
+            if (this.updateStage === 100)
+                return;
+            this._update();
+            this.updateStage = 100;
+        }
+    }
+
+    class Group extends Element {
+        constructor(params) {
+            super(params);
+            this.children = [];
+        }
+        _update() {
+            this._defaultInheritProps();
+        }
+        /**
+         * Add an element to this group.
+         * @param elem Element to add
+         * @returns This group, for chaining
+         */
+        add(elem) {
+            if (elem.isScene())
+                throw new Error('Scene cannot be a child');
+            if (elem.parent)
+                throw new Error('Element to be added already has a parent');
+            if (!(elem instanceof Element))
+                throw new TypeError('Element not element');
+            if (elem === this)
+                throw new Error("Can't add self");
+            if (elem.isChild(this))
+                throw new Error("Can't make cycle");
+            this.children.push(elem);
+            elem.parent = this;
+            elem._setScene(this.scene);
+            elem.updateStage = -1;
+            return this;
+        }
+        /**
+         * Run callback(element) on this element and all the element's children
+         * @param callback {Function}
+         */
+        apply(callback) {
+            callback(this);
+            this.children.forEach(child => child.apply(callback));
+        }
+        /**
+         * If some inheritable properties have changed since the last global update completion, set all the children's update
+         * stages to 0. May change how this works later
+         */
+        informChildrenOfInheritance() {
+            if (this.props.hasChangedInheritableProperties && this.children) {
+                this.children.forEach(child => {
+                    let st = child.updateStage;
+                    child.updateStage = (st < 0) ? 0 : st;
+                });
+            }
+        }
+        isChild(elem, recursive = true) {
+            for (const child of this.children) {
+                if (child === elem)
+                    return true;
+                if (recursive && child.isChild(elem, true))
+                    return true;
+            }
+            return false;
+        }
+        isGroup() {
+            return true;
+        }
+        /**
+         * Remove a direct element from this group. Fails silently if the passed element is not a child.
+         * @param elem Element to remove
+         * @returns This group, for chaining
+         */
+        remove(elem) {
+            const index = this.children.indexOf(elem);
+            if (index !== -1) {
+                this.children.splice(index, 1);
+                elem.parent = null;
+                elem._setScene(null);
+                elem.updateStage = -1;
+            }
+            return this;
+        }
+        _setScene(scene) {
+            this.scene = scene;
+            for (let i = 0; i < this.children.length; i++) {
+                this.children[i]._setScene(scene);
+            }
+        }
+        triggerEvent(eventName, data) {
+            // Children are triggered first
+            for (const child of this.children) {
+                if (child.triggerEvent(eventName, data))
+                    return true;
+            }
+            return super.triggerEvent(eventName, data);
+        }
+        update() {
+            super.update();
+            this.informChildrenOfInheritance();
+        }
+    }
+
+    /**
+     * Passed to children as the parameter "sceneDimensions"
+     */
+    class SceneDimensions {
+        constructor(width, height, dpr) {
+            this.width = width;
+            this.height = height;
+            this.dpr = dpr;
+            // The size of the canvas in true device pixels, rather than CSS pixels
+            this.canvasWidth = this.dpr * this.width;
+            this.canvasHeight = this.dpr * this.height;
+        }
+        /**
+         * Get the bounding box of the entire scene
+         * @returns
+         */
+        getBoundingBox() {
+            return new BoundingBox(0, 0, this.width, this.height);
+        }
+        clone() {
+            return new SceneDimensions(this.width, this.height, this.dpr);
+        }
+    }
+    const MIN_SIZE = 100, MAX_SIZE = 16384;
+    function checkDimInRange(d) {
+        if (typeof d !== "number" || Number.isNaN(d) || d < MIN_SIZE || d > MAX_SIZE) {
+            throw new RangeError(`Dimension ${d} is out of range [${MIN_SIZE}, ${MAX_SIZE}]`);
+        }
+    }
+    /**
+     * Top level element in a Grapheme context. The scene has a width, height, and device pixel ratio as its defining
+     * geometric patterns, and potentially other properties -- interactivity information, for example. Uniquely, every
+     * element knows its scene directly as its .scene property.
+     */
+    class Scene extends Group {
+        init(params) {
+            this.scene = this;
+            this.props.set('sceneDims', new SceneDimensions(640, 480, 1));
+            this.props.setPropertyInheritance('sceneDims', true);
+        }
+        /**
+         * Get the scene's dimensions
+         */
+        getDims() {
+            return this._getDims().clone();
+        }
+        _getDims() {
+            return this.props.get('sceneDims');
+        }
+        _setDims(dims) {
+            this.props.set("sceneDims", dims, 0, 2);
+        }
+        setWidth(w) {
+            checkDimInRange(w);
+            let d = this.getDims();
+            d.width = w;
+            this._setDims(d);
+            return this;
+        }
+        setHeight(h) {
+            checkDimInRange(h);
+            let d = this.getDims();
+            d.width = h;
+            this._setDims(d);
+            return this;
+        }
+        setDPR(dpr) {
+            checkDimInRange(dpr);
+            let d = this.getDims();
+            d.width = dpr;
+            this._setDims(d);
+            return this;
+        }
+        /**
+         * Compute the internal property "sceneDimensions"
+         */
+        calculateSceneDimensions() {
+            const { props } = this;
+            if (props.haveChanged(['width', 'height', 'dpr'])) {
+                const { width, height, dpr } = props.proxy;
+                const sceneDimensions = new SceneDimensions(width, height, dpr);
+                // Equality check of 2 for deep comparison, in case width, height, dpr have not actually changed
+                props.set('sceneDims', sceneDimensions, 0 /* real */, 2 /* equality check */);
+            }
+        }
+        updateProps() {
+            this._defaultComputeProps();
+            this.calculateSceneDimensions();
+        }
+        /**
+         * Only scenes (and derived scenes) return true
+         * @returns {boolean}
+         */
+        isScene() {
+            return true;
+        }
+        _update() {
+            this.updateProps();
+            this.internal.renderInfo = {
+                contexts: [{
+                        type: 'scene',
+                        dims: this.props.get('sceneDims'),
+                        backgroundColor: this.props.get('backgroundColor')
+                    }]
+            };
+        }
+        /**
+         * This function updates all the elements and is the only one with the authority to mark all properties, including
+         * inheritable properties, as unchanged.
+         */
+        updateAll() {
+            this.apply(child => {
+                child.update();
+            });
+            // Mark the update as completed (WIP)
+            this.apply(child => child.props.markGlobalUpdateComplete());
+        }
+    }
+
+    function toDir(obj) {
+        if (obj instanceof Vec2) {
+            return obj;
+        }
+        else if (typeof obj === "string") {
+            switch (obj) {
+                case "N": return new Vec2(0, -1);
+                case "S": return new Vec2(0, 1);
+                case "W": return new Vec2(1, 0);
+                case "E": return new Vec2(-1, 0);
+                case "NE": return new Vec2(-1, -1);
+                case "NW": return new Vec2(1, -1);
+                case "SE": return new Vec2(-1, 1);
+                case "SW": return new Vec2(1, 1);
+                case "C": return new Vec2(0, 0);
+            }
+        }
+        else if (typeof obj === "undefined") {
+            return new Vec2(0, 0);
+        }
+        else {
+            throw new TypeError("Invalid direction");
+        }
+    }
+    function calculateRectShift(rect, dir, spacing) {
+        dir = toDir(dir);
+        let shiftX = dir.x * rect.w / 2, shiftY = dir.y * rect.h / 2;
+        let shiftLen = Math.hypot(shiftX, shiftY);
+        let scaleSpacing = (shiftLen === 0) ? 0 : (shiftLen + spacing) / shiftLen;
+        shiftX *= scaleSpacing;
+        shiftY *= scaleSpacing;
+        shiftX += -rect.w / 2;
+        shiftY += -rect.h / 2;
+        return new BoundingBox(rect.x + shiftX, rect.y + shiftY, rect.w, rect.h);
+    }
+
+    /**
+     * A scene endowed with an actual DOM element.
+     */
+    class InteractiveScene extends Scene {
+        init(params) {
+            var _a;
+            super.init(params);
+            this.domElement = document.createElement("div");
+            this.domElement.style.position = "relative"; // so that absolute html children are positioned relative to the div
+            this.domCanvas = document.createElement('canvas');
+            this.domCanvas.id = this.id;
+            this.domElement.appendChild(this.domCanvas);
+            this.bitmapRenderer = (_a = this.domCanvas.getContext('bitmaprenderer')) !== null && _a !== void 0 ? _a : throwNoBitmapRenderer();
+        }
+        _disableInteractivityListeners() {
+            let internal = this.internal;
+            let interactivityListeners = internal.interactivityListeners;
+            if (!interactivityListeners)
+                return;
+            for (let listenerType in interactivityListeners) {
+                let listener = interactivityListeners[listenerType];
+                this.domElement.removeEventListener(listenerType, listener);
+            }
+            internal.interactivityListeners = null;
+        }
+        _enableInteractivityListeners() {
+            this._disableInteractivityListeners();
+            let listeners = (this.internal.interactivityListeners = {});
+            // Convert mouse event coords (which are relative to the top left corner of the page) to canvas coords
+            const getSceneCoords = evt => {
+                let rect = this.domElement.getBoundingClientRect();
+                return new Vec2(evt.clientX - rect.x, evt.clientY - rect.y);
+            };
+            ['mousedown', 'mousemove', 'mouseup', 'wheel'].forEach(eventName => {
+                let listener;
+                if (eventName === 'wheel') {
+                    listener = evt => {
+                        this.triggerEvent(eventName, {
+                            pos: getSceneCoords(evt),
+                            deltaY: evt.deltaY
+                        });
+                        evt.preventDefault();
+                    };
+                }
+                else {
+                    listener = evt => {
+                        this.triggerEvent(eventName, { pos: getSceneCoords(evt) });
+                        evt.preventDefault();
+                    };
+                }
+                let elem = eventName === "mouseup" ? document : this.domElement;
+                elem.addEventListener(eventName, (listeners[eventName] = listener));
+            });
+        }
+        setInteractivity(enable) {
+            this.props.set("interactivity", enable, 0, 1);
+            this._updateInteractivity();
+        }
+        _updateInteractivity() {
+            let enable = this.props.get("interactivity");
+            let internal = this.internal;
+            if (!!internal.interactivityListeners !== enable) {
+                enable
+                    ? this._enableInteractivityListeners()
+                    : this._disableInteractivityListeners();
+            }
+        }
+        _update() {
+            super._update();
+            this._updateInteractivity();
+            this.resizeCanvas();
+        }
+        resizeCanvas() {
+            if (this.props.hasChanged("sceneDims")) {
+                let sceneDims = this._getDims();
+                let c = this.domCanvas;
+                c.width = sceneDims.canvasWidth;
+                c.height = sceneDims.canvasHeight;
+                c.style.width = sceneDims.width + 'px';
+                c.style.height = sceneDims.height + 'px';
+            }
+        }
+        addHTMLElement(element) {
+            let domElement = this.domElement;
+            domElement.appendChild(element);
+        }
+        setHTMLElements(instructions) {
+            let internal = this.internal, htmlElements;
+            let that = this; // huzzah
+            if (!internal.htmlElements)
+                internal.htmlElements = [];
+            htmlElements = internal.htmlElements;
+            htmlElements.forEach(elem => elem.claimed = false);
+            function addElementToDOM(html) {
+                let div = document.createElement("div");
+                div.innerHTML = html;
+                div.style.position = "absolute";
+                div.style.left = div.style.top = '0';
+                div.style.visibility = "none";
+                that.domElement.appendChild(div);
+                let rect = div.getBoundingClientRect();
+                return { div, rect };
+            }
+            function addElement(html, pos, dir, spacing, transform) {
+                let { div, rect } = addElementToDOM(html);
+                let shiftedRect = calculateRectShift(new BoundingBox(pos.x, pos.y, rect.width, rect.height), dir, spacing);
+                div.style.left = shiftedRect.x + 'px';
+                div.style.top = shiftedRect.y + 'px';
+                div.style.transform = transform;
+                return {
+                    type: "html", pos: new Vec2(shiftedRect.x, shiftedRect.y), domElement: div,
+                    w: rect.width, h: rect.height, claimed: true, content: ""
+                };
+            }
+            main: for (const instruction of instructions) {
+                if (instruction.type === "latex") {
+                    let { pos, dir, spacing, scale } = instruction;
+                    for (const elem of htmlElements) {
+                        if (elem.claimed || elem.type !== "latex" || elem.content !== instruction.content)
+                            continue;
+                        // then the element's latex content is the same, so we calculate the new position. Note we reuse the old
+                        // width/height values so that getBoundingClientRect() is only called once
+                        let shiftedRect = calculateRectShift(new BoundingBox(pos.x, pos.y, elem.w, elem.h), dir, spacing);
+                        pos = shiftedRect.tl();
+                        if (elem.pos.x !== pos.x || elem.pos.y !== pos.y) { // need to move the element
+                            elem.domElement.style.left = shiftedRect.x + 'px';
+                            elem.domElement.style.top = shiftedRect.y + 'px';
+                            elem.pos = pos;
+                        }
+                        elem.claimed = true;
+                        continue main;
+                    }
+                    // No latex element exists that's unclaimed and has the same content, so we create one
+                    let elem = addElement(instruction.html, pos, dir, spacing, `matrix(${scale}, 0, 0, ${scale}, 0, 0)`);
+                    elem.type = "latex";
+                    elem.content = instruction.content;
+                    htmlElements.push(elem);
+                }
+            }
+            // Destroy unclaimed html elements
+            this.internal.htmlElements = htmlElements.filter(elem => {
+                let claimed = elem.claimed;
+                if (!claimed) {
+                    this.domElement.removeChild(elem.domElement);
+                }
+                return claimed;
+            });
+        }
+        destroyHTMLElements() {
+            let children = Array.from(this.domElement.children);
+            for (const child of children) {
+                if (child.id !== this.id) {
+                    child.style.visibility = "none";
+                    this.domElement.removeChild(child);
+                }
+            }
+        }
+    }
+    function throwNoBitmapRenderer() {
+        throw new Error("Browser does not support bitmap renderer");
+    }
+
+    // Credit to cortijon on StackOverflow (comment on https://stackoverflow.com/a/1968345/13458117)
+    function getLineIntersection(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
+        let s1_x, s1_y, s2_x, s2_y;
+        s1_x = p1_x - p0_x;
+        s1_y = p1_y - p0_y;
+        s2_x = p3_x - p2_x;
+        s2_y = p3_y - p2_y;
+        const s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) /
+            (-s2_x * s1_y + s1_x * s2_y);
+        const t = (s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / (-s2_x * s1_y + s1_x * s2_y);
+        if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+            // Collision detected
+            const intX = p0_x + t * s1_x;
+            const intY = p0_y + t * s1_y;
+            return [intX, intY];
+        }
+        return null;
+    }
+    /**
+     * Returns whether the point p is in the triangle generated by a, b, and c. Does not specially handle NaN values and the
+     * like.
+     * @param px x-coordinate of point p
+     * @param py y-coordinate of point p
+     * @param ax x-coordinate of point a
+     * @param ay y-coordinate of point a
+     * @param bx x-coordinate of point b
+     * @param by y-coordinate of point b
+     * @param cx x-coordinate of point c
+     * @param cy
+     */
+    function pointInTriangle(px, py, ax, ay, bx, by, cx, cy) {
+        const v0x = cx - ax;
+        const v0y = cy - ay;
+        const v1x = bx - ax;
+        const v1y = by - ay;
+        const v2x = px - ax;
+        const v2y = py - ay;
+        const dot00 = v0x * v0x + v0y * v0y;
+        const dot01 = v0x * v1x + v0y * v1y;
+        const dot02 = v0x * v2x + v0y * v2y;
+        const dot11 = v1x * v1x + v1y * v1y;
+        const dot12 = v1x * v2x + v1y * v2y;
+        const invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+        const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+        const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+        return u >= 0 && v >= 0 && u + v < 1;
+    }
+    function lineSegmentIntersectsBox(x1, y1, x2, y2, box_x1, box_y1, box_x2, box_y2) {
+        // Return the component of the line segment that resides inside a box with boundaries x in (box_x1 .. box_x2), y in
+        // (box_y1 .. box_y2), which may potentially be the entire line segment.
+        let pt1InBox = box_x1 <= x1 && x1 <= box_x2 && box_y1 <= y1 && y1 <= box_y2;
+        let pt2InBox = box_x1 <= x2 && x2 <= box_x2 && box_y1 <= y2 && y2 <= box_y2;
+        if (pt1InBox && pt2InBox) {
+            // The line segment is entirely in the box
+            return [x1, y1, x2, y2];
+        }
+        // Infinities cause weird problems with getLineIntersection, so we just approximate them lol
+        if (x1 === Infinity)
+            x1 = 1e6;
+        else if (x1 === -Infinity)
+            x1 = -1e6;
+        if (x2 === Infinity)
+            x2 = 1e6;
+        else if (x2 === -Infinity)
+            x2 = -1e6;
+        if (y1 === Infinity)
+            y1 = 1e6;
+        else if (y1 === -Infinity)
+            y1 = -1e6;
+        if (y2 === Infinity)
+            y2 = 1e6;
+        else if (y2 === -Infinity)
+            y2 = -1e6;
+        let int1 = getLineIntersection(x1, y1, x2, y2, box_x1, box_y1, box_x2, box_y1);
+        let int2 = getLineIntersection(x1, y1, x2, y2, box_x2, box_y1, box_x2, box_y2);
+        let int3 = getLineIntersection(x1, y1, x2, y2, box_x2, box_y2, box_x1, box_y2);
+        let int4 = getLineIntersection(x1, y1, x2, y2, box_x1, box_y2, box_x1, box_y1);
+        if (!(int1 || int2 || int3 || int4) && !pt1InBox && !pt2InBox) {
+            // If there are no intersections and the points are outside the box, that means none of the segment is inside the
+            // box, so we can return null
+            return null;
+        }
+        let intersections = [int1, int2, int3, int4];
+        if (!pt1InBox && !pt2InBox) {
+            // Both points are outside of the box, but the segment intersects the box. I'm frustrated! We must RESTRICT by finding the pair of intersections with
+            // maximal separation. This deals with annoying corner cases. Thankfully this code doesn't need to be too efficient
+            // since this is a rare case.
+            let maximalSeparationSquared = -1;
+            let n_x1, n_y1, n_x2, n_y2;
+            for (let i = 0; i < 3; ++i) {
+                let i1 = intersections[i];
+                if (i1) {
+                    for (let j = i + 1; j < 4; ++j) {
+                        let i2 = intersections[j];
+                        if (i2) {
+                            let dist = (i2[0] - i1[0]) ** 2 + (i2[1] - i1[1]) ** 2;
+                            if (dist > maximalSeparationSquared) {
+                                maximalSeparationSquared = dist;
+                                n_x1 = i1[0];
+                                n_y1 = i1[1];
+                                n_x2 = i2[0];
+                                n_y2 = i2[1];
+                            }
+                        }
+                    }
+                }
+            }
+            // Swap the order if necessary. We need the result of this calculation to be in the same order as the points
+            // that went in, since this will be used in the dashed line logic.
+            if (n_x1 < n_x2 === x1 > x2 || n_y1 < n_y2 === y1 > y2) {
+                let tmp = n_x1;
+                n_x1 = n_x2;
+                n_x2 = tmp;
+                tmp = n_y1;
+                n_y1 = n_y2;
+                n_y2 = tmp;
+            }
+            return [n_x1, n_y1, n_x2, n_y2];
+        }
+        if (pt1InBox) {
+            for (let i = 0; i < 4; ++i) {
+                let intersection = intersections[i];
+                if (intersection)
+                    return [x1, y1, intersection[0], intersection[1]];
+            }
+        }
+        else if (pt2InBox) {
+            for (let i = 0; i < 4; ++i) {
+                let intersection = intersections[i];
+                if (intersection)
+                    return [intersection[0], intersection[1], x2, y2];
+            }
+        }
+        return [x1, y1, x2, y2];
+    }
+    function generateCircleTriangleStrip(radius, x = 0, y = 0, samples = 8) {
+        const points = [];
+        for (let i = 0; i <= samples; ++i) {
+            const angle = (i / samples) * 2 * Math.PI;
+            const xc = x + radius * Math.cos(angle), yc = y + radius * Math.sin(angle);
+            if (i % 2 === 0) {
+                points.push(xc, yc);
+                points.push(x, y);
+            }
+            else {
+                points.push(xc, yc);
+            }
+        }
+        points.push(NaN, NaN);
+        return new Float32Array(points);
+    }
+    function generateRectangleTriangleStrip(rect) {
+        const { x, y, w, h } = rect;
+        const points = [x, y, x + w, y, x, y + h, x + w, y + h];
+        return new Float32Array(points);
+    }
+    /**
+     * Given a rectangle, return a flat list of points enclosing a cycle around the rectangle.
+     * @param rect {BoundingBox}
+     * @returns {Float32Array}
+     */
+    function generateRectangleCycle(rect) {
+        const { x, y, w, h } = rect;
+        const points = [x, y, x + w, y, x + w, y + h, x, y + h, x, y];
+        return new Float32Array(points);
+    }
+    function generateRectangleDebug(rect) {
+        const { x, y, w, h } = rect;
+        const points = [x, y, x + w, y, x + w, y + h, x, y + h, x, y, x + w, y + w];
+        return new Float32Array(points);
+    }
+    // Given a Float32Array of appropriate size, repeatedly add given triangle strips
+    function combineTriangleStrips(verticesBuff) {
+        let index = 0;
+        return arr => {
+            if (arr.length === 0)
+                return;
+            // Repeat previous vertex
+            if (index > 0) {
+                verticesBuff[index] = verticesBuff[index - 2];
+                verticesBuff[index + 1] = verticesBuff[index - 1];
+                verticesBuff[index + 2] = arr[0];
+                verticesBuff[index + 3] = arr[1];
+                index += 4;
+            }
+            verticesBuff.set(arr, index);
+            index += arr.length;
+        };
+    }
+    function combineColoredTriangleStrips(verticesBuff, colorBuff) {
+        let index = 0;
+        return (arr, { r = 0, g = 0, b = 0, a = 0 }) => {
+            if (arr.length === 0)
+                return;
+            // Repeat previous vertex
+            if (index > 0) {
+                verticesBuff[index] = verticesBuff[index - 2];
+                verticesBuff[index + 1] = verticesBuff[index - 1];
+                verticesBuff[index + 2] = arr[0];
+                verticesBuff[index + 3] = arr[1];
+                index += 4;
+            }
+            verticesBuff.set(arr, index);
+            fillRepeating(colorBuff, [r / 255, g / 255, b / 255, a / 255], index * 2, 2 * (index + arr.length));
+            index += arr.length;
+        };
+    }
+    /**
+     * Fill the TypedArray arr with a given pattern throughout [startIndex, endIndex). Works if either is out of bounds.
+     * Worst code ever. Uses copyWithin to try make the operation FAST for large arrays (not optimized for small ones). On
+     * a 50000-element array in my chrome, it provides a 16x speedup.
+     * @param arr Array to fill
+     * @param pattern Pattern to fill with
+     * @param startIndex Index of the first instance of the pattern
+     * @param endIndex Index immediately after the last instance of the pattern
+     * @param patternStride Offset to begin copying the pattern
+     * @returns The original array
+     */
+    function fillRepeating(arr, pattern, startIndex = 0, endIndex = arr.length, patternStride = 0) {
+        if (endIndex <= startIndex)
+            return arr;
+        let patternLen = pattern.length, arrLen = arr.length;
+        if (patternLen === 0)
+            return arr;
+        endIndex = Math.min(endIndex, arrLen);
+        if (endIndex <= 0 || startIndex >= arrLen)
+            return arr;
+        if (startIndex < 0) {
+            patternStride -= startIndex;
+            startIndex = 0;
+        }
+        if (patternStride !== 0)
+            patternStride = mod(patternStride, patternLen);
+        let filledEndIndex = Math.min(endIndex, startIndex + patternLen);
+        let i, j;
+        for (i = startIndex, j = patternStride; i < filledEndIndex && j < patternLen; ++i, ++j) {
+            arr[i] = pattern[j];
+        }
+        // For nonzero strides
+        for (j = 0; i < filledEndIndex; ++i, ++j) {
+            arr[i] = pattern[j];
+        }
+        if (filledEndIndex === endIndex)
+            return arr;
+        // We now need to iteratively copy [startIndex, startIndex + filledLen) to [startIndex + filledLen, endIndex) and
+        // double filledLen accordingly. memcpy, take the wheel!
+        let filledLen = patternLen;
+        while (true) {
+            let copyLen = Math.min(filledLen, endIndex - filledEndIndex);
+            arr.copyWithin(filledEndIndex, startIndex, startIndex + copyLen);
+            filledEndIndex += copyLen;
+            filledLen += copyLen;
+            // Should never be greater, but whatever
+            if (filledEndIndex >= endIndex)
+                return arr;
+        }
+    }
+    function _flattenVec2ArrayInternal(arr) {
+        var _a;
+        const out = [];
+        for (let i = 0; i < arr.length; ++i) {
+            let item = arr[i];
+            if (item === null || item === undefined) {
+                out.push(NaN, NaN);
+            }
+            else if (item.x !== undefined && item.y !== undefined) {
+                out.push(item.x, item.y);
+            }
+            else if (item[0] !== undefined) {
+                out.push(+item[0], (_a = item[1]) !== null && _a !== void 0 ? _a : 0);
+            }
+            else {
+                if (typeof item === 'number')
+                    out.push(item);
+                else
+                    throw new TypeError(`Error when converting array to flattened Vec2 array: Unknown item ${item} at index ${i} in given array`);
+            }
+        }
+        return out;
+    }
+    // Given some arbitrary array of Vec2s, turn it into the regularized format [x1, y1, x2, y2, ..., xn, yn]. The end of
+    // one polyline and the start of another is done by one pair of numbers being NaN, NaN.
+    function flattenVec2Array(arr) {
+        if (isTypedArray(arr))
+            return arr;
+        for (let i = 0; i < arr.length; ++i) {
+            if (typeof arr[i] !== 'number')
+                return _flattenVec2ArrayInternal(arr);
+        }
+        return arr;
+    }
+    function fastAtan2$1(y, x) {
+        let abs_x = Math.abs(x);
+        let abs_y = Math.abs(y);
+        let a = abs_x < abs_y ? abs_x / abs_y : abs_y / abs_x;
+        // atan(x) is about x - x^3 / 3 + x^5 / 5. We also note that atan(1/x) = pi/2 - atan(x) for x > 0, etc.
+        let s = a * a;
+        let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+        if (abs_y > abs_x)
+            r = 1.57079637 - r;
+        if (x < 0.0)
+            r = 3.14159265 - r;
+        if (y < 0.0)
+            r = -r;
+        return r;
+    }
+    /**
+     * Compute Math.hypot(x, y), but since all the values of x and y we're using here are not extreme, we don't have to
+     * handle overflows and underflows with much accuracy at all. We can thus use the straightforward calculation.
+     * Chrome: 61.9 ms/iteration for 1e7 calculations for fastHypot; 444 ms/iteration for Math.hypot
+     * @param x {number}
+     * @param y {number}
+     * @returns {number} hypot(x, y)
+     */
+    function fastHypot(x, y) {
+        return Math.sqrt(x * x + y * y);
+    }
+    /**
+     * Compute the bounding box of a flat 2D array. Could probably be sped up considerably but... whatever. Returns null
+     * when there are no valid points in the array. Ignores NaNs.
+     * @param v
+     */
+    function computeBoundingBox(v) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let len = v.length;
+        let i = 0;
+        for (; i < len; i += 4) {
+            // Unrolling the loop like this slightly improves efficiency
+            let x1 = v[i];
+            let y1 = v[i + 1];
+            let x2 = v[i + 2];
+            let y2 = v[i + 3];
+            minX = minX > x1 ? x1 : minX;
+            minY = minY > y1 ? y1 : minY;
+            maxX = maxX < x1 ? x1 : maxX;
+            maxY = maxY < y1 ? y1 : maxY;
+            minX = minX > x2 ? x2 : minX;
+            minY = minY > y2 ? y2 : minY;
+            maxX = maxX < x2 ? x2 : maxX;
+            maxY = maxY < y2 ? y2 : maxY;
+        }
+        if (i < len - 2) {
+            // Last two entries
+            let x2 = v[i], y2 = v[i + 1];
+            minX = minX > x2 ? x2 : minX;
+            minY = minY > y2 ? y2 : minY;
+            maxX = maxX < x2 ? x2 : maxX;
+            maxY = maxY < y2 ? y2 : maxY;
+        }
+        return (minX !== minX || minY !== minY) ? null :
+            new BoundingBox(minX, minY, roundUp(maxX) - minX, roundUp(maxY) - minY); // round up ensures the resultant bbox will contain it
+    }
+
+    // This code is pretty old, but surprisingly effective!
+    /**
+     * The maximum number of vertices to be emitted by getDashedPolyline. This condition is here just to prevent dashed
+     * polyline from causing a crash from OOM or just taking forever to finish.
+     * @type {number}
+     */
+    const MAX_DASHED_POLYLINE_VERTICES = 1e7;
+    /**
+     * Convert a polyline into another polyline, but with dashes.
+     * @param vertices {Array} The vertices of the polyline.
+     * @param pen {Pen} The polyline's pen
+     * @param box {BoundingBox} The plotting box, used to clip excess portions of the polyline. There could theoretically be
+     * an infinite number of dashes in a long vertical asymptote, for example, but this box condition prevents that from
+     * being an issue. Portions of the polyline outside the plotting box are simply returned without dashes.
+     * @returns {Array}
+     */
+    function getDashedPolyline(vertices, pen, box) {
+        if (!box)
+            box = new BoundingBox(-Infinity, -Infinity, Infinity, Infinity);
+        // dashPattern is the pattern of dashes, given as the length (in pixels) of consecutive dashes and gaps.
+        // dashOffset is the pixel offset at which to start the dash pattern, beginning at the start of every sub polyline.
+        let { dashPattern, dashOffset } = pen;
+        // If the dash pattern is odd in length, concat it to itself, creating a doubled, alternating dash pattern
+        if (dashPattern.length % 2 === 1)
+            dashPattern = dashPattern.concat(dashPattern);
+        // The length, in pixels, of the pattern
+        const patternLength = dashPattern.reduce((a, b) => a + b);
+        // If the pattern is invalid in some way (NaN values, negative dash lengths, total length less than 2), return the
+        // polyline without dashes.
+        if (patternLength < 2 ||
+            dashPattern.some(dashLen => dashLen < 0) ||
+            dashPattern.some(Number.isNaN))
+            return vertices;
+        // currentIndex is the current position in the dash pattern. currentLesserOffset is the offset within the dash or gap
+        // ----    ----    ----    ----    ----    ----    ----  ... etc.
+        //      ^
+        // If we are there, then currentIndex is 1 and currentLesserOffset is 1.
+        let currentIndex = 0, currentLesserOffset = 0;
+        // Initialize the value of currentLesserOffset based on dashOffset and dashPattern
+        recalculateOffset(0);
+        // The returned dashed vertices
+        const result = [];
+        // The plotting box
+        const boxX1 = box.x, boxX2 = box.x + box.w, boxY1 = box.y, boxY2 = box.y + box.h;
+        // Calculate the value of currentLesserOffset, given the length of the pattern that we have just traversed.
+        function recalculateOffset(length) {
+            // If there's an absurdly long segment, we just pretend the length is 0 to avoid problems with Infinities/NaNs
+            if (length > 1e6)
+                length = 0;
+            // Move length along the dashOffset, modulo the patternLength
+            dashOffset += length;
+            dashOffset %= patternLength;
+            // It's certainly possible to precompute these sums and use a binary search to find the dash index, but
+            // that's unnecessary for dashes with short length
+            let sum = 0, i = 0, lesserOffset = 0;
+            for (; i < dashPattern.length; ++i) {
+                let dashLength = dashPattern[i];
+                // Accumulate the length from the start of the pattern to the current dash
+                sum += dashLength;
+                // If the dashOffset is within this dash...
+                if (dashOffset <= sum) {
+                    // calculate the lesser offset
+                    lesserOffset = dashOffset - sum + dashLength;
+                    break;
+                }
+            }
+            // Set the current index and lesserOffset
+            currentIndex = i;
+            currentLesserOffset = lesserOffset;
+        }
+        // Generate dashes for the line segment (x1, y1) -- (x2, y2)
+        function generateDashes(x1, y1, x2, y2) {
+            // length of the segment
+            const length = fastHypot(x2 - x1, y2 - y1);
+            // index of where along the dashes we are
+            let i = currentIndex;
+            // Length so far of emitted dashes
+            let lengthSoFar = 0;
+            // We do this instead of while (true) to prevent the program from crashing
+            for (let _ = 0; _ < MAX_DASHED_POLYLINE_VERTICES; _++) {
+                // Length of the dash/gap component we need to draw (we subtract currentLesserOffset because that is already drawn)
+                const componentLen = dashPattern[i] - currentLesserOffset;
+                // Length when this component ends
+                const endingLen = componentLen + lengthSoFar;
+                // Whether we are in a dash
+                const inDash = i % 2 === 0;
+                if (endingLen <= length) {
+                    // If the end of the dash/gap occurs before the end of the current segment, we need to continue
+                    let r = endingLen / length;
+                    // if in a gap, this starts the next dash; if in a dash, this ends the dash
+                    result.push(x1 + (x2 - x1) * r, y1 + (y2 - y1) * r);
+                    // If we're ending off a dash, put the gap in
+                    if (inDash)
+                        result.push(NaN, NaN);
+                    // Go to the next dash/gap
+                    ++i;
+                    i %= dashPattern.length;
+                    // Reset the current lesser offset
+                    currentLesserOffset = 0;
+                }
+                else {
+                    // If we're in a dash, that means we're in the middle of a dash, so we just add the vertex
+                    if (inDash)
+                        result.push(x2, y2);
+                    break;
+                }
+                lengthSoFar += componentLen;
+            }
+            // Recalculate currentLesserOffset
+            recalculateOffset(length);
+        }
+        if (currentIndex % 2 === 0)
+            // We're beginning with a dash, so start it off
+            result.push(vertices[0], vertices[1]);
+        for (let i = 0; i < vertices.length - 2; i += 2) {
+            // For each pair of vertices...
+            let x1 = vertices[i];
+            let y1 = vertices[i + 1];
+            let x2 = vertices[i + 2];
+            let y2 = vertices[i + 3];
+            if (Number.isNaN(x1) || Number.isNaN(y1)) {
+                // At the start of every subpolyline, reset the dash offset
+                dashOffset = pen.dashOffset;
+                // Recalculate the initial currentLesserOffset
+                recalculateOffset(0);
+                // End off the previous subpolyline
+                result.push(NaN, NaN);
+                continue;
+            }
+            // If the end of the segment is undefined, continue
+            if (Number.isNaN(x2) || Number.isNaN(y2))
+                continue;
+            // Length of the segment
+            let length = fastHypot(x2 - x1, y2 - y1);
+            // Find whether the segment intersects the box
+            let intersect = lineSegmentIntersectsBox(x1, y1, x2, y2, boxX1, boxY1, boxX2, boxY2);
+            // If the segment doesn't intersect the box, it is entirely outside the box, so we can add its length to pretend
+            // like we drew it even though we didn't
+            if (!intersect) {
+                recalculateOffset(length);
+                continue;
+            }
+            // Whether (x1, y1) and (x2, y2) are contained within the box
+            let pt1Contained = intersect[0] === x1 && intersect[1] === y1;
+            let pt2Contained = intersect[2] === x2 && intersect[3] === y2;
+            // If (x1, y1) is contained, fake draw the portion of the line outside of the box
+            if (!pt1Contained)
+                recalculateOffset(fastHypot(x1 - intersect[0], y1 - intersect[1]));
+            // Generate dashes
+            generateDashes(intersect[0], intersect[1], intersect[2], intersect[3]);
+            if (!pt2Contained)
+                recalculateOffset(fastHypot(x2 - intersect[2], y2 - intersect[3]));
+            if (result.length > MAX_DASHED_POLYLINE_VERTICES)
+                throw new Error('Too many generated vertices in getDashedPolyline.');
+        }
+        return result;
+    }
+
+    const MIN_RES_ANGLE = 0.05; // minimum angle in radians between roundings in a polyline
+    const B = 4 / Math.PI;
+    const C = -4 / Math.PI ** 2;
+    function fastSin(x) {
+        // crude, but good enough for this
+        x %= 6.28318530717;
+        if (x < -3.14159265)
+            x += 6.28318530717;
+        else if (x > 3.14159265)
+            x -= 6.28318530717;
+        return B * x + C * x * (x < 0 ? -x : x);
+    }
+    function fastCos(x) {
+        return fastSin(x + 1.570796326794);
+    }
+    function fastAtan2(y, x) {
+        let abs_x = x < 0 ? -x : x;
+        let abs_y = y < 0 ? -y : y;
+        let a = abs_x < abs_y ? abs_x / abs_y : abs_y / abs_x;
+        let s = a * a;
+        let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+        if (abs_y > abs_x)
+            r = 1.57079637 - r;
+        if (x < 0)
+            r = 3.14159265 - r;
+        if (y < 0)
+            r = -r;
+        return r;
+    }
+    /**
+     * Convert an array of polyline vertices into a Float32Array of vertices to be rendered using WebGL.
+     * @param vertices {Array} The vertices of the polyline.
+     * @param pen {Object} A JSON representation of the pen. Could also be the pen object itself.
+     * @param box {BoundingBox} The bounding box of the plot, used to optimize line dashes
+     */
+    function calculatePolylineVertices(vertices, pen, box = null) {
+        if (pen.dashPattern.length === 0) {
+            return convertTriangleStrip(vertices, pen);
+        }
+        else {
+            return convertTriangleStrip(getDashedPolyline(vertices, pen, box), pen);
+        }
+    }
+    function convertTriangleStrip(vertices, pen) {
+        if (pen.thickness <= 0 ||
+            pen.endcapRes < MIN_RES_ANGLE ||
+            pen.joinRes < MIN_RES_ANGLE ||
+            vertices.length <= 3) {
+            return { vertices: null, vertexCount: 0 };
+        }
+        let index = -1;
+        let origVertexCount = vertices.length / 2;
+        let th = pen.thickness / 2;
+        let maxMiterLength = th / fastCos(pen.joinRes / 2);
+        let endcap = pen._toEndcapTypeEnum();
+        let join = pen._toJoinTypeEnum();
+        let endcapRes = pen.endcapRes;
+        let joinRes = pen.joinRes;
+        if (endcap === undefined || join === undefined) {
+            throw new Error('Undefined endcap or join.');
+        }
+        // Grows by ceiling multiples of 1.5, a la most implementations of a vector
+        // We begin with a very rough estimate of how much space will be needed
+        let glVertices = new Float32Array(origVertexCount * 2 + // raw minimum
+            ((endcap === 1) ? (2.1 * Math.PI / endcapRes) : 0) + // rough endcap minimum
+            ((join === 1 || join === 3) ? (origVertexCount * 0.1 / joinRes) : 0) // join estimate, assuming an average of 0.1 radians per join
+        );
+        let maxVerticesPerStep = 2 + Math.max(2 * Math.PI / endcapRes, 2 * Math.PI / joinRes) | 0;
+        function reallocGLVertices(minSize) {
+            minSize = minSize | 0;
+            if (minSize > glVertices.length) {
+                minSize = (minSize * 1.5) | 0;
+                let newGLVertices = new Float32Array(minSize);
+                // Copy it over
+                newGLVertices.set(glVertices, 0);
+                glVertices = newGLVertices;
+            }
+        }
+        // p1 -- p2 -- p3, generating vertices for point p2
+        let x1 = 0, x2 = 0, x3 = vertices[0], y1 = 0, y2 = 0, y3 = vertices[1];
+        let v1x = 0, v1y = 0, v2x = 0, v2y = 0, v1l = 0, v2l = 0, b1_x = 0, b1_y = 0, scale = 0, dis = 0;
+        for (let i = 0; i < origVertexCount; ++i) {
+            reallocGLVertices(index + maxVerticesPerStep);
+            x1 = i !== 0 ? x2 : NaN; // Previous vertex
+            x2 = x3; // Current vertex
+            x3 = i !== origVertexCount - 1 ? vertices[2 * i + 2] : NaN; // Next vertex
+            y1 = i !== 0 ? y2 : NaN; // Previous vertex
+            y2 = y3; // Current vertex
+            y3 = i !== origVertexCount - 1 ? vertices[2 * i + 3] : NaN; // Next vertex
+            if (Math.abs(x3) > 16384 || Math.abs(y3) > 16384) {
+                // Temporary
+                x3 = NaN;
+                y3 = NaN;
+            }
+            if (x2 !== x2 || y2 !== y2) {
+                continue;
+            }
+            if (x1 !== x1 || y1 !== y1) {
+                // The start of every endcap has two duplicate vertices for triangle strip reasons
+                v2x = x3 - x2;
+                v2y = y3 - y2;
+                v2l = fastHypot(v2x, v2y);
+                if (v2l < 1e-8) {
+                    v2x = 1;
+                    v2y = 0;
+                }
+                else {
+                    v2x /= v2l;
+                    v2y /= v2l;
+                }
+                if (v2x !== v2x || v2y !== v2y) {
+                    continue;
+                } // undefined >:(
+                if (endcap === 1) {
+                    // rounded endcap
+                    let theta = fastAtan2(v2y, v2x) + Math.PI / 2;
+                    let steps_needed = Math.ceil(Math.PI / endcapRes);
+                    let o_x = x2 - th * v2y, o_y = y2 + th * v2x;
+                    let theta_c = theta + (1 / steps_needed) * Math.PI;
+                    // Duplicate first vertex
+                    let x = glVertices[++index] = x2 + th * fastCos(theta_c);
+                    let y = glVertices[++index] = y2 + th * fastSin(theta_c);
+                    glVertices[++index] = x;
+                    glVertices[++index] = y;
+                    glVertices[++index] = o_x;
+                    glVertices[++index] = o_y;
+                    for (let i = 2; i <= steps_needed; ++i) {
+                        let theta_c = theta + (i / steps_needed) * Math.PI;
+                        glVertices[++index] = x2 + th * fastCos(theta_c);
+                        glVertices[++index] = y2 + th * fastSin(theta_c);
+                        glVertices[++index] = o_x;
+                        glVertices[++index] = o_y;
+                    }
+                    continue;
+                }
+                else if (endcap === 2) {
+                    let x = glVertices[++index] = x2 - th * v2x + th * v2y;
+                    let y = glVertices[++index] = y2 - th * v2y - th * v2x;
+                    glVertices[++index] = x;
+                    glVertices[++index] = y;
+                    glVertices[++index] = x2 - th * v2x - th * v2y;
+                    glVertices[++index] = y2 - th * v2y + th * v2x;
+                    continue;
+                }
+                else {
+                    // no endcap
+                    let x = glVertices[++index] = x2 + th * v2y;
+                    let y = glVertices[++index] = y2 - th * v2x;
+                    glVertices[++index] = x;
+                    glVertices[++index] = y;
+                    glVertices[++index] = x2 - th * v2y;
+                    glVertices[++index] = y2 + th * v2x;
+                    continue;
+                }
+            }
+            if (x3 !== x3 || y3 !== y3) {
+                // ending endcap
+                v1x = x2 - x1;
+                v1y = y2 - y1;
+                v1l = v2l;
+                if (v1l < 1e-8) {
+                    v1x = 1;
+                    v1y = 0;
+                }
+                else {
+                    v1x /= v1l;
+                    v1y /= v1l;
+                }
+                if (v1x !== v1x || v1y !== v1y) {
+                    continue;
+                } // undefined >:(
+                glVertices[++index] = x2 + th * v1y;
+                glVertices[++index] = y2 - th * v1x;
+                glVertices[++index] = x2 - th * v1y;
+                glVertices[++index] = y2 + th * v1x;
+                if (endcap === 1) {
+                    let theta = fastAtan2(v1y, v1x) + (3 * Math.PI) / 2;
+                    let steps_needed = Math.ceil(Math.PI / endcapRes);
+                    let o_x = x2 - th * v1y, o_y = y2 + th * v1x;
+                    for (let i = 1; i <= steps_needed; ++i) {
+                        let theta_c = theta + (i / steps_needed) * Math.PI;
+                        glVertices[++index] = x2 + th * fastCos(theta_c);
+                        glVertices[++index] = y2 + th * fastSin(theta_c);
+                        glVertices[++index] = o_x;
+                        glVertices[++index] = o_y;
+                    }
+                }
+                // Duplicate last vertex of ending endcap
+                glVertices[index + 1] = glVertices[index - 1];
+                glVertices[index + 2] = glVertices[index];
+                index += 2;
+                continue;
+            }
+            // all vertices are defined, time to draw a joinerrrrr
+            if (join === 2 || join === 3) {
+                // find the two angle bisectors of the angle formed by v1 = p1 -> p2 and v2 = p2 -> p3
+                v1x = x1 - x2;
+                v1y = y1 - y2;
+                v2x = x3 - x2;
+                v2y = y3 - y2;
+                v1l = v2l;
+                v2l = fastHypot(v2x, v2y);
+                b1_x = v2l * v1x + v1l * v2x;
+                b1_y = v2l * v1y + v1l * v2y;
+                scale = 1 / fastHypot(b1_x, b1_y);
+                if (scale === Infinity || scale === -Infinity) {
+                    b1_x = -v1y;
+                    b1_y = v1x;
+                    scale = 1 / fastHypot(b1_x, b1_y);
+                }
+                b1_x *= scale;
+                b1_y *= scale;
+                scale = (th * v1l) / (b1_x * v1y - b1_y * v1x);
+                if (join === 2 || Math.abs(scale) < maxMiterLength) {
+                    // Draw a miter. But the length of the miter is massive and we're in dynamic mode (3), we exit this if statement and do a rounded join
+                    b1_x *= scale;
+                    b1_y *= scale;
+                    glVertices[++index] = x2 - b1_x;
+                    glVertices[++index] = y2 - b1_y;
+                    glVertices[++index] = x2 + b1_x;
+                    glVertices[++index] = y2 + b1_y;
+                    continue;
+                }
+            }
+            v2x = x3 - x2;
+            v2y = y3 - y2;
+            dis = fastHypot(v2x, v2y);
+            if (dis < 0.001) {
+                v2x = 1;
+                v2y = 0;
+            }
+            else {
+                v2x /= dis;
+                v2y /= dis;
+            }
+            v1x = x2 - x1;
+            v1y = y2 - y1;
+            dis = fastHypot(v1x, v1y);
+            if (dis === 0) {
+                v1x = 1;
+                v1y = 0;
+            }
+            else {
+                v1x /= dis;
+                v1y /= dis;
+            }
+            glVertices[++index] = x2 + th * v1y;
+            glVertices[++index] = y2 - th * v1x;
+            glVertices[++index] = x2 - th * v1y;
+            glVertices[++index] = y2 + th * v1x;
+            if (join === 1 || join === 3) {
+                let a1 = fastAtan2(-v1y, -v1x) - Math.PI / 2;
+                let a2 = fastAtan2(v2y, v2x) - Math.PI / 2;
+                // if right turn, flip a2
+                // if left turn, flip a1
+                let start_a, end_a;
+                if (mod(a1 - a2, 2 * Math.PI) < Math.PI) {
+                    // left turn
+                    start_a = Math.PI + a1;
+                    end_a = a2;
+                }
+                else {
+                    start_a = Math.PI + a2;
+                    end_a = a1;
+                }
+                let angle_subtended = mod(end_a - start_a, 2 * Math.PI);
+                let steps_needed = Math.ceil(angle_subtended / joinRes);
+                for (let i = 0; i <= steps_needed; ++i) {
+                    let theta_c = start_a + (angle_subtended * i) / steps_needed;
+                    glVertices[++index] = x2 + th * fastCos(theta_c);
+                    glVertices[++index] = y2 + th * fastSin(theta_c);
+                    glVertices[++index] = x2;
+                    glVertices[++index] = y2;
+                }
+            }
+            glVertices[++index] = x2 + th * v2y;
+            glVertices[++index] = y2 - th * v2x;
+            glVertices[++index] = x2 - th * v2y;
+            glVertices[++index] = y2 + th * v2x;
+        }
+        return { vertices: (index >= 0) ? glVertices : null, vertexCount: index / 2 };
+    }
+
+    class PolylineElement extends Element {
+        init(params) {
+        }
+        /**
+         * Set the pen, merging properties. For example, setting the pen color, then the thickness, will not reset the color.
+         * @param pen
+         */
+        setPen(pen) {
+            this.props.set("pen", Pen.compose(Pen.default(), pen));
+            return this;
+        }
+        _getPen() {
+            let p = this.props.get("pen");
+            if (!p)
+                this.props.set("pen", p = Pen.default());
+            return p;
+        }
+        getPen() {
+            return Pen.create(this._getPen());
+        }
+        setColor(color) {
+            this.props.get("pen").color = Color.fromObj(color);
+            this.props.markChanged("pen");
+            return this;
+        }
+        /**
+         * Set the vertices, which will be converted to a flat array. Setting to undefined will clear the vertices.
+         * @param v
+         * @param f32 Whether to convert to single-precision to save space
+         */
+        setVertices(v, f32 = true) {
+            this.props.set("vertices", v ? vec2ArrayConversion(v, f32, true) : v);
+        }
+        /**
+         * Returns a flat array of the vertices
+         */
+        getVertices() {
+            return this.props.get("vertices");
+        }
+        _computeDrawVertices() {
+            let setDrawVertices = (v) => {
+                this.internal.triangulation = v;
+            };
+            let vertices = this.getVertices();
+            let pen = this.getPen();
+            if (!vertices || !(pen instanceof Pen)) {
+                setDrawVertices(undefined);
+                return;
+            }
+            let drawVertices = calculatePolylineVertices(vertices, pen);
+            setDrawVertices(drawVertices);
+        }
+        getBoundingBox() {
+        }
+        _computeBoundingBox() {
+        }
+        update() {
+            // The algorithm is as follows:
+            // If pen and vertices have not changed, we do nothing.
+            // If vertices have changed, we recompute everything.
+            // If pen has changed and only the color has changed, we recompute nothing.
+        }
+        clone() {
+            let e = new PolylineElement();
+            e.setPen(this._getPen());
+            e.setVertices(this.getVertices());
+            // TODO copy precomputed information?
+            return e;
+        }
+    }
+
+    // base-64 encoded
+    const WASM_CONTENTS = "AGFzbQEAAAABEgRgAX8AYAF9AGABfABgAn9/AAIrAwdjb25zb2xlA2xvZwAAB2NvbnNvbGUDbG9nAAEHY29uc29sZQNsb2cAAgMCAQMFBAEAkE4HIgIVYm91bmRpbmdfYm94X2ZsYXRfZjMyAAMGbWVtb3J5AgAKkwEBkAECAX8De/0MAACAfwAAgH8AAIB/AACAfyED/QwAAID/AACA/wAAgP8AAID/IQQgACABaiECAkADQCADIAD9AAQAIgX96gEhAyAEIAX96wEhBCADIABBEGr9AAQAIgX96gEhAyAEIAX96wEhBCAAQSBqIgAgAk4EQAwCBQwBCwsLQQAgA/0LBABBECAE/QsEAAs=";
+    function toBuffer(bin) {
+        let buffer = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; ++i) {
+            let code = bin.charCodeAt(i);
+            buffer[i] = code;
+        }
+        return buffer;
+    }
+    function log(o) {
+        console.log(o);
+    }
+    const module = new WebAssembly.Module(toBuffer(atob(WASM_CONTENTS)));
+    const instance = new WebAssembly.Instance(module, { js: {
+            mem: new WebAssembly.Memory({ initial: 0, maximum: 10000 /* 64 kib pages */ })
+        }, console: { log } });
+    let memory = instance.exports.memory;
+    const HEAP_F32 = new Float32Array(memory.buffer);
+    const HEAP_F64 = new Float64Array(memory.buffer);
+    const HEAP_I32 = new Int32Array(memory.buffer);
+    const HEAP_U32 = new Uint32Array(memory.buffer);
+    const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32;
+    function boundingBoxFlatF32(arr) {
+        // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
+        HEAP_F32.set(arr, 8);
+        // Fill extra space with NaNs because the internal implementation doesn't take care of the edges
+        let len = arr.length | 0, endFill = (15 + len) & (~0b11);
+        for (let i = 8 + len; i < endFill; ++i) {
+            HEAP_F32[i] = NaN;
+        }
+        bounding_box_flat_f32(32, arr.length << 2);
+        let xmin1 = HEAP_F32[0];
+        let ymin1 = HEAP_F32[1];
+        let xmin2 = HEAP_F32[2];
+        let ymin2 = HEAP_F32[3];
+        let xmax1 = HEAP_F32[4];
+        let ymax1 = HEAP_F32[5];
+        let xmax2 = HEAP_F32[6];
+        let ymax2 = HEAP_F32[7];
+        let xmin = xmin1 < xmin2 ? xmin1 : xmin2;
+        let ymin = ymin1 < ymin2 ? ymin1 : ymin2;
+        let xmax = xmax1 > xmax2 ? xmax1 : xmax2;
+        let ymax = ymax1 > ymax2 ? ymax1 : ymax2;
+        if (xmin === Infinity || ymin === Infinity) { // no valid entries found
+            return null;
+        }
+        return new BoundingBox(xmin, ymin, roundUp(xmax - xmin), roundUp(ymax - ymin));
+    }
+    const WASM = {
+        HEAP_F32,
+        HEAP_F64,
+        HEAP_I32,
+        HEAP_U32,
+        instance,
+        exports: instance.exports
+    };
+
     exports.BigFloat = BigFloat;
     exports.BolusCancellationError = BolusCancellationError;
     exports.BolusTimeoutError = BolusTimeoutError;
@@ -8981,21 +9459,37 @@ void main() {
     exports.Colors = Colors;
     exports.CompilationError = CompilationError;
     exports.Complex = Complex;
+    exports.InteractiveScene = InteractiveScene;
     exports.LinearPlot2DTransform = LinearPlot2DTransform;
     exports.ParserError = ParserError;
+    exports.Pen = Pen;
+    exports.PolylineElement = PolylineElement;
     exports.ROUNDING_MODE = ROUNDING_MODE;
     exports.StandardColoringScheme = StandardColoringScheme;
     exports.Vec2 = Vec2;
+    exports.WASM = WASM;
     exports.WebGLRenderer = WebGLRenderer;
     exports.addMantissas = addMantissas;
     exports.asyncDigest = asyncDigest;
+    exports.boundingBoxFlatF32 = boundingBoxFlatF32;
+    exports.combineColoredTriangleStrips = combineColoredTriangleStrips;
+    exports.combineTriangleStrips = combineTriangleStrips;
     exports.compileNode = compileNode;
+    exports.computeBoundingBox = computeBoundingBox;
     exports.countFloatsBetween = countFloatsBetween;
+    exports.fastAtan2 = fastAtan2$1;
+    exports.fastHypot = fastHypot;
+    exports.fillRepeating = fillRepeating;
+    exports.flattenVec2Array = flattenVec2Array;
     exports.floatStore = floatStore;
     exports.flrLog2 = flrLog2;
     exports.frExp = frExp;
     exports.gammaReal = gammaReal;
     exports.genVariableName = genVariableName;
+    exports.generateCircleTriangleStrip = generateCircleTriangleStrip;
+    exports.generateRectangleCycle = generateRectangleCycle;
+    exports.generateRectangleDebug = generateRectangleDebug;
+    exports.generateRectangleTriangleStrip = generateRectangleTriangleStrip;
     exports.getExponent = getExponent;
     exports.getExponentAndMantissa = getExponentAndMantissa;
     exports.getFloatStoreExponent = getFloatStoreExponent;
@@ -9008,12 +9502,13 @@ void main() {
     exports.intView = intView;
     exports.integerExp = integerExp;
     exports.isDenormal = isDenormal;
-    exports.isValidVariableName = isValidVariableName;
+    exports.lineSegmentIntersectsBox = lineSegmentIntersectsBox;
     exports.lnGammaReal = lnGammaReal;
     exports.mantissaClz = mantissaClz;
     exports.mantissaCtz = mantissaCtz;
     exports.neededWordsForPrecision = neededWordsForPrecision;
     exports.parseString = parseString;
+    exports.pointInTriangle = pointInTriangle;
     exports.pow2 = pow2;
     exports.prettyPrintMantissa = prettyPrintMantissa;
     exports.rationalExp = rationalExp;
@@ -9033,6 +9528,7 @@ void main() {
     exports.ulpError = ulpError;
     exports.validateBigFloat = validateBigFloat;
     exports.validateMantissa = validateMantissa;
+    exports.vec2ArrayConversion = vec2ArrayConversion;
 
     Object.defineProperty(exports, '__esModule', { value: true });
 
