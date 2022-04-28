@@ -1,6 +1,6 @@
 import { Color, ColorLike } from "./color.js";
 import { CompositionType } from "./composition_type.js";
-import { staticImplements } from "../utils.js";
+import { deepEquals, staticImplements } from "../utils.js";
 
 /**
  * Partial pen specification, with optional members
@@ -110,6 +110,10 @@ export class Pen {
 
   _toEndcapTypeEnum (): number {
     return Pen.ENDCAP_TYPES[this.endcap]
+  }
+
+  equals (p: Pen): boolean {
+    return deepEquals(this, p)
   }
 }
 

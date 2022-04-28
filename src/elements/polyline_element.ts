@@ -7,7 +7,8 @@ import { calculatePolylineVertices, PolylineTriangulationResult } from "../algor
 
 type PolylineElementInternal = ElementInternalStore & {
   // Triangle strip
-  triangulation?: PolylineTriangulationResult
+  triangulation?: PolylineTriangulationResult | null
+  drawPen?: Pen
 }
 
 export class PolylineElement extends Element {
@@ -63,15 +64,17 @@ export class PolylineElement extends Element {
   }
 
   private _computeDrawVertices () {
-    let setDrawVertices = (v: undefined | PolylineTriangulationResult) => {
+    let setDrawVertices = (v: null | PolylineTriangulationResult) => {
       this.internal.triangulation = v
     }
 
     let vertices = this.getVertices()
     let pen = this.getPen()
 
+    this.internal.drawPen = pen; // cloned
+
     if (!vertices || !(pen instanceof Pen)) {
-      setDrawVertices(undefined)
+      setDrawVertices(null)
       return
     }
 
@@ -87,11 +90,44 @@ export class PolylineElement extends Element {
 
   }
 
-  update () {
+  _update () {
     // The algorithm is as follows:
-    // If pen and vertices have not changed, we do nothing.
-    // If vertices have changed, we recompute everything.
     // If pen has changed and only the color has changed, we recompute nothing.
+
+    let props = this.props
+    let pen = this._getPen()
+    let needsRecompute = true
+
+    if (!props.hasChanged("vertices")) {
+      // Vertices haven't changed, check if the pen has changed
+      if (!props.hasChanged("pen")) return // nothing changed
+
+      let previousPen = this.internal.drawPen
+      if (previousPen) {
+        previousPen.color = pen.color
+
+        if (previousPen.equals(pen)) { // pens are the same except for color; vertices don't need recomputation
+          needsRecompute = false
+        }
+      }
+    }
+
+    if (needsRecompute)
+      this._computeDrawVertices()
+
+    this.internal.drawPen = pen
+
+    let vertexData = this.internal.triangulation
+    this.internal.renderInfo = vertexData ? {
+      instructions: [
+        {
+          insnType: "primitive",
+          primitiveType: "triangle_strip",
+          vertexData,
+          pen: pen
+        }
+      ]
+    } : null
   }
 
   clone (): PolylineElement {

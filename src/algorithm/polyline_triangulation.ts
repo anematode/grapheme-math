@@ -3,6 +3,7 @@ import { getDashedPolyline} from './dashed_polyline.js'
 import { fastHypot } from './miscellaneous_geometry.js'
 import { Pen } from "../other/pen.js";
 import { BoundingBox } from "../other/bounding_box.js";
+import { VertexData } from "../core/renderer_instruction";
 
 const MIN_RES_ANGLE = 0.05 // minimum angle in radians between roundings in a polyline
 const B = 4 / Math.PI
@@ -40,10 +41,7 @@ function fastAtan2 (y: number, x: number): number {
 
 // Float32Array is fine for compactness
 type PolylineVertexList = number[] | Float64Array | Float32Array
-export type PolylineTriangulationResult = {
-  vertices: null | Float32Array
-  vertexCount: number
-}
+export type PolylineTriangulationResult = VertexData & { dim: 2 }
 
 /**
  * Convert an array of polyline vertices into a Float32Array of vertices to be rendered using WebGL.
@@ -59,6 +57,8 @@ export function calculatePolylineVertices (vertices: PolylineVertexList, pen: Pe
   }
 }
 
+window.calc = calculatePolylineVertices
+
 function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): PolylineTriangulationResult {
   if (
     pen.thickness <= 0 ||
@@ -66,7 +66,7 @@ function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): Polyline
     pen.joinRes < MIN_RES_ANGLE ||
     vertices.length <= 3
   ) {
-    return { vertices: null, vertexCount: 0 }
+    return { vertices: null, vertexCount: 0, dim: 2 }
   }
 
   let index = -1
@@ -84,16 +84,18 @@ function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): Polyline
     throw new Error('Undefined endcap or join.')
   }
 
+  let maxVerticesPerStep = 2 + Math.max(6 * Math.PI / endcapRes, 6 * Math.PI / joinRes) | 0
+
   // Grows by ceiling multiples of 1.5, a la most implementations of a vector
   // We begin with a very rough estimate of how much space will be needed
   let glVertices = new Float32Array(
     origVertexCount * 2 + // raw minimum
     ((endcap === 1) ? (2.1 * Math.PI / endcapRes) : 0) + // rough endcap minimum
-    ((join === 1 || join === 3) ? (origVertexCount * 0.1 / joinRes) : 0)  // join estimate, assuming an average of 0.1 radians per join
+    ((join === 1 || join === 3) ? (origVertexCount * 0.1 / joinRes) : 0) + // join estimate, assuming an average of 0.1 radians per join
+    maxVerticesPerStep
   )
-  let maxVerticesPerStep = 2 + Math.max(2 * Math.PI / endcapRes, 2 * Math.PI / joinRes) | 0
 
-  function reallocGLVertices (minSize) {
+  function reallocGLVertices (minSize: number) {
     minSize = minSize | 0
 
     if (minSize > glVertices.length) {
@@ -363,5 +365,5 @@ function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): Polyline
     glVertices[++index] = y2 + th * v2x
   }
 
-  return { vertices: (index >= 0) ? glVertices : null, vertexCount: index / 2 }
+  return { vertices: (index >= 0) ? glVertices : null, vertexCount: index >> 1, dim: 2 }
 }

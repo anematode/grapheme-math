@@ -4,24 +4,37 @@ import { BoundingBoxLike } from "../other/bounding_box.js";
 import { SceneDimensions } from "./scene.js";
 import { Color } from "../other/color.js";
 
-type BaseContextInstruction = {
+export type VertexData = {
+  vertices: null | Float32Array, // null implies no data
+  vertexCount: number,
+  dim: number
+}
 
+type BaseContextInstruction = {
+  zIndex?: number
 }
 
 type SceneContextInstruction = BaseContextInstruction & {
-  type: "scene"
+  insnType: "scene"
   dims: SceneDimensions
   backgroundColor: Color
 }
 
 type BaseInstruction = {
-  zIndex: number
+  zIndex?: number
 }
 
 export type PolylineRendererInstruction = BaseInstruction & {
   insnType: "polyline",
   // Flattened array of vertices; typed array is preferred
   vertices: Float32Array | Float64Array | number[],
+  pen: Pen
+}
+
+export type PrimitiveRendererInstruction = BaseInstruction & {
+  insnType: "primitive",
+  primitiveType: "triangles" | "lines" | "points" | "triangle_strip" | "line_strip",
+  vertexData: VertexData
   pen: Pen
 }
 
@@ -35,7 +48,7 @@ export type DebugInstruction = BaseInstruction & {
   rect?: BoundingBoxLike
 }
 
-export type RendererInstruction = PolylineRendererInstruction | DebugInstruction
+export type RendererInstruction = PolylineRendererInstruction | DebugInstruction | PrimitiveRendererInstruction
 export type RendererContextInstruction = SceneContextInstruction
 
 /**

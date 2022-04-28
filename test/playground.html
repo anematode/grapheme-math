@@ -13,29 +13,13 @@
         </div>
 
         <script>
-            let data = new Float32Array(1e6)
-            for (let i = 0; i < data.length; ++i) data[i] = Math.random()
-
-            function test() {
-                jsImpl = Grapheme._boundingBoxFlatF32
-                wasmImpl = Grapheme.computeBoundingBox
-
-                console.log(
-                    benchmark(() => jsImpl(data), { iterations: 100, name: "js implementation" }).explain()
-                )
-
-                console.log(
-                    benchmark(() => wasmImpl(data), { iterations: 100, name: "wasm implementation" }).explain()
-                )
-            }
-
             function play() {
                 renderer = new Grapheme.WebGLRenderer()
                 scene = new Grapheme.InteractiveScene()
 
                 document.getElementById('container').appendChild(scene.domElement)
 
-                let polyline = new Grapheme.PolylineElement()
+                polyline = new Grapheme.PolylineElement()
                 scene.add(polyline)
             }
         </script>

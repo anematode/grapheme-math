@@ -10,7 +10,7 @@ export type ElementOptions = {
 
 export type ElementInternalStore = {
   version: number,
-  renderInfo?: RenderingInfo
+  renderInfo?: RenderingInfo | null
 }
 
 /**
