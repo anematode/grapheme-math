@@ -57,8 +57,6 @@ export function calculatePolylineVertices (vertices: PolylineVertexList, pen: Pe
   }
 }
 
-window.calc = calculatePolylineVertices
-
 function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): PolylineTriangulationResult {
   if (
     pen.thickness <= 0 ||

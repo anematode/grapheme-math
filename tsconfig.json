@@ -3,7 +3,8 @@
     "module": "es6",
     "lib": [
       "es2017",
-      "dom"
+      "dom",
+      "es2021.weakref"
     ],
     "target": "es2017",
     "outDir": "build",
