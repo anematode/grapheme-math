@@ -14,9 +14,6 @@ const wasmSupported = (function() {
   return supported
 })()
 
-let HEAP_F32, HEAP_F64
-let free: (address: number) => void
-
 function toBuffer (bin: string) {
   let buffer = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; ++i) {
@@ -24,129 +21,6 @@ function toBuffer (bin: string) {
   }
 
   return buffer
-}
-
-// Use for small buffers, or if WASM is not supported/turned off
-function plainMalloc (sizeInBytes: number): PlainMemoryAllocation {
-  let buffer = new ArrayBuffer(sizeInBytes)
-  let alloc = new PlainMemoryAllocation()
-
-  alloc._buffer = buffer
-  alloc._size = sizeInBytes
-
-  return alloc
-}
-
-/**
- * General memory allocation system. Returns null on failure.
- * @param sizeInBytes
- * @param manualGc
- */
-export let malloc = function(sizeInBytes: number, manualGc: boolean = false): GeneralMemoryAllocation | null {
-  // Default implementation, assuming no WASM or FinalizationRegistry support
-  return plainMalloc(sizeInBytes)
-}
-
-export interface GeneralMemoryAllocation {
-  getF64(): Float64Array | null
-  getF32(): Float32Array | null
-
-  free(): void
-  isValid(): boolean
-  getSize(): number
-}
-
-export class PlainMemoryAllocation implements GeneralMemoryAllocation {
-  _buffer: ArrayBuffer
-  _size: number
-
-  _viewf64?: Float64Array
-  _viewf32?: Float32Array
-
-  getF64 () {
-    let v: undefined | Float64Array
-    if (!(v = this._viewf64)) {
-      v = this._viewf64 = new Float64Array(this._buffer)
-    }
-
-    return v
-  }
-
-  getF32 () {
-    let v: undefined | Float32Array
-    if (!(v = this._viewf32)) {
-      v = this._viewf32 = new Float32Array(this._buffer)
-    }
-
-    return v
-  }
-
-  isValid () {
-    return true
-  }
-
-  getSize () {
-    return this._size
-  }
-
-  free () {
-    // no op
-  }
-}
-
-export class WASMMemoryAllocation implements GeneralMemoryAllocation {
-  _address: number // address in WASM memory (should not be used directly)
-  _size: number    // size in bytes
-  _valid: boolean  // whether the buffer has not been freed
-
-  // Most common, so we cache them
-  _viewf64?: Float64Array
-  _viewf32?: Float32Array
-
-  /**
-   * Get the f64 view for this allocation. Returns null if the allocation failed or has already been freed.
-   */
-  getF64 (): Float64Array | null {
-    let v: Float64Array | undefined
-    if (!this._valid) return null
-
-    if (!(v = this._viewf64)) {
-      v = this._viewf64 = HEAP_F64.subarray(this._address >> 3, this._size >> 3)
-    }
-
-    return v as Float64Array
-  }
-
-  /**
-   * Get the f32 view for this allocation. Returns null if the allocation failed or has already been freed.
-   */
-  getF32 (): Float32Array | null {
-    let v: Float32Array | undefined
-    if (!this._valid) return null
-
-    if (!(v = this._viewf32)) {
-      v = this._viewf32 = HEAP_F32.subarray(this._address >> 2, this._size >> 2)
-    }
-
-    return v as Float32Array
-  }
-
-  /**
-   * Manually invoke free. Generally doesn't have to be called, but may improve efficiency
-   */
-  free () {
-    if (!this._valid) return
-
-    this._valid = false
-  }
-
-  isValid () {
-    return this._valid
-  }
-
-  getSize () {
-    return this._size
-  }
 }
 
 const WASM = (function () {
@@ -174,6 +48,16 @@ const WASM = (function () {
     const HEAP_U32 = new Uint32Array(memory.buffer)
 
     const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32 as Function;
+
+    /**
+     * Size in bytes; returns location of a pointer
+     * @param size
+     */
+    function malloc (size: number) {
+      size |= 0
+
+
+    }
 
     function boundingBoxFlatF32 (arr: Float32Array): BoundingBox | null {
       // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
