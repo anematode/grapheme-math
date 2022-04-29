@@ -39,7 +39,7 @@ export class Group extends Element {
    * Run callback(element) on this element and all the element's children
    * @param callback {Function}
    */
-  apply (callback) {
+  apply (callback: (elem: Element) => void) {
     callback(this)
 
     this.children.forEach(child => child.apply(callback))

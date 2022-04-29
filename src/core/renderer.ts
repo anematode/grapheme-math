@@ -154,7 +154,7 @@ type GLTextureStore = {
 }
 
 type GLVertexArrayObjectStore = {
-
+  vao: WebGLVertexArrayObject
 }
 
 export class WebGLRenderer {
@@ -325,6 +325,32 @@ export class WebGLRenderer {
     }
   }
 
+  getVAO (vaoName: string): GLVertexArrayObjectStore | null {
+    return this.vaos.get(vaoName) ?? null
+  }
+
+  createVAO (vaoName: string): GLVertexArrayObjectStore | null {
+    let vao = this.getVAO(vaoName)
+
+    if (!vao) {
+      let glVao = this.gl.createVertexArray()
+      if (!glVao) return null
+
+      this.vaos.set(vaoName, { vao: glVao })
+    }
+
+    return vao
+  }
+
+  deleteVAO (vaoName: string) {
+    const vao = this.getVAO(vaoName)
+
+    if (vao) {
+      this.vaos.delete(vaoName)
+      this.gl.deleteVertexArray(vao.vao)
+    }
+  }
+
   /**
    * Resize and clear the canvas simultaneously. The canvas is only manually cleared if the dimensions haven't changed,
    * since the buffer will be erased.
@@ -381,6 +407,14 @@ export class WebGLRenderer {
   }
 
   renderDOMScene (scene) {
+    let graph = new SceneGraph(this)
+
+    window.graph = graph
+
+    graph.constructFromScene(scene)
+    graph.assembleInstructions()
+    graph.compile()
+
     createImageBitmap(this.canvas).then(bitmap => {
       console.log(bitmap)
       scene.bitmapRenderer.transferFromImageBitmap(bitmap)

@@ -1,4 +1,4 @@
-import { mod } from '../utils.js'
+import { getVersionID, mod } from '../utils.js'
 import { getDashedPolyline} from './dashed_polyline.js'
 import { fastHypot } from './miscellaneous_geometry.js'
 import { Pen } from "../other/pen.js";
@@ -77,10 +77,6 @@ function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): Polyline
   let join = pen._toJoinTypeEnum()
   let endcapRes = pen.endcapRes
   let joinRes = pen.joinRes
-
-  if (endcap === undefined || join === undefined) {
-    throw new Error('Undefined endcap or join.')
-  }
 
   let maxVerticesPerStep = 2 + Math.max(6 * Math.PI / endcapRes, 6 * Math.PI / joinRes) | 0
 
@@ -363,5 +359,5 @@ function convertTriangleStrip (vertices: PolylineVertexList, pen: Pen): Polyline
     glVertices[++index] = y2 + th * v2x
   }
 
-  return { vertices: (index >= 0) ? glVertices : null, vertexCount: index >> 1, dim: 2 }
+  return new VertexData((index >= 0) ? glVertices : null, index >> 1, 2, getVersionID()) as PolylineTriangulationResult
 }

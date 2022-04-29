@@ -144,7 +144,7 @@ export class Scene extends Group {
 
     this.internal.renderInfo = {
       contexts: [{
-        type: 'scene',
+        insnType: 'scene',
         dims: this.props.get('sceneDims'),
         backgroundColor: this.props.get('backgroundColor')
       }]
@@ -161,6 +161,6 @@ export class Scene extends Group {
     })
 
     // Mark the update as completed (WIP)
-    this.apply(child => child.props.markGlobalUpdateComplete())
+    this.apply(child => child.props._markGlobalUpdateComplete())
   }
 }

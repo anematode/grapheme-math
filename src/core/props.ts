@@ -212,10 +212,12 @@ export class Props {
 
         this.markHasChangedProperties()
         this.markHasChangedInheritableProperties()
+
+        continue
       }
 
       // Value has been changed!
-      if (propStore.version === undefined || otherPropsStore.version > propStore.version) {
+      if (propStore.version === undefined || (otherPropsStore.version! > propStore.version)) {
         propStore.version = otherPropsStore.version
         propStore.value = otherPropsStore.value
         propStore.changed |= 0b1
@@ -236,7 +238,7 @@ export class Props {
         if (
           !ourPropStore ||
           (ourPropStore.inherit === 1 &&
-            (ourPropStore.version === undefined || propStore.version > ourPropStore.version))
+            (ourPropStore.version === undefined || propStore.version! > ourPropStore.version))
         ) {
           if (!ourPropStore) {
             ourPropStore = this._createPropertyStore(propName)

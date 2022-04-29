@@ -82,7 +82,7 @@ export class Element extends Eventful {
    * Apply a given function, accepting a single argument (the element)
    * @param callback The callback function
    */
-  apply (callback: (e: Element) => undefined) {
+  apply (callback: (e: Element) => void) {
     callback(this)
   }
 
@@ -153,5 +153,14 @@ export class Element extends Eventful {
     this._update()
 
     this.updateStage = 100
+  }
+
+  getChildren (): Element[] {
+    // @ts-ignore
+    return this.isGroup() ? this.children : []
+  }
+
+  isGroup (): boolean {
+    return false
   }
 }

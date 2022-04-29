@@ -13,10 +13,6 @@
         </div>
 
         <script>
-          let registry = new FinalizationRegistry(heldValue => {
-            console.log(heldValue)
-          })
-          let buffer = new Float32Array(10000)
 
             function play() {
                 renderer = new Grapheme.WebGLRenderer()
@@ -27,11 +23,11 @@
                 polyline = new Grapheme.PolylineElement()
                 scene.add(polyline)
 
-                for (let i = 0; i < 1000; ++i) {
-                  let view = buffer.subarray(0, 100)
+                polyline.setVertices([100, 100, 200, 200])
 
-                  registry.register(view, i)
-                }
+                scene.updateAll()
+
+                renderer.renderDOMScene(scene)
             }
         </script>
 

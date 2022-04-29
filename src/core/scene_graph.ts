@@ -5,7 +5,7 @@
 // Map: id -> { parent, elem id, info, children: [{ child: id, instructions: [] }, { , version, ... }
 
 import { getStringID, getVersionID } from '../utils.js'
-import { convertTriangleStrip } from '../algorithm/polyline_triangulation.js'
+import { calculatePolylineVertices } from '../algorithm/polyline_triangulation.js'
 import {
   flattenVec2Array,
   generateRectangleDebug,
@@ -15,13 +15,17 @@ import { BoundingBox } from '../other/bounding_box.js'
 import { Colors } from '../other/color.js'
 import { Pen } from "../other/pen.js";
 import { earcut } from '../algorithm/earcut.js'
+import { WebGLRenderer } from "./renderer";
+import { Scene } from "./scene";
+import { CompiledRendererInstruction, RendererContextInstruction, RendererInstruction } from "./renderer_instruction";
+import { Element } from "./element";
 
 /**
  * Validate, shallow clone instructions and change their zIndex, et cetera
  * @param instruction
  */
-function adjustInstruction (instruction) {
-  const type = instruction.type
+function adjustInstruction (instruction: RendererInstruction): RendererInstruction {
+  const type = instruction.insnType
   if (!type)
     throw new Error(
       'Instruction does not have a type. Erroneous instruction: ' +
@@ -80,8 +84,26 @@ function matchEscapeContext (context, escapeContext) {
   }
 }
 
+type SceneGraphContextNode = {
+  parent: null | SceneGraphContextNode
+  id: string
+  info: {
+    type: string
+  }
+  children: any[]
+  contextDepth: number,
+  instructions: RendererInstruction[]
+  escapingInstructions: RendererInstruction[]
+  compiledInstructions: CompiledRendererInstruction[]
+}
+
 export class SceneGraph {
-  constructor () {
+  contextMap: Map<string, any>
+  id: string
+  renderer: WebGLRenderer
+  resources: any
+
+  constructor (renderer: WebGLRenderer) {
     /**
      * Mapping of <context id> -> <context info>, where contexts are specific subsets of the rendering sequence created
      * by certain groups that allow for operations to be applied to multiple elements. Example: a plot may create a
@@ -98,7 +120,7 @@ export class SceneGraph {
      * is optional allowing for static analysis of scenes detached from any specific renderer.
      * @type {WebGLRenderer|null}
      */
-    this.renderer = null
+    this.renderer = renderer
 
     /**
      * Resources used by this scene graph
@@ -119,16 +141,21 @@ export class SceneGraph {
    * @param scene
    * @returns {*}
    */
-  constructFromScene (scene) {
+  constructFromScene (scene: Scene) {
+    // Clear previous
     this.destroyAll()
     const contextMap = this.contextMap
 
-    let topContext = {
+    // Top-level node
+    let topContext: SceneGraphContextNode = {
       parent: null,
       id: 'top',
       info: { type: 'top' },
       children: [],
-      contextDepth: 0
+      contextDepth: 0,
+      instructions: [],
+      escapingInstructions: [],
+      compiledInstructions: []
     }
     contextMap.set('top', topContext)
 
@@ -138,8 +165,8 @@ export class SceneGraph {
     recursivelyBuild(scene)
 
     // Recurse through the scene elements, not yet handling zIndex and escapeContext
-    function recursivelyBuild (elem) {
-      let children = elem.children
+    function recursivelyBuild (elem: Element) {
+      let children = elem.getChildren()
       let info = elem.getRenderingInfo()
 
       let instructions = info?.instructions
@@ -154,9 +181,8 @@ export class SceneGraph {
         for (const c of contexts) {
           contextDepth++
 
-          let newContext = {
-            type: 'context',
-            id: c.id ?? elem.id + '-' + getVersionID(),
+          let newContext: SceneGraphContextNode = {
+            id: ('id' in c && c.id) || elem.id + '-' + getVersionID(),
             parent: currentContext,
             children: [],
             info: c,
@@ -197,7 +223,11 @@ export class SceneGraph {
     return this
   }
 
-  computeInstructions () {
+  /**
+   * Go through each context and assemble (but do not compile) a list of instructions that the renderer should run. The
+   * uncompiled instructions are put on a per-context basis.
+   */
+  assembleInstructions () {
     // For each context compute a list of instructions that the renderer should run
 
     const { contextMap } = this
@@ -208,8 +238,8 @@ export class SceneGraph {
     for (const c of contexts) {
       const children = c.children
 
-      const instructions = []
-      const escapingInstructions = []
+      const instructions: any[] = []
+      const escapingInstructions: any[] = []
 
       // eventually, instructions will have the structure {child: id, instructions: [], zIndex: (number)}. zIndex of text
       // instructions is assumed to be Infinity and unspecified zIndex is 0. For now we'll just have a flat map
@@ -272,7 +302,7 @@ export class SceneGraph {
    * @returns {Array}
    */
   getTextInstructions () {
-    let ret = []
+    let ret: any[] = []
 
     this.forEachContext(c => {
       const instructions = c.instructions
@@ -315,7 +345,7 @@ export class SceneGraph {
   }
 
   destroyTextAtlas () {
-    const renderer = this.renderer
+    const renderer = this.renderer!
     const gl = renderer.gl
 
     let name = '__' + this.id + '-text'
@@ -359,12 +389,13 @@ export class SceneGraph {
       this.freeCompiledInstructions(context.compiledInstructions)
 
       const instructions = context.instructions
-      const compiledInstructions = []
+      const compiledInstructions: CompiledRendererInstruction[] = []
 
       switch (context.info.type) {
         case 'scene':
         case 'scissor':
           compiledInstructions.push(context.info)
+          console.log("hi")
           break
       }
 
@@ -376,7 +407,7 @@ export class SceneGraph {
             break
           case 'polyline': {
             const pen = instruction.pen ?? Pen.default
-            let vertices = convertTriangleStrip(
+            let result = calculatePolylineVertices(
               flattenVec2Array(instruction.vertices),
               pen
             )
@@ -394,13 +425,14 @@ export class SceneGraph {
             gl.enableVertexAttribArray(0 /* position buffer */)
             gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
 
-            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
+            gl.bufferData(gl.ARRAY_BUFFER, result.vertices, gl.STATIC_DRAW)
 
-            let compiled = {
-              type: 'triangle_strip',
+            let compiled: CompiledRendererInstruction = {
+              insnType: "primitive",
+              primitiveType: "triangle_strip",
               vao: vaoName,
               buffers: [buffName],
-              vertexCount: vertices.length / 2,
+              vertexCount: result.vertexCount,
               color
             }
             compiledInstructions.push(compiled)
