@@ -1,21 +1,32 @@
 import { BoundingBox } from "../../other/bounding_box.js";
 import { roundUp } from "../../fp/manip.js";
 
-const WASM = (function () {
+const wasmSupported = (function() {
+  // Attempt to compile a module that uses v128
+  let supported = true
+
   try {
+    new WebAssembly.Module(toBuffer("\x00asm\x01\x00\x00\x00\x01\x05\x01`\x01{\x00\x03\x02\x01\x00\n\x04\x01\x02\x00\v")) // simd_test.wat
+  } catch (e) {
+    supported = false
+  }
+
+  return supported
+})()
+
+function toBuffer (bin: string) {
+  let buffer = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; ++i) {
+    buffer[i] = bin.charCodeAt(i)
+  }
+
+  return buffer
+}
+
+const WASM = (function () {
+  if (wasmSupported) try {
     // base-64 encoded
-    const WASM_CONTENTS = "AGFzbQEAAAABBgFgAn9/AAMCAQAFBAEAkE4HIgIGbWVtb3J5AgAVYm91bmRpbmdfYm94X2ZsYXRfZjMyAAAK5AEB4QECAX8FfQJAAkAgAUECdSICQQFIDQBDAACA/yEGQQAhAUMAAIB/IQRDAACAfyEFQwAAgP8hBwNAIAYgAEEEaioCACIDIAMgBl0bIQYgBSADIAMgBV4bIQUgByAAKgIAIgMgAyAHXRshByAEIAMgAyAEXhshBCAAQQhqIQAgAUECaiIBIAJIDQAMAgsLQwAAgH8hBUMAAID/IQdDAACA/yEGQwAAgH8hBAtBACAEOAIAQQAgBTgCBEEAIAc4AghBACAGOAIMQQAgBDgCEEEAIAU4AhRBACAHOAIYQQAgBjgCHAs="
-
-    function toBuffer (bin: string) {
-      let buffer = new Uint8Array(bin.length)
-      for (let i = 0; i < bin.length; ++i) {
-        let code = bin.charCodeAt(i)
-
-        buffer[i] = code
-      }
-
-      return buffer
-    }
+    const WASM_CONTENTS = /* $WASM_CONTENTS */""
 
     function log (o) {
       console.log(o)
@@ -37,6 +48,16 @@ const WASM = (function () {
     const HEAP_U32 = new Uint32Array(memory.buffer)
 
     const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32 as Function;
+
+    /**
+     * Size in bytes; returns location of a pointer
+     * @param size
+     */
+    function malloc (size: number) {
+      size |= 0
+
+
+    }
 
     function boundingBoxFlatF32 (arr: Float32Array): BoundingBox | null {
       // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
@@ -80,13 +101,17 @@ const WASM = (function () {
       instance,
       exports: instance.exports,
 
-      boundingBoxFlatF32
+      boundingBoxFlatF32,
+      supported: true
     }
   } catch (e) {
-    console.log(e)
-    console.warn("WebAssembly not supported; default JS implementations will be used")
 
-    return {}
+  }
+
+  console.warn("WebAssembly not supported; default JS implementations will be used")
+
+  return {
+    supported: false
   }
 })();
 
