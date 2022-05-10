@@ -24,7 +24,7 @@ type BaseContextInstruction = {
   zIndex?: number
 }
 
-type SceneContextInstruction = BaseContextInstruction & {
+export type SceneContextInstruction = BaseContextInstruction & {
   insnType: "scene"
   dims: SceneDimensions
   backgroundColor: Color
@@ -74,10 +74,12 @@ export type PrimitiveCompiledRendererInstruction = {
   vertexCount: number
 }
 
-export type ContextPushRendererInstruction = null;
-export type ContextPopRendererInstruction = null;
 
-export type CompiledRendererInstruction = PrimitiveCompiledRendererInstruction | ContextPopRendererInstruction | ContextPushRendererInstruction
+export type ContextPopAllRendererInstruction = null
+export type ContextPushRendererInstruction = null
+export type ContextPopRendererInstruction = null
+
+export type CompiledRendererInstruction = PrimitiveCompiledRendererInstruction | ContextPopRendererInstruction | ContextPushRendererInstruction | ContextPopAllRendererInstruction
 
 /**
  * General form of rendering info outputted by a given element

@@ -58,6 +58,10 @@ function copyToDisplay () {
   ctx.putImageData(new ImageData(colors, dim, dim), 0, 0)
 }
 
+const urlSearchParams = new URLSearchParams(window.location.search);
+const params = Object.fromEntries(urlSearchParams.entries());
+
+
 let canvas = document.createElement("canvas")
 let dim = canvas.width = canvas.height = 750
 document.getElementById("plot-container").appendChild(canvas)
@@ -188,8 +192,11 @@ function draw () {
 }
 
 function play() {
-  setExpression("z^5-1")
+  setExpression(params.expr ?? "z^5-1")
   updateExpression()
+  showCircles = !!params.showCircles
+  zoom = params.zoom ?? 20
 
   draw()
 }
+
