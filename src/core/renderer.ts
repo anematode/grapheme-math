@@ -411,7 +411,7 @@ export class WebGLRenderer {
 
     window.graph = graph
 
-    graph.constructFromScene(scene)
+    graph.buildFromScene(scene)
     graph.assembleInstructions()
     graph.compile()
 

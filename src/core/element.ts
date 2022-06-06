@@ -79,11 +79,20 @@ export class Element extends Eventful {
   }
 
   /**
-   * Apply a given function, accepting a single argument (the element)
-   * @param callback The callback function
+   * Apply a callback function, accepting a single argument (the element)
+   * @param callback Callback function
    */
   apply (callback: (e: Element) => void) {
     callback(this)
+  }
+
+  /**
+   * Apply two callback functions, one before the children are called, and one after
+   * @param callback1 Callback function to be called before
+   * @param callback2 Callback function to be called after
+   */
+  applyTwice (callback1: (e: Element) => void, callback2: (e: Element) => void) {
+    // TODO
   }
 
   /**

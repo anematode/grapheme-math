@@ -74,6 +74,9 @@ export type PrimitiveCompiledRendererInstruction = {
   vertexCount: number
 }
 
+export type CompiledPolylineRendererInstruction = PolylineRendererInstruction & {
+
+}
 
 export type ContextPopAllRendererInstruction = null
 export type ContextPushRendererInstruction = null
