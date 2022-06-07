@@ -80,7 +80,7 @@ export class SceneGraph {
     scene.apply(e => {
       let renderingInfo = e.getRenderingInfo()
 
-
+      console.log(renderingInfo)
     })
   }
 

@@ -15,8 +15,9 @@ export class LinearPlot2DTransform {
    * Parameters beginning with p are the bounding box in pixel coordinates. Those beginning with g are the bounding box
    * in graph coordinates. The transform has an implicit y flipping operation, which is key. The point (px1, py1) does
    * NOT map to the point (gx1, gy1), but the point (gx1, gy1 + gh). This annoyance is why a special class is useful.
+   * The default constructor maps to the unit square (ignoring any aspect ratio concerns)
    */
-  constructor (px1=0, py1=0, pw=400, ph=400, gx1=-1, gy1=-1, gw=1, gh=1) {
+  constructor (px1=0, py1=0, pw=400, ph=400, gx1=-1, gy1=-1, gw=2, gh=2) {
     this.px1 = px1
     this.py1 = py1
     this.pw = pw
@@ -49,6 +50,13 @@ export class LinearPlot2DTransform {
 
   graphBox () {
     return new BoundingBox(this.gx1, this.gy1, this.gw, this.gh)
+  }
+
+  /**
+   * Graph aspect ratio of this plot, defined by the ratio in pixels between a width and height of a unit square
+   */
+  getGraphAspectRatio (): number {
+    return this.gw / this.pw * this.ph / this.gh
   }
 
   resizeToPixelBox (box: BoundingBoxLike): LinearPlot2DTransform {
@@ -154,12 +162,7 @@ export class LinearPlot2DTransform {
     return arr
   }
 
-  /**
-   * The size, in graph units, of a single pixel
-   */
-  graphPixelSize (): number {
-    return this.gh / this.ph
-  }
+
 }
 
 // Plot transform controls, a state machine which determines how a given transform should be moved about
