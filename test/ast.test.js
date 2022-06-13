@@ -1,4 +1,4 @@
-import {parseString, ParserError} from "../build/ast/parse.js"
+import {parseString, ParserError, Complex} from "../build/index.js"
 import { expect } from "chai"
 import {expectMultipleCases} from "./test.js"
 
@@ -28,13 +28,60 @@ describe("ast", () => {
     })
   })
 
-  describe("real evaluation", () => {
+  describe("normal real evaluation", () => {
     it("Works for (x+3)^2", () => {
       let n = parseString("(x+3)^2").resolveTypes()
 
       expect(n.evaluate({ x: 2 })).to.eq(25)
       expect(n.evaluate({ x: -3 })).to.eq(0)
       expect(Number.isNaN(n.evaluate({ x: NaN }))).to.eq(true)
+    })
+
+    it("Works for (x+3)^-2", () => {
+      let n = parseString("(x+3)^-2").resolveTypes()
+
+      expect(n.evaluate({ x: 2 })).to.eq(0.04)
+      expect(n.evaluate({ x: -3 })).to.eq(Infinity)
+      expect(Number.isNaN(n.evaluate({ x: NaN }))).to.eq(true)
+    })
+
+    it("Works for x^2+y^2+z^2", () => {
+      let n = parseString("x^2+y^2+z^2").resolveTypes()
+
+      expect(n.evaluate({ x: 2, y: -2, z: -2 })).to.eq(12)
+
+      expect(() => n.evaluate({ x: -3 })).to.throw()  // not defined in current scope
+      expect(() => n.evaluate({ x: "cow", y: -2, z: -2 })).to.throw() // type checks
+      expect(() => n.evaluate({ x: "cow", y: -2, z: -2 }, { typecheck: false })).to.not.throw()
+    })
+
+    it("Works for e^-x^2+e^-y^2", () => {
+      let n = parseString("e^-x^2+e^-y^2").resolveTypes()
+
+      expect(n.evaluate({ x: 2, y: 2 })).to.equal(0.03663127777746837)
+      expect(n.evaluate({ x: -2, y: -2 })).to.equal(0.03663127777746837)
+    })
+
+    it("Works for cos(x *\\ty)", () => {
+      let n = parseString("cos(x *\ty)").resolveTypes()
+
+      expect(n.evaluate({ x: 0, y: 0 })).to.equal(1)
+      expect(n.evaluate({ x: 1, y: 1 })).to.equal(0.5403023058681398)
+    })
+  })
+
+  describe("mathematical constants", () => {
+    it("Works for pi and e", () => {
+      let n = parseString("pi+e").resolveTypes()
+
+      expect(n.evaluate({})).to.equal(5.859874482048838)
+      expect(n.evaluate()).to.equal(5.859874482048838)
+    })
+
+    it("Works for i", () => {
+      let n = parseString("i * 2").resolveTypes()
+
+      expect(n.evaluate()).to.deep.equal(new Complex(0, 2))
     })
   })
 

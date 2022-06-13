@@ -3963,14 +3963,26 @@
             return new ASTNode(this);
         }
         /**
-         * Figure out the type of each node, given the type of each variable node within it.
+         * Figure out the type of each node, given the type of each variable node within it. Examples:
+         *
+         * node = Grapheme.parseString("(x+y)^2+cos(z)").resolveTypes({ z: "real" }, { defaultType: "complex" })
+         *    -> Node which takes in a real value z and two complex values x and y
+         * node = Grapheme.parseString("(x+y)^2+cos(z)").resolveTypes({}, { defaultType: "complex" })
+         *    -> Node which takes in three complex values
+         * node = Grapheme.parseString("(x+y)^2+cos(z)").resolveTypes()
+         *    -> Node which takes in three real values
+         * node = Grapheme.parseString("cowbell(z)")    // (does not throw)
+         * node.resolveTypes()                          // throws
+         *
          * Perf: on "x^2+y^2+e^-x^2+pow(3,gamma(2401 + complex(2,3)))", took 0.002 ms / iteration as of Mar 14, 2022
+         *
          * @param vars {{}} Mapping from variable names to their types
          * @param opts
          */
         resolveTypes(vars, opts = {}) {
             // Convert all arg values to mathematical types
             let { defaultType = "real", throwOnUnresolved = true } = opts;
+            vars !== null && vars !== void 0 ? vars : (vars = {});
             for (let sus of suspiciousVariableNames) {
                 if (sus in vars) {
                     localWarn(`Option ${sus} found in first argument to resolveTypes(vars, opts). Note that vars is a dictionary of variables, so ${sus} will be treated as a variable.`, `unusual variable name in resolveTypes()`, 3);
@@ -3981,11 +3993,7 @@
                 if (!vars.hasOwnProperty(v))
                     continue;
                 let n = revisedVars[v];
-                let mType = toMathematicalType(n);
-                if (!mType) {
-                    throw new ResolutionError(`Invalid mathematical type ${n} for variable ${v}`);
-                }
-                revisedVars[v] = mType;
+                revisedVars[v] = toMathematicalType(n, true /* throw on error */);
             }
             let revisedType = toMathematicalType(defaultType, true);
             this.applyAll(node => node._resolveTypes({
@@ -3994,12 +4002,15 @@
             return this;
         }
         /**
-         * Whether all operator definitions and types have been resolved for this expression
-         * @returns {boolean}
+         * Whether all operator definitions and types have been resolved for this expression by checking whether the type of
+         * this node is known. If it is not known, then at least one of the types of its children is not known either
          */
         allResolved() {
             return !!(this.type);
         }
+        /**
+         * Internal resolve types function recursively called
+         */
         _resolveTypes(opts) {
         }
         /**
@@ -4010,7 +4021,8 @@
          */
         evaluate(vars, { mode = "normal", typecheck = true } = {}) {
             if (!this.allResolved())
-                throw new EvaluationError(`This node has not had its types fully resolved (call .resolveTypes())`);
+                throw new EvaluationError(`[E0001] This node has not had its types fully resolved (call .resolveTypes()).\
+In other words, the node cannot be used for computation until an abstract type and operator definition has been found for each node.`);
             let convertedMode = toEvaluationMode(mode !== null && mode !== void 0 ? mode : "normal", true); // throws on fail
             return this._evaluate(vars, convertedMode, { mode, typecheck });
         }
@@ -4028,7 +4040,7 @@
                     let info = knownVars.get(name);
                     if (!info) {
                         if (node.type == null) {
-                            throw new ResolutionError(`Type of variable ${name} has not been resolved`);
+                            throw new EvaluationError(`[E0001] Type of variable ${name} has not been resolved`);
                         }
                         info = {
                             type: node.type,
@@ -4117,7 +4129,7 @@
         }
         _evaluate(vars, mode, opts) {
             if (!this.type) {
-                throw new EvaluationError(`Type of constant variable with value ${this.value} has not been resolved`);
+                throw new EvaluationError(`[E0001] Type of constant variable with value ${this.value} has not been resolved`);
             }
             let type = mode.getConcreteType(this.type);
             if (!type) {
@@ -4221,7 +4233,11 @@
             if (!this.casts)
                 throw new EvaluationError("Casts not resolved");
             let casts = this.casts;
-            let childrenValues = this.children.map((c, i) => {
+            let childrenValues = [];
+            let children = this.children;
+            let cl = children.length;
+            for (let i = 0; i < cl; ++i) {
+                let c = children[i];
                 let cast = casts[i];
                 let ccast = cast.getDefaultEvaluator(mode);
                 if (ccast === null) {
@@ -4229,10 +4245,10 @@
                         + ` to destination ${mode.getConcreteType(cast.dstType()).toHashStr()}`);
                 }
                 let uncastedChild = c._evaluate(vars, mode, opts);
-                return ccast.callNew([
+                childrenValues.push(ccast.callNew([
                     uncastedChild
-                ]);
-            });
+                ]));
+            }
             let evaluator = this.operatorDefinition.getDefaultEvaluator(mode);
             if (!evaluator) {
                 throw new EvaluationError(`No evaluator (in mode ${mode.name}} for operator ${this.operatorDefinition.prettyPrint()}`);
@@ -5209,7 +5225,7 @@
                 throw new CompilationError(`No defined typecheck for concrete type ${t.toHashStr()}`);
             }
             env.importFunction(tc);
-            tcv ? env.importFunction(tcv) : ''; // if no verbose typecheck available, don't include it
+            tcv ? env.importFunction(tcv) : ""; // if no verbose typecheck available, don't include it
             this.name;
             /*env.addMain(`if (${typecheckFast}(${this.name}) {
         
@@ -6657,6 +6673,261 @@
     }
 
     /**
+     * Given two instruction lists, check whether they are the same based on versions
+     * @param c1
+     * @param c2
+     */
+    function differentInfo(c1, c2) {
+        var _a, _b;
+        if (!c1 || !c2)
+            return c1 === c2; // undefined case
+        let len;
+        if ((len = c1.length) !== c2.length)
+            return true;
+        for (let i = 0; i < len; ++i) {
+            let c1v = (_a = c1[i]) === null || _a === void 0 ? void 0 : _a.version;
+            let c2v = (_b = c2[i]) === null || _b === void 0 ? void 0 : _b.version;
+            if (!c1v || !c2v || c1v !== c2v)
+                return true;
+        }
+        return false;
+    }
+    // Corresponds one-to-one with an Element
+    class SceneAnnotatedNode {
+        constructor() {
+            this.rInfoVersion = -1;
+            this.lastChildren = this.children = [];
+            this.childrenOrderChanged = true;
+        }
+        markHistorical() {
+            this.lastRInfo = this.rInfo;
+            this.lastChildren = this.children;
+        }
+        markInfoProcessed() {
+            this.rInfoChanged = true;
+        }
+        getVersion() {
+            return this.rInfoVersion;
+        }
+        /**
+         * Set the info directly, overriding whether the info has the same version as before
+         * @param r
+         */
+        setInfo(r) {
+            this.rInfo = r;
+            if (r !== null && r.version !== undefined) {
+                this.rInfoVersion = r.version;
+            }
+            else {
+                this.rInfoVersion = getVersionID(); // auto generated
+            }
+            this.rInfoChanged = true;
+        }
+        setChildrenOrder(o) {
+            this.lastChildren = this.children;
+            this.children = o;
+            this.childrenOrderChanged = true;
+        }
+        /**
+         * Wheter the given rendering info is equivalent, based on version
+         * @param r
+         * @param checkDeep Whether to also compare versions, etc. of contexts
+         * @return 00 if entirely the same, 01 if only instructions are different, 10 if only contexts are different, 11 if
+         * everything is different. If checkDeep is turned off, only returns 00 or 11
+         */
+        differentRInfoAs(r, checkDeep = true) {
+            let tr = this.rInfo;
+            if (!tr || !r) {
+                if (tr === r)
+                    return 0b00;
+                if (checkDeep)
+                    return 0b11;
+                return (+((r === null || r === void 0 ? void 0 : r.contexts) !== (tr === null || tr === void 0 ? void 0 : tr.contexts))) & (+((r === null || r === void 0 ? void 0 : r.instructions) !== (tr === null || tr === void 0 ? void 0 : tr.instructions)) << 1);
+            }
+            let versionsSame = r.version === this.getVersion();
+            if (versionsSame)
+                return 0b00;
+            if (!checkDeep)
+                return 0b11;
+            return (+differentInfo(tr.contexts, r.contexts)) & ((+differentInfo(tr.instructions, r.instructions)) << 1);
+        }
+    }
+    class SceneGraphPerfCounters {
+        constructor() {
+            this.clear();
+        }
+        clear() {
+            this.removedElements = 0;
+            this.buildCount = 0;
+        }
+    }
+    class SceneGraphError extends Error {
+        constructor(message) {
+            super(message);
+            this.name = 'SceneGraphError';
+        }
+    }
+    class SceneGraph {
+        constructor(renderer) {
+            this.renderer = renderer;
+            this.id = getStringID();
+            this.sceneAnnotatedNodes = new Map();
+            this.sceneTopNode = null;
+            this.sceneNodeCount = -1;
+            this.perfCounters = new SceneGraphPerfCounters();
+        }
+        /**
+         * Whether this scene graph has been built from a scene
+         */
+        hasScene() {
+            return !!this.sceneTopNode;
+        }
+        /**
+         * Clear all caches, delete all buffer data
+         */
+        invalidateEverything() {
+            this.sceneNodeCount = -1;
+            this.sceneAnnotatedNodes.clear();
+        }
+        _getSceneRenderingInfo(scene) {
+            // We traverse the scene, get rendering info, and compare it to our existing sceneAnnotatedNodes tree
+            let processedID = getVersionID();
+            let nodeCount = 0;
+            scene.apply(sceneE => {
+                let id = sceneE.id, parentId = sceneE.parent ? sceneE.parent.id : null;
+                let annotated = this.sceneAnnotatedNodes.get(id);
+                if (!annotated) {
+                    // New node
+                    annotated = new SceneAnnotatedNode();
+                    annotated.id = id;
+                    annotated.parentId = parentId;
+                    this.sceneAnnotatedNodes.set(id, annotated);
+                }
+                // Changed parents are supposed to be handled in the parent's context
+                if (annotated.parentId !== parentId) {
+                    throw new SceneGraphError(`Parent id of annotated node is ${annotated.parentId}, should be ${parentId} and processed earlier`);
+                }
+                let children = sceneE.getChildren();
+                let rInfo = sceneE.getRenderingInfo();
+                // There are three jobs to do: compare contexts, compare renderer instructions, and compare children. Reordering
+                // of children is handled specially, but reordering of the others is not (too much complexity!)
+                let newRInfo = annotated.differentRInfoAs(rInfo);
+                if (newRInfo) {
+                    annotated.setInfo(rInfo);
+                }
+                if (children.length === 0 && annotated.children.length === 0) ;
+                else {
+                    // Ascertain children order and remove old children if necessary
+                    let annotatedChildren = annotated.children;
+                    let acl = annotatedChildren.length;
+                    let cl = children.length;
+                    let maxl = acl > cl ? acl : cl;
+                    let orderChanged = false;
+                    let newOrder = [];
+                    // TODO optimize to prevent unncessary creation of strings when the order is unchanged
+                    // Look at current children and compare to annotated children
+                    for (let i = 0; i < maxl; ++i) {
+                        let child = children[i];
+                        let annotatedChildID = annotatedChildren[i];
+                        if (!child) {
+                            this._markSuspiciousChild(annotatedChildID, processedID);
+                            orderChanged = true;
+                            continue;
+                        }
+                        let childID = child.id;
+                        newOrder.push(childID);
+                        if (childID !== annotatedChildID) {
+                            orderChanged = true;
+                            // Potentially deleted or moved
+                            this._markSuspiciousChild(annotatedChildID, processedID);
+                        }
+                        let existingAnnotatedChild = this.sceneAnnotatedNodes.get(childID);
+                        if (existingAnnotatedChild && existingAnnotatedChild.parentId !== id) {
+                            // Change parent!
+                            existingAnnotatedChild.parentId = id;
+                        }
+                    }
+                    if (orderChanged) {
+                        annotated.setChildrenOrder(newOrder);
+                    }
+                }
+                annotated.processedID = processedID; // mark node as processed in this pass
+                nodeCount++;
+            });
+            this._removeUnaccountedChildren(processedID);
+            this.sceneNodeCount = nodeCount;
+        }
+        /**
+         * Traverses nodes in order
+         */
+        forEachAnnotatedNode(callback) {
+            let topID = this.sceneTopNode;
+            if (!topID)
+                return; // nothing to traverse
+            let recurse = (id) => {
+                let node = this.sceneAnnotatedNodes.get(id);
+                if (!node)
+                    throw new SceneGraphError("??");
+                callback(node);
+                for (let id of node.children) {
+                    recurse(id);
+                }
+            };
+            recurse(topID);
+        }
+        /**
+         * For debugging only
+         */
+        _flattenedAnnotatedGraphIDs() {
+            let arr = [];
+            this.forEachAnnotatedNode(n => arr.push(n.id));
+            return arr;
+        }
+        /**
+         * Child may have been moved or deleted; mark it as -1
+         * @param id
+         */
+        _markSuspiciousChild(id, processedID) {
+            let c = this.sceneAnnotatedNodes.get(id);
+            if (c && c.processedID !== processedID /* hasn't been processed previously */)
+                c.processedID = -1;
+        }
+        _removeUnaccountedChildren(processedID) {
+            let annotatedN = this.sceneAnnotatedNodes;
+            for (let key of annotatedN.keys()) {
+                let node = annotatedN.get(key);
+                let nID = node.processedID;
+                if (nID === -1) {
+                    // Deleted, unclaimed child
+                    this.perfCounters.removedElements++;
+                }
+                else if (nID !== processedID) {
+                    // Node has been deleted, which should have been detected! throw an error
+                    throw new SceneGraphError(`Unaccounted node ${node.id} (parent ${node.parentId}) still exists in scene graph`);
+                }
+            }
+        }
+        /**
+         * Construct the scene graph from a scene by calling getRenderingInfo on all children, then performing an ordering
+         * @param scene If null, the graph is cleared
+         */
+        buildFromScene(scene) {
+            this.perfCounters.buildCount++;
+            let sceneID = scene === null || scene === void 0 ? void 0 : scene.id;
+            if (sceneID !== this.sceneTopNode) { // The scene has changed, invalidate everything
+                this.sceneTopNode = sceneID !== null && sceneID !== void 0 ? sceneID : null;
+                this.invalidateEverything();
+            }
+            if (!scene)
+                return;
+            this._getSceneRenderingInfo(scene);
+        }
+        // Sort and shift around instructions based on their zIndices and escapeContext status
+        orderInstructions() {
+        }
+    }
+
+    /**
      * Generic Vec2 class, reinventing the wheel...
      */
     class Vec2 {
@@ -7044,6 +7315,27 @@
                 this.gl.deleteBuffer(buffer);
             }
         }
+        getVAO(vaoName) {
+            var _a;
+            return (_a = this.vaos.get(vaoName)) !== null && _a !== void 0 ? _a : null;
+        }
+        createVAO(vaoName) {
+            let vao = this.getVAO(vaoName);
+            if (!vao) {
+                let glVao = this.gl.createVertexArray();
+                if (!glVao)
+                    return null;
+                this.vaos.set(vaoName, { vao: glVao });
+            }
+            return vao;
+        }
+        deleteVAO(vaoName) {
+            const vao = this.getVAO(vaoName);
+            if (vao) {
+                this.vaos.delete(vaoName);
+                this.gl.deleteVertexArray(vao.vao);
+            }
+        }
         /**
          * Resize and clear the canvas simultaneously. The canvas is only manually cleared if the dimensions haven't changed,
          * since the buffer will be erased.
@@ -7087,6 +7379,11 @@
             return new Vec2(2 / canvas.width * dpr, -2 / canvas.height * dpr);
         }
         renderDOMScene(scene) {
+            let graph = new SceneGraph(this);
+            window.graph = graph;
+            graph.buildFromScene(scene);
+            graph.assembleInstructions();
+            graph.compile();
             createImageBitmap(this.canvas).then(bitmap => {
                 console.log(bitmap);
                 scene.bitmapRenderer.transferFromImageBitmap(bitmap);
@@ -7308,8 +7605,9 @@
          * Parameters beginning with p are the bounding box in pixel coordinates. Those beginning with g are the bounding box
          * in graph coordinates. The transform has an implicit y flipping operation, which is key. The point (px1, py1) does
          * NOT map to the point (gx1, gy1), but the point (gx1, gy1 + gh). This annoyance is why a special class is useful.
+         * The default constructor maps to the unit square (ignoring any aspect ratio concerns)
          */
-        constructor(px1 = 0, py1 = 0, pw = 400, ph = 400, gx1 = -1, gy1 = -1, gw = 1, gh = 1) {
+        constructor(px1 = 0, py1 = 0, pw = 400, ph = 400, gx1 = -1, gy1 = -1, gw = 2, gh = 2) {
             this.px1 = px1;
             this.py1 = py1;
             this.pw = pw;
@@ -7336,6 +7634,12 @@
         }
         graphBox() {
             return new BoundingBox(this.gx1, this.gy1, this.gw, this.gh);
+        }
+        /**
+         * Graph aspect ratio of this plot, defined by the ratio in pixels between a width and height of a unit square
+         */
+        getGraphAspectRatio() {
+            return this.gw / this.pw * this.ph / this.gh;
         }
         resizeToPixelBox(box) {
             let convertedBox = BoundingBox.fromObj(box);
@@ -7410,12 +7714,6 @@
             }
             return arr;
         }
-        /**
-         * The size, in graph units, of a single pixel
-         */
-        graphPixelSize() {
-            return this.gh / this.ph;
-        }
     }
 
     /**
@@ -7479,6 +7777,9 @@
         }
         _toEndcapTypeEnum() {
             return Pen.ENDCAP_TYPES[this.endcap];
+        }
+        equals(p) {
+            return deepEquals(this, p);
         }
     }
     // Enum for endcaps
@@ -7746,9 +8047,10 @@
                     propStore.inherit = 0;
                     this.markHasChangedProperties();
                     this.markHasChangedInheritableProperties();
+                    continue;
                 }
                 // Value has been changed!
-                if (propStore.version === undefined || otherPropsStore.version > propStore.version) {
+                if (propStore.version === undefined || (otherPropsStore.version > propStore.version)) {
                     propStore.version = otherPropsStore.version;
                     propStore.value = otherPropsStore.value;
                     propStore.changed |= 0b1;
@@ -8035,10 +8337,29 @@
             this.props = new Props();
             this.updateStage = -1;
             this.internal = {
-                version: getVersionID()
+                version: getVersionID(),
+                order: 0,
+                needsOrdering: false
             };
             // Call the element-defined constructor
             this.init(opts);
+        }
+        /**
+         * Set the order of this element, which determines which position the element will be in the group it is a part of
+         * @param o Order
+         */
+        setOrder(o) {
+            if (!Number.isFinite(o) || typeof o !== "number")
+                throw new RangeError("Order must be a finite number");
+            this.internal.order = o;
+            if (this.parent)
+                this.parent._markNeedsOrdering();
+        }
+        /**
+         * Get the order of this element, which determines which position the element will be in the group it is a part of
+         */
+        getOrder() {
+            return this.internal.order;
         }
         /**
          * Derived class–implemented function that is called when the element needs to be updated (usually to change how
@@ -8053,11 +8374,19 @@
             throw new Error("Element is not a group and does not support having children");
         }
         /**
-         * Apply a given function, accepting a single argument (the element)
-         * @param callback The callback function
+         * Apply a callback function, accepting a single argument (the element)
+         * @param callback Callback function
          */
         apply(callback) {
             callback(this);
+        }
+        /**
+         * Apply two callback functions, one before the children are called, and one after
+         * @param callback1 Callback function to be called before
+         * @param callback2 Callback function to be called after
+         */
+        applyTwice(callback1, callback2) {
+            // TODO
         }
         /**
          * Inherit properties from the parent. If the updateStage is -1, then it indicates the child has not inherited any
@@ -8073,6 +8402,7 @@
         getRenderingInfo() {
             if (this.internal.renderInfo)
                 return this.internal.renderInfo;
+            return null;
         }
         /**
          * Check whether a given element is a child of this element
@@ -8104,6 +8434,11 @@
         stringify() {
             this.props.stringify();
         }
+        /**
+         * Sort children by ordering order. If force is true, sorts whether it's marked as needing ordering or not
+         */
+        sortChildren(force = false) {
+        }
         update() {
             // If some properties have changed, set the update stage accordingly. We use .min in case the update stage is -1
             if (this.props.hasChangedProperties)
@@ -8112,6 +8447,13 @@
                 return;
             this._update();
             this.updateStage = 100;
+        }
+        getChildren() {
+            // @ts-ignore
+            return this.isGroup() ? this.children : [];
+        }
+        isGroup() {
+            return false;
         }
     }
 
@@ -8143,6 +8485,7 @@
             elem.parent = this;
             elem._setScene(this.scene);
             elem.updateStage = -1;
+            this._markNeedsOrdering();
             return this;
         }
         /**
@@ -8177,6 +8520,34 @@
         isGroup() {
             return true;
         }
+        _markNeedsOrdering() {
+            this.internal.needsOrdering = true;
+        }
+        sortChildren(force = false) {
+            if (force || this.internal.needsOrdering) {
+                let children = this.children;
+                if (children.length <= 1)
+                    return;
+                let cl = children.length;
+                let orders = [];
+                let indices = [];
+                for (let i = 0; i < cl; ++i) {
+                    orders.push(children[i].getOrder());
+                    indices.push(i);
+                }
+                // Doing it this way reduces the number of accesses to children
+                indices.sort((i1, i2) => {
+                    let o1 = orders[i1], o2 = orders[i2];
+                    return (o1 < o2) ? -1 : ((o1 > o2) ? 1 : 0);
+                });
+                // Might be a little slow... TODO perf testing
+                let oldC = children.slice();
+                // Swap according to new indices, in place
+                for (let i = 0; i < cl; ++i) {
+                    children[i] = oldC[indices[i]];
+                }
+            }
+        }
         /**
          * Remove a direct element from this group. Fails silently if the passed element is not a child.
          * @param elem Element to remove
@@ -8190,6 +8561,7 @@
                 elem._setScene(null);
                 elem.updateStage = -1;
             }
+            this._markNeedsOrdering();
             return this;
         }
         _setScene(scene) {
@@ -8235,6 +8607,7 @@
             return new SceneDimensions(this.width, this.height, this.dpr);
         }
     }
+
     const MIN_SIZE = 100, MAX_SIZE = 16384;
     function checkDimInRange(d) {
         if (typeof d !== "number" || Number.isNaN(d) || d < MIN_SIZE || d > MAX_SIZE) {
@@ -8312,7 +8685,7 @@
             this.updateProps();
             this.internal.renderInfo = {
                 contexts: [{
-                        type: 'scene',
+                        insnType: 'scene',
                         dims: this.props.get('sceneDims'),
                         backgroundColor: this.props.get('backgroundColor')
                     }]
@@ -8327,7 +8700,7 @@
                 child.update();
             });
             // Mark the update as completed (WIP)
-            this.apply(child => child.props.markGlobalUpdateComplete());
+            this.apply(child => child.props._markGlobalUpdateComplete());
         }
     }
 
@@ -8529,6 +8902,97 @@
         throw new Error("Browser does not support bitmap renderer");
     }
 
+    const wasmSupported = (function () {
+        // Attempt to compile a module that uses v128
+        let supported = true;
+        try {
+            new WebAssembly.Module(toBuffer("\x00asm\x01\x00\x00\x00\x01\x05\x01`\x01{\x00\x03\x02\x01\x00\n\x04\x01\x02\x00\v")); // simd_test.wat
+        }
+        catch (e) {
+            supported = false;
+        }
+        return supported;
+    })();
+    function toBuffer(bin) {
+        let buffer = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; ++i) {
+            buffer[i] = bin.charCodeAt(i);
+        }
+        return buffer;
+    }
+    const WASM = (function () {
+        if (wasmSupported)
+            try {
+                // base-64 encoded. DO NOT CHANGE THE FOLLOWING LINE MANUALLY
+                const WASM_CONTENTS = /* $WASM_CONTENTS */ "AGFzbQEAAAABEgRgAX8AYAF9AGABfABgAn9/AAIrAwdjb25zb2xlA2xvZwAAB2NvbnNvbGUDbG9nAAEHY29uc29sZQNsb2cAAgMCAQMFBAEAkE4HIgIVYm91bmRpbmdfYm94X2ZsYXRfZjMyAAMGbWVtb3J5AgAKkwEBkAECAX8De/0MAACAfwAAgH8AAIB/AACAfyED/QwAAID/AACA/wAAgP8AAID/IQQgACABaiECAkADQCADIAD9AAQAIgX96gEhAyAEIAX96wEhBCADIABBEGr9AAQAIgX96gEhAyAEIAX96wEhBCAAQSBqIgAgAk4EQAwCBQwBCwsLQQAgA/0LBABBECAE/QsEAAs=";
+                function log(o) {
+                    console.log(o);
+                }
+                const module = new WebAssembly.Module(toBuffer(atob(WASM_CONTENTS)));
+                const instance = new WebAssembly.Instance(module, {
+                    js: {
+                        mem: new WebAssembly.Memory({ initial: 0, maximum: 10000 /* 64 kib pages */ })
+                    }, console: { log }
+                });
+                let memory = instance.exports.memory;
+                const HEAP_F32 = new Float32Array(memory.buffer);
+                const HEAP_F64 = new Float64Array(memory.buffer);
+                const HEAP_I32 = new Int32Array(memory.buffer);
+                const HEAP_U32 = new Uint32Array(memory.buffer);
+                const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32;
+                /**
+                 * Size in bytes; returns location of a pointer
+                 * @param size
+                 */
+                function malloc(size) {
+                    size |= 0;
+                }
+                function boundingBoxFlatF32(arr) {
+                    // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
+                    HEAP_F32.set(arr, 8);
+                    // Fill extra space with NaNs because the internal implementation doesn't take care of the edges
+                    let len = arr.length | 0, endFill = (15 + len) & (~0b11);
+                    for (let i = 8 + len; i < endFill; ++i) {
+                        HEAP_F32[i] = NaN;
+                    }
+                    bounding_box_flat_f32(32, arr.length << 2);
+                    let xmin1 = HEAP_F32[0];
+                    let ymin1 = HEAP_F32[1];
+                    let xmin2 = HEAP_F32[2];
+                    let ymin2 = HEAP_F32[3];
+                    let xmax1 = HEAP_F32[4];
+                    let ymax1 = HEAP_F32[5];
+                    let xmax2 = HEAP_F32[6];
+                    let ymax2 = HEAP_F32[7];
+                    let xmin = xmin1 < xmin2 ? xmin1 : xmin2;
+                    let ymin = ymin1 < ymin2 ? ymin1 : ymin2;
+                    let xmax = xmax1 > xmax2 ? xmax1 : xmax2;
+                    let ymax = ymax1 > ymax2 ? ymax1 : ymax2;
+                    if (xmin === Infinity || ymin === Infinity) { // no valid entries found
+                        return null;
+                    }
+                    return new BoundingBox(xmin, ymin, roundUp(xmax - xmin), roundUp(ymax - ymin));
+                }
+                return {
+                    HEAP_F32,
+                    HEAP_F64,
+                    HEAP_I32,
+                    HEAP_U32,
+                    instance,
+                    exports: instance.exports,
+                    boundingBoxFlatF32,
+                    supported: true
+                };
+            }
+            catch (e) {
+            }
+        console.warn("WebAssembly not supported; default JS implementations will be used");
+        return {
+            supported: false
+        };
+    })();
+
+    var _a;
     // Credit to cortijon on StackOverflow (comment on https://stackoverflow.com/a/1968345/13458117)
     function getLineIntersection(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
         let s1_x, s1_y, s2_x, s2_y;
@@ -8846,12 +9310,7 @@
     function fastHypot(x, y) {
         return Math.sqrt(x * x + y * y);
     }
-    /**
-     * Compute the bounding box of a flat 2D array. Could probably be sped up considerably but... whatever. Returns null
-     * when there are no valid points in the array. Ignores NaNs.
-     * @param v
-     */
-    function computeBoundingBox(v) {
+    function _boundingBoxFlatF32(v) {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         let len = v.length;
         let i = 0;
@@ -8870,7 +9329,7 @@
             maxX = maxX < x2 ? x2 : maxX;
             maxY = maxY < y2 ? y2 : maxY;
         }
-        if (i < len - 2) {
+        if (i <= len - 2) {
             // Last two entries
             let x2 = v[i], y2 = v[i + 1];
             minX = minX > x2 ? x2 : minX;
@@ -8878,9 +9337,13 @@
             maxX = maxX < x2 ? x2 : maxX;
             maxY = maxY < y2 ? y2 : maxY;
         }
-        return (minX !== minX || minY !== minY) ? null :
+        return (minX === Infinity || minY === Infinity) ? null :
             new BoundingBox(minX, minY, roundUp(maxX) - minX, roundUp(maxY) - minY); // round up ensures the resultant bbox will contain it
     }
+    /**
+     * Compute the bounding box of a flat 2D array. Returns null if the input contains no valid points.
+     */
+    const computeBoundingBox = (_a = WASM.boundingBoxFlatF32) !== null && _a !== void 0 ? _a : _boundingBoxFlatF32;
 
     // This code is pretty old, but surprisingly effective!
     /**
@@ -9040,6 +9503,15 @@
         return result;
     }
 
+    class VertexData {
+        constructor(vertices, vertexCount, dim, version = -1) {
+            this.vertices = vertices;
+            this.vertexCount = vertexCount;
+            this.dim = dim;
+            this.version = version;
+        }
+    }
+
     const MIN_RES_ANGLE = 0.05; // minimum angle in radians between roundings in a polyline
     const B = 4 / Math.PI;
     const C = -4 / Math.PI ** 2;
@@ -9088,7 +9560,7 @@
             pen.endcapRes < MIN_RES_ANGLE ||
             pen.joinRes < MIN_RES_ANGLE ||
             vertices.length <= 3) {
-            return { vertices: null, vertexCount: 0 };
+            return { vertices: null, vertexCount: 0, dim: 2 };
         }
         let index = -1;
         let origVertexCount = vertices.length / 2;
@@ -9098,16 +9570,13 @@
         let join = pen._toJoinTypeEnum();
         let endcapRes = pen.endcapRes;
         let joinRes = pen.joinRes;
-        if (endcap === undefined || join === undefined) {
-            throw new Error('Undefined endcap or join.');
-        }
+        let maxVerticesPerStep = 2 + Math.max(6 * Math.PI / endcapRes, 6 * Math.PI / joinRes) | 0;
         // Grows by ceiling multiples of 1.5, a la most implementations of a vector
         // We begin with a very rough estimate of how much space will be needed
         let glVertices = new Float32Array(origVertexCount * 2 + // raw minimum
             ((endcap === 1) ? (2.1 * Math.PI / endcapRes) : 0) + // rough endcap minimum
-            ((join === 1 || join === 3) ? (origVertexCount * 0.1 / joinRes) : 0) // join estimate, assuming an average of 0.1 radians per join
-        );
-        let maxVerticesPerStep = 2 + Math.max(2 * Math.PI / endcapRes, 2 * Math.PI / joinRes) | 0;
+            ((join === 1 || join === 3) ? (origVertexCount * 0.1 / joinRes) : 0) + // join estimate, assuming an average of 0.1 radians per join
+            maxVerticesPerStep);
         function reallocGLVertices(minSize) {
             minSize = minSize | 0;
             if (minSize > glVertices.length) {
@@ -9320,7 +9789,7 @@
             glVertices[++index] = x2 - th * v2y;
             glVertices[++index] = y2 + th * v2x;
         }
-        return { vertices: (index >= 0) ? glVertices : null, vertexCount: index / 2 };
+        return new VertexData((index >= 0) ? glVertices : null, index >> 1, 2, getVersionID());
     }
 
     class PolylineElement extends Element {
@@ -9368,8 +9837,9 @@
             };
             let vertices = this.getVertices();
             let pen = this.getPen();
+            this.internal.drawPen = pen; // cloned
             if (!vertices || !(pen instanceof Pen)) {
-                setDrawVertices(undefined);
+                setDrawVertices(null);
                 return;
             }
             let drawVertices = calculatePolylineVertices(vertices, pen);
@@ -9379,11 +9849,39 @@
         }
         _computeBoundingBox() {
         }
-        update() {
+        _update() {
             // The algorithm is as follows:
-            // If pen and vertices have not changed, we do nothing.
-            // If vertices have changed, we recompute everything.
             // If pen has changed and only the color has changed, we recompute nothing.
+            let props = this.props;
+            let pen = this._getPen();
+            let needsRecompute = true;
+            if (!props.hasChanged("vertices")) {
+                // Vertices haven't changed, check if the pen has changed
+                if (!props.hasChanged("pen"))
+                    return; // nothing changed
+                let previousPen = this.internal.drawPen;
+                if (previousPen) {
+                    previousPen.color = pen.color;
+                    if (previousPen.equals(pen)) { // pens are the same except for color; vertices don't need recomputation
+                        needsRecompute = false;
+                    }
+                }
+            }
+            if (needsRecompute)
+                this._computeDrawVertices();
+            this.internal.drawPen = pen;
+            let vertexData = this.internal.triangulation;
+            this.internal.renderInfo = vertexData ? {
+                instructions: [
+                    {
+                        insnType: "primitive",
+                        primitiveType: "triangle_strip",
+                        vertexData,
+                        pen: pen,
+                        version: getVersionID()
+                    }
+                ]
+            } : null;
         }
         clone() {
             let e = new PolylineElement();
@@ -9394,63 +9892,79 @@
         }
     }
 
-    // base-64 encoded
-    const WASM_CONTENTS = "AGFzbQEAAAABEgRgAX8AYAF9AGABfABgAn9/AAIrAwdjb25zb2xlA2xvZwAAB2NvbnNvbGUDbG9nAAEHY29uc29sZQNsb2cAAgMCAQMFBAEAkE4HIgIVYm91bmRpbmdfYm94X2ZsYXRfZjMyAAMGbWVtb3J5AgAKkwEBkAECAX8De/0MAACAfwAAgH8AAIB/AACAfyED/QwAAID/AACA/wAAgP8AAID/IQQgACABaiECAkADQCADIAD9AAQAIgX96gEhAyAEIAX96wEhBCADIABBEGr9AAQAIgX96gEhAyAEIAX96wEhBCAAQSBqIgAgAk4EQAwCBQwBCwsLQQAgA/0LBABBECAE/QsEAAs=";
-    function toBuffer(bin) {
-        let buffer = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; ++i) {
-            let code = bin.charCodeAt(i);
-            buffer[i] = code;
+    const MIN_ASPECT = 1e-300;
+    const MAX_ASPECT = 1e300;
+    /**
+     * Plot2D abstracts, well, a 2D plot with some transform, with certain boundaries and a certain
+     * transform (currently always linear, but that may change at some point).
+     *
+     * Children of a Plot2D inherit a plot transform and some other plot configuration properties.
+     * A Plot2D has a width and height that may be determined automatically or set by the user.
+     */
+    class Plot2D extends Group {
+        init(params) {
+            let props = this.props;
+            // Inherits all the way down
+            props.setPropertyInheritance("plotTransform", true);
+            props.set("plotTransform", new LinearPlot2DTransform());
         }
-        return buffer;
-    }
-    function log(o) {
-        console.log(o);
-    }
-    const module = new WebAssembly.Module(toBuffer(atob(WASM_CONTENTS)));
-    const instance = new WebAssembly.Instance(module, { js: {
-            mem: new WebAssembly.Memory({ initial: 0, maximum: 10000 /* 64 kib pages */ })
-        }, console: { log } });
-    let memory = instance.exports.memory;
-    const HEAP_F32 = new Float32Array(memory.buffer);
-    const HEAP_F64 = new Float64Array(memory.buffer);
-    const HEAP_I32 = new Int32Array(memory.buffer);
-    const HEAP_U32 = new Uint32Array(memory.buffer);
-    const bounding_box_flat_f32 = instance.exports.bounding_box_flat_f32;
-    function boundingBoxFlatF32(arr) {
-        // Copy into buffer. First 8 entries (32 bytes) are the found minima and maxima
-        HEAP_F32.set(arr, 8);
-        // Fill extra space with NaNs because the internal implementation doesn't take care of the edges
-        let len = arr.length | 0, endFill = (15 + len) & (~0b11);
-        for (let i = 8 + len; i < endFill; ++i) {
-            HEAP_F32[i] = NaN;
+        setPreserveAspectRatio(v) {
+            v = !!v;
+            this.props.set("preserveAspectRatio", v);
         }
-        bounding_box_flat_f32(32, arr.length << 2);
-        let xmin1 = HEAP_F32[0];
-        let ymin1 = HEAP_F32[1];
-        let xmin2 = HEAP_F32[2];
-        let ymin2 = HEAP_F32[3];
-        let xmax1 = HEAP_F32[4];
-        let ymax1 = HEAP_F32[5];
-        let xmax2 = HEAP_F32[6];
-        let ymax2 = HEAP_F32[7];
-        let xmin = xmin1 < xmin2 ? xmin1 : xmin2;
-        let ymin = ymin1 < ymin2 ? ymin1 : ymin2;
-        let xmax = xmax1 > xmax2 ? xmax1 : xmax2;
-        let ymax = ymax1 > ymax2 ? ymax1 : ymax2;
-        if (xmin === Infinity || ymin === Infinity) { // no valid entries found
-            return null;
+        setAspectRatio(v) {
+            if (v !== v || v >= MIN_ASPECT || v <= MAX_ASPECT) {
+                throw new RangeError("invalid aspect ratio");
+            }
+            this.props.set("aspectRatio", v);
         }
-        return new BoundingBox(xmin, ymin, roundUp(xmax - xmin), roundUp(ymax - ymin));
+        getPreserveAspectRatio() {
+            return this.props.get("preserveAspectRatio");
+        }
+        getAspectRatio() {
+            return this.props.get("aspectRatio");
+        }
+        getTransform() {
+            return this.props.get("plotTransform");
+        }
+        // For now
+        resizeToFit(boxlike) {
+            let box = BoundingBox.fromObj(boxlike);
+            let transform = this.getTransform().clone();
+            transform.resizeToPixelBox(box);
+            this.props.set("plotTransform", transform);
+            this.correctAspectRatio();
+        }
+        _update() {
+            this.updateTransform();
+        }
+        updateTransform() {
+            this.correctAspectRatio();
+        }
+        /**
+         * Correct the graph's current aspect ratio to what it is supposed to be
+         * @param eps
+         */
+        correctAspectRatio() {
+            // Fix the aspect ratio of the plot transform
+            let shouldPreserve = this.getPreserveAspectRatio();
+            if (!shouldPreserve)
+                return;
+            let aspectRatio = this.getAspectRatio();
+            let transform = this.getTransform();
+            let currentAspect = transform.getGraphAspectRatio();
+            // Close enough...
+            if (Math.abs(currentAspect / aspectRatio - 1) < 0.001)
+                return;
+            // TODO
+        }
+        fitScene() {
+            let size = this.props.get("sceneDims");
+            if (!size)
+                throw new Error("not child of scene");
+            this.resizeToFit(size.getBoundingBox());
+        }
     }
-    const WASM = {
-        HEAP_F32,
-        HEAP_F64,
-        HEAP_I32,
-        HEAP_U32,
-        instance,
-        exports: instance.exports
-    };
 
     exports.BigFloat = BigFloat;
     exports.BolusCancellationError = BolusCancellationError;
@@ -9463,15 +9977,16 @@
     exports.LinearPlot2DTransform = LinearPlot2DTransform;
     exports.ParserError = ParserError;
     exports.Pen = Pen;
+    exports.Plot2D = Plot2D;
     exports.PolylineElement = PolylineElement;
     exports.ROUNDING_MODE = ROUNDING_MODE;
     exports.StandardColoringScheme = StandardColoringScheme;
     exports.Vec2 = Vec2;
     exports.WASM = WASM;
     exports.WebGLRenderer = WebGLRenderer;
+    exports._boundingBoxFlatF32 = _boundingBoxFlatF32;
     exports.addMantissas = addMantissas;
     exports.asyncDigest = asyncDigest;
-    exports.boundingBoxFlatF32 = boundingBoxFlatF32;
     exports.combineColoredTriangleStrips = combineColoredTriangleStrips;
     exports.combineTriangleStrips = combineTriangleStrips;
     exports.compileNode = compileNode;

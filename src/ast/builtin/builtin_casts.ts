@@ -37,7 +37,7 @@ let intToComplex = [
   }))
 ]
 
-{
+
   registerMathematicalCast(new MathematicalCast({
     src: "int",
     dst: "real",
@@ -55,4 +55,3 @@ let intToComplex = [
     dst: "complex",
     evaluators: realToComplex
   }))
-}

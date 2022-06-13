@@ -269,10 +269,11 @@ export class ASTNode {
    * @param vars {{}} Mapping from variable names to their types
    * @param opts
    */
-  resolveTypes (vars: ResolveTypesVariableInfo, opts: ResolveTypesOptions = {}): ASTNode {
+  resolveTypes (vars: ResolveTypesVariableInfo | undefined, opts: ResolveTypesOptions = {}): ASTNode {
     // Convert all arg values to mathematical types
 
     let { defaultType = "real", throwOnUnresolved = true } = opts
+    vars ??= {}
 
     for (let sus of suspiciousVariableNames) {
       if (sus in vars) {
