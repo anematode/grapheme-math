@@ -1,7 +1,7 @@
 import { Pen } from "../other/pen.js";
 import { Vec2Like } from "../vec/vec2.js";
 import { BoundingBoxLike } from "../other/bounding_box.js";
-import { SceneDimensions } from "./scene.js";
+import { SceneDimensions } from "../other/scene_dims.js";
 import { Color } from "../other/color.js";
 
 export class VertexData {
@@ -49,7 +49,7 @@ export type PrimitiveRendererInstruction = BaseInstruction & {
   insnType: "primitive"
   primitiveType: PrimitiveInstructionType
   vertexData: VertexData
-  pen: Pen
+  color: Color
 }
 
 type DebugType = "rectangle" | "point"
@@ -62,27 +62,46 @@ export type DebugInstruction = BaseInstruction & {
   rect?: BoundingBoxLike
 }
 
+// Elements use these instructions
 export type RendererInstruction = PolylineRendererInstruction | DebugInstruction | PrimitiveRendererInstruction
 export type RendererContextInstruction = SceneContextInstruction
 
-export type PrimitiveCompiledRendererInstruction = {
+type BaseCompiledRendererInstruction = {
+
+}
+
+export type CompiledPrimitiveRendererInstruction = BaseCompiledRendererInstruction & {
   insnType: "primitive"
   primitiveType: PrimitiveInstructionType
-  vao: string  // pointer to VAO array
-  buffers: string[]  // pointer to relevant buffers
+  vao: string  // ptr to VAO array
+  buffers: string[]  // ptr to relevant buffers
   color: Color
   vertexCount: number
 }
 
-export type CompiledPolylineRendererInstruction = PolylineRendererInstruction & {
+type BaseCompiledRendererContextInstruction = {
 
 }
 
-export type ContextPopAllRendererInstruction = null
-export type ContextPushRendererInstruction = null
-export type ContextPopRendererInstruction = null
+export type CompiledSceneContextInstruction = BaseCompiledRendererInstruction & {
+  insnType: "scene"
+  sceneDims: SceneDimensions
+  backgroundColor: Color
+}
 
-export type CompiledRendererInstruction = PrimitiveCompiledRendererInstruction | ContextPopRendererInstruction | ContextPushRendererInstruction | ContextPopAllRendererInstruction
+// Good in case the previous render fucked something up
+export type ContextPopAllRendererInstruction = BaseCompiledRendererInstruction & {
+  insnType: "pop_all"
+}
+export type ContextPushRendererInstruction = CompiledSceneContextInstruction
+export type ContextPopRendererInstruction = BaseCompiledRendererInstruction & {
+  insnType: "pop_context"
+}
+
+export type CompiledRendererContextInstruction = ContextPopAllRendererInstruction | ContextPushRendererInstruction | ContextPopRendererInstruction
+
+// The renderer understands these instructions
+export type CompiledRendererInstruction = CompiledPrimitiveRendererInstruction | CompiledRendererContextInstruction
 
 /**
  * General form of rendering info outputted by a given element
@@ -90,4 +109,5 @@ export type CompiledRendererInstruction = PrimitiveCompiledRendererInstruction |
 export type RenderingInfo = {
   contexts?: RendererContextInstruction[]
   instructions?: RendererInstruction[]
+  version?: number
 }

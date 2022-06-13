@@ -4,25 +4,31 @@ import { Scene } from "./scene";
 import { SceneDimensions } from "../other/scene_dims";
 import { RendererContextInstruction, RenderingInfo, SceneContextInstruction } from "./renderer_instruction";
 
-type BaseSceneGraphContextNode = {
+
+class AnnotatedSceneCopy {
+
+}
+
+class AnnotatedContextReducedCopy {
+
+}
+
+class ContextCompiledCopy {
+
+}
+
+// Corresponds one-to-one with an Element
+class SceneAnnotatedNode {
+  // Id of the element. If the id changes, everything under and including this element is invalidated (and is considered
+  // a different element)
   id: string
-  // Order to draw in
-  zIndex: number
-  // Depth from top
-  contextDepth: number
-  // Context which this context is a member of
-  parent: null | SceneGraphContextNode
-}
 
-type SceneGraphSceneContextNode = BaseSceneGraphContextNode & {
-  type: "scene"
-  dims: SceneDimensions
-  // Only context nodes may have children--everything else is flattened
-  children: BaseSceneGraphContextNode[]
-  parent: null
-}
+  // Previous render info spat out by this instruction
+  lastRenderingInfo: RenderingInfo
 
-type SceneGraphContextNode = SceneGraphSceneContextNode
+  // IDs of previous children of this node; we don't use the nodes themselves so that it's a flatter structure
+  children: string[]
+}
 
 export class SceneGraph {
   id: string
@@ -31,58 +37,47 @@ export class SceneGraph {
   // desired
   renderer: WebGLRenderer | null
 
-  // Map id -> context node
-  contexts: Map<string, SceneGraphContextNode>
+  sceneAnnotatedNodes: Map<string /* id */, SceneAnnotatedNode>
+  sceneTopNode: null | string  // id of the scene node
+  sceneNodeCount: number
 
   constructor (renderer: WebGLRenderer | null) {
     this.renderer = renderer
     this.id = getStringID()
+    this.sceneAnnotatedNodes = new Map()
+
+    this.sceneTopNode = null
+    this.sceneNodeCount = -1
   }
 
-  _clearAll () {
-    this.contexts.clear()
+  /**
+   * Whether this scene graph has been built from a scene
+   */
+  hasScene (): boolean {
+    return !!this.sceneTopNode
+  }
+
+  /**
+   * Clear all caches, delete all buffer data
+   */
+  invalidateEverything () {
+
   }
 
   /**
    * Construct the scene graph from a scene by calling getRenderingInfo on all children, then performing an ordering
    * @param scene
    */
-  buildFromScene (scene: Scene) {
-    this._clearAll()
+  buildFromScene (scene: Scene | null) {
+    let sceneID = scene?.id
 
-    let sceneInfo = scene.getRenderingInfo()
-    if (!sceneInfo || !sceneInfo.contexts || sceneInfo.contexts.length === 0) throw new Error("Scene has no contexts")
+    if (sceneID !== this.sceneTopNode) { // The scene has changed, invalidate everything
+      this.sceneTopNode = sceneID ?? null
 
-    let firstSceneContext = sceneInfo.contexts[0]
-    if (firstSceneContext.insnType !== "scene") throw new Error("Scene's first context instruction is not a scene instruction")
-
-    let topGraphContext: SceneGraphSceneContextNode = {
-      id: "top",
-      type: "scene",
-      dims: firstSceneContext.dims,
-      zIndex: -1, // z index doesn't particularly matter here
-      contextDepth: 0,
-      children: [],
-      parent: null
+      this.invalidateEverything()
     }
-
-    let contextMap = this.contexts
-    contextMap.set("top", topGraphContext)
-
-    let currentContext: null | SceneGraphContextNode = topGraphContext
-
-    function popContext() {
-      if (!currentContext)
-        throw new Error("Tried to pop too many contexts")
-      currentContext = currentContext.parent
-    }
-
-    scene.apply(e => {
-      let renderingInfo = e.getRenderingInfo()
-
-      console.log(renderingInfo)
-    })
   }
+
 
   // Sort and shift around instructions based on their zIndices and escapeContext status
   orderInstructions () {
