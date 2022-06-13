@@ -626,7 +626,7 @@ export class OperatorNode extends ASTGroup {
     for (let i = 0; i < cl; ++i) {
       let c = children[i]
       let cast = casts[i]
-      
+
       let ccast = cast.getDefaultEvaluator(mode)
 
       if (ccast === null) {
