@@ -31,6 +31,7 @@ export class Group extends Element {
     elem._setScene(this.scene)
 
     elem.updateStage = -1
+    this._markNeedsOrdering()
 
     return this
   }
@@ -71,6 +72,41 @@ export class Group extends Element {
     return true
   }
 
+  _markNeedsOrdering () {
+    this.internal.needsOrdering = true
+  }
+
+  sortChildren (force: boolean = false) {
+    if (force || this.internal.needsOrdering) {
+      let children = this.children
+
+      if (children.length <= 1) return
+
+      let cl = children.length
+      let orders: number[] = []
+      let indices: number[] = []
+
+      for (let i = 0; i < cl; ++i) {
+        orders.push(children[i].getOrder())
+        indices.push(i)
+      }
+
+      // Doing it this way reduces the number of accesses to children
+      indices.sort((i1, i2) => {
+        let o1 = orders[i1], o2 = orders[i2]
+        return (o1 < o2) ? -1 : ((o1 > o2) ? 1 : 0)
+      })
+
+      // Might be a little slow... TODO perf testing
+      let oldC = children.slice()
+
+      // Swap according to new indices, in place
+      for (let i = 0; i < cl; ++i) {
+        children[i] = oldC[indices[i]]
+      }
+    }
+  }
+
   /**
    * Remove a direct element from this group. Fails silently if the passed element is not a child.
    * @param elem Element to remove
@@ -86,6 +122,8 @@ export class Group extends Element {
 
       elem.updateStage = -1
     }
+
+    this._markNeedsOrdering()
 
     return this
   }

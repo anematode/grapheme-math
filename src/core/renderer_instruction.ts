@@ -22,6 +22,8 @@ export class VertexData {
 
 type BaseContextInstruction = {
   zIndex?: number
+
+  version?: number
 }
 
 export type SceneContextInstruction = BaseContextInstruction & {
@@ -110,4 +112,4 @@ export type RenderingInfo = {
   contexts?: RendererContextInstruction[]
   instructions?: RendererInstruction[]
   version?: number
-}
+} | null

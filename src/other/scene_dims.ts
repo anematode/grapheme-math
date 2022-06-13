@@ -1,4 +1,4 @@
-import { BoundingBox } from "./bounding_box";
+import { BoundingBox } from "./bounding_box.js"
 
 /**
  * Passed to children as the parameter "sceneDimensions"

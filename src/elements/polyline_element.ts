@@ -4,7 +4,7 @@ import { Color, ColorLike } from "../other/color.js";
 import { vec2ArrayConversion, Vec2ArrayLike } from "../vec/vec2.js";
 import { BoundingBox } from "../other/bounding_box.js";
 import { calculatePolylineVertices, PolylineTriangulationResult } from "../algorithm/polyline_triangulation.js";
-import { getVersionID } from "../utils";
+import { getVersionID } from "../utils.js"
 
 type PolylineElementInternal = ElementInternalStore & {
   // Triangle strip

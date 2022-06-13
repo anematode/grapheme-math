@@ -3,6 +3,7 @@ import { getStringID, getVersionID } from '../utils.js'
 import { Props } from './props.js'
 import { Scene } from "./scene.js";
 import { RenderingInfo } from "./renderer_instruction.js";
+import { Group } from "./group.js"; // circular import... maybe merge files
 
 export type ElementOptions = {
   id?: string
@@ -10,7 +11,9 @@ export type ElementOptions = {
 
 export type ElementInternalStore = {
   version: number,
-  renderInfo?: RenderingInfo | null
+  renderInfo?: RenderingInfo | null,
+  order: number,
+  needsOrdering: boolean
 }
 
 /**
@@ -21,7 +24,7 @@ export class Element extends Eventful {
   id: string
 
   // Parent of this element
-  parent: Element|null
+  parent: Group|null
 
   // Parent scene (top-level element)
   scene: Scene|null
@@ -57,11 +60,31 @@ export class Element extends Eventful {
     this.props = new Props()
     this.updateStage = -1
     this.internal = {
-      version: getVersionID()
+      version: getVersionID(),
+      order: 0,  // order within upper element
+      needsOrdering: false
     }
 
     // Call the element-defined constructor
     this.init(opts)
+  }
+
+  /**
+   * Set the order of this element, which determines which position the element will be in the group it is a part of
+   * @param o Order
+   */
+  setOrder (o: number) {
+    if (!Number.isFinite(o) || typeof o !== "number") throw new RangeError("Order must be a finite number")
+    this.internal.order = o
+
+    if (this.parent) this.parent._markNeedsOrdering()
+  }
+
+  /**
+   * Get the order of this element, which determines which position the element will be in the group it is a part of
+   */
+  getOrder(): number {
+    return this.internal.order
   }
 
   /**
@@ -110,9 +133,11 @@ export class Element extends Eventful {
   /**
    * Default rendering info information, which just pulls from internal.renderInfo
    */
-  getRenderingInfo () {
+  getRenderingInfo (): RenderingInfo | null {
     if (this.internal.renderInfo)
       return this.internal.renderInfo
+
+    return null
   }
 
   /**
@@ -150,6 +175,13 @@ export class Element extends Eventful {
    */
   stringify () {
     this.props.stringify()
+  }
+
+  /**
+   * Sort children by ordering order. If force is true, sorts whether it's marked as needing ordering or not
+   */
+  sortChildren (force: boolean=false) {
+
   }
 
   update () {

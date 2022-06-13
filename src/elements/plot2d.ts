@@ -1,8 +1,8 @@
-import {Element} from "../core/element"
-import {LinearPlot2DTransform} from "../other/linear_plot_transform"
-import {Group} from "../core/group"
-import {BoundingBox, BoundingBoxLike} from "../other/bounding_box"
-import {SceneDimensions} from "../other/scene_dims"
+import {Element} from "../core/element.js"
+import {LinearPlot2DTransform} from "../other/linear_plot_transform.js"
+import {Group} from "../core/group.js"
+import {BoundingBox, BoundingBoxLike} from "../other/bounding_box.js"
+import {SceneDimensions} from "../other/scene_dims.js"
 
 const MIN_ASPECT = 1e-300;
 const MAX_ASPECT = 1e300;

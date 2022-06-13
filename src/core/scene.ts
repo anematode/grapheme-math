@@ -1,6 +1,6 @@
 import { Group } from './group.js'
 import { BoundingBox } from '../other/bounding_box.js'
-import { SceneDimensions } from "../other/scene_dims";
+import { SceneDimensions } from "../other/scene_dims.js"
 
 
 const DEFAULT_SCENE_DIMS = new SceneDimensions(640, 480, 1)
