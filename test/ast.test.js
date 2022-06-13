@@ -28,6 +28,16 @@ describe("ast", () => {
     })
   })
 
+  describe("real evaluation", () => {
+    it("Works for (x+3)^2", () => {
+      let n = parseString("(x+3)^2").resolveTypes()
+
+      expect(n.evaluate({ x: 2 })).to.eq(25)
+      expect(n.evaluate({ x: -3 })).to.eq(0)
+      expect(Number.isNaN(n.evaluate({ x: NaN }))).to.eq(true)
+    })
+  })
+
   describe("compile", () => {
     describe("normal", () => {
 

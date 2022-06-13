@@ -14,25 +14,30 @@
 
         <script>
             function play() {
-                renderer = new Grapheme.WebGLRenderer()
-                scene = new Grapheme.InteractiveScene()
+              str = "(x+2)^2"
+              n = Grapheme.parseString(str)
+            }
 
-                document.getElementById('container').appendChild(scene.domElement)
+            function play2() {
+              renderer = new Grapheme.WebGLRenderer()
+              scene = new Grapheme.InteractiveScene()
 
-                polyline = new Grapheme.PolylineElement()
-                plot2d = new Grapheme.Plot2D()
+              document.getElementById('container').appendChild(scene.domElement)
 
-                scene.add(plot2d)
-                scene.add(polyline)
+              polyline = new Grapheme.PolylineElement()
+              plot2d = new Grapheme.Plot2D()
+
+              scene.add(plot2d)
+              scene.add(polyline)
 
 
-                polyline.setVertices([100, 100, 200, 200])
+              polyline.setVertices([100, 100, 200, 200])
 
-                scene.updateAll()
-                plot2d.fitScene()
-                scene.updateAll()
+              scene.updateAll()
+              plot2d.fitScene()
+              scene.updateAll()
 
-                renderer.renderDOMScene(scene)
+              renderer.renderDOMScene(scene)
             }
         </script>
 

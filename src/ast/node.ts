@@ -253,8 +253,19 @@ export class ASTNode {
   }
 
   /**
-   * Figure out the type of each node, given the type of each variable node within it.
+   * Figure out the type of each node, given the type of each variable node within it. Examples:
+   *
+   * node = Grapheme.parseString("(x+y)^2+cos(z)").resolveTypes({ z: "real" }, { defaultType: "complex" })
+   *    -> Node which takes in a real value z and two complex values x and y
+   * node = Grapheme.parseString("(x+y)^2+cos(z)").resolveTypes({}, { defaultType: "complex" })
+   *    -> Node which takes in three complex values
+   * node = Grapheme.parseString("(x+y)^2+cos(z)").resolveTypes()
+   *    -> Node which takes in three real values
+   * node = Grapheme.parseString("cowbell(z)")    // (does not throw)
+   * node.resolveTypes()                          // throws
+   *
    * Perf: on "x^2+y^2+e^-x^2+pow(3,gamma(2401 + complex(2,3)))", took 0.002 ms / iteration as of Mar 14, 2022
+   *
    * @param vars {{}} Mapping from variable names to their types
    * @param opts
    */
@@ -274,16 +285,11 @@ export class ASTNode {
     for (let v in vars) {
       if (!vars.hasOwnProperty(v)) continue
       let n = revisedVars[v]
-      let mType = toMathematicalType(n)
 
-      if (!mType) {
-        throw new ResolutionError(`Invalid mathematical type ${n} for variable ${v}`)
-      }
-
-      revisedVars[v] = mType
+      revisedVars[v] = toMathematicalType(n, true /* throw on error */)!
     }
 
-    let revisedType = toMathematicalType(defaultType, true)
+    let revisedType = toMathematicalType(defaultType, true)!
 
     this.applyAll(node => node._resolveTypes({
       vars: revisedVars, throwOnUnresolved, defaultType: revisedType!
@@ -293,13 +299,16 @@ export class ASTNode {
   }
 
   /**
-   * Whether all operator definitions and types have been resolved for this expression
-   * @returns {boolean}
+   * Whether all operator definitions and types have been resolved for this expression by checking whether the type of
+   * this node is known. If it is not known, then at least one of the types of its children is not known either
    */
-  allResolved() {
+  allResolved(): boolean {
     return !!(this.type)
   }
 
+  /**
+   * Internal resolve types function recursively called
+   */
   _resolveTypes (opts: FilledResolveTypesOptions) {
 
   }
@@ -312,7 +321,8 @@ export class ASTNode {
    */
   evaluate (vars, { mode = "normal", typecheck = true } = {}) {
     if (!this.allResolved())
-      throw new EvaluationError(`This node has not had its types fully resolved (call .resolveTypes())`)
+      throw new EvaluationError(`[E0001] This node has not had its types fully resolved (call .resolveTypes()).\
+In other words, the node cannot be used for computation until an abstract type and operator definition has been found for each node.`)
 
     let convertedMode = toEvaluationMode(mode ?? "normal", true) // throws on fail
 
@@ -336,12 +346,12 @@ export class ASTNode {
 
         if (!info) {
           if (node.type == null) {
-            throw new ResolutionError(`Type of variable ${name} has not been resolved`)
+            throw new EvaluationError(`[E0001] Type of variable ${name} has not been resolved`)
           }
 
           info = {
             type: node.type,
-            operatorDefinition: (node as VariableNode).operatorDefinition,
+            operatorDefinition: node.operatorDefinition,
             count: 1
           }
 
@@ -452,7 +462,7 @@ export class ConstantNode extends ASTNode {
 
   _evaluate (vars: VariableLookupObject, mode: EvaluationMode, opts: EvaluationOptions): any {
     if (!this.type) {
-      throw new EvaluationError(`Type of constant variable with value ${this.value} has not been resolved`)
+      throw new EvaluationError(`[E0001] Type of constant variable with value ${this.value} has not been resolved`)
     }
 
     let type = mode.getConcreteType(this.type)
@@ -609,9 +619,16 @@ export class OperatorNode extends ASTGroup {
     if (!this.casts) throw new EvaluationError("Casts not resolved")
 
     let casts = this.casts
-    let childrenValues = this.children.map((c, i) => {
+    let childrenValues: any[] = []
+    let children = this.children
+    let cl = children.length
+
+    for (let i = 0; i < cl; ++i) {
+      let c = children[i]
       let cast = casts[i]
+      
       let ccast = cast.getDefaultEvaluator(mode)
+
       if (ccast === null) {
         throw new EvaluationError(
           `No concrete cast (in mode ${mode.name}) from source ${mode.getConcreteType(cast.srcType()).toHashStr()}`
@@ -619,10 +636,10 @@ export class OperatorNode extends ASTGroup {
       }
 
       let uncastedChild = c._evaluate(vars, mode, opts)
-      return ccast.callNew([
+      childrenValues.push(ccast.callNew([
         uncastedChild
-      ])
-    })
+      ]))
+    }
 
     let evaluator = this.operatorDefinition.getDefaultEvaluator(mode)
     if (!evaluator) {

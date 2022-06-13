@@ -6,49 +6,7 @@
 </head>
 
 <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.0/styles/default.min.css">
-<style>
-    .wrapper {
-        display: flex;
-        flex-direction: row;
-    }
-
-    h3 {
-        padding: 0;
-        margin: 0;
-    }
-
-    .test-case {
-        margin: 10px;
-        padding: 20px;
-        display: block;
-        background-color: #f2f2f2;
-        font-family: "Consolas", monospace;
-        white-space: pre;
-    }
-
-    .code-snippet {
-        margin-bottom: 10px;
-        overflow-wrap: normal;
-    }
-
-    .code-snippet-wrapper {
-        max-width: 400px;
-        overflow: auto;
-    }
-
-    button {
-        display: block;
-        width: 80px;
-        height: 40px;
-        font-size: 20px;
-    }
-
-    textarea {
-        width: 100%;
-        margin: 0 auto;
-        height: 300px;
-    }
-</style>
+<link rel="stylesheet" href="../demos.css">
 <body>
 
 <div class="wrapper">
@@ -160,7 +118,9 @@
       return s.substring(i + 1, j)
     }
 
-    $expr = `(x-2)^5+(x-2)^4+(x-2)^3+(x-2)^2+(x-2)^1+(x-2)+(x-2)^5+(x-2)^4+(x-2)^3+(x-2)^2+(x-2)^1+(x-2)`
+    $expr = `(x-2)^5+(x-2)^4+(x-2)^3+(x-2)^2\
+    +(x-2)^1+(x-2)+(x-2)^5+(x-2)^4\
+    +(x-2)^3+(x-2)^2+(x-2)^1+(x-2)`
 
     function compileExample() {
       timeStart("parse")
@@ -173,16 +133,21 @@
       timeEnd("resolve")
 
       timeStart("compile")
-      e = Grapheme.compileNode(n, {targets: {inputFormat: ['x', 'y']}})
+      e = Grapheme.compileNode(n, {
+        targets: {
+          inputFormat: ['x', 'y']
+        }
+      })
       timeEnd("compile")
 
       let sum = 0
+      let evaluate = e.targets[0].evaluate
 
       timeStart("evaluate")
       for (let i = 0; i < testCases.length; i += 2) {
         let x = testCases[i], y = testCases[i + 1]
 
-        sum += e.evaluate(x, y)
+        sum += evaluate(x, y)
       }
       timeEnd("evaluate")
 
