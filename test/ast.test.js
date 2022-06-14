@@ -62,7 +62,7 @@ describe("ast", () => {
       expect(n.evaluate({ x: -2, y: -2 })).to.equal(0.03663127777746837)
     })
 
-    it("Works for cos(x *\\ty)", () => {
+    it("Works for cos(x *\\ty) (literal tab character)", () => {
       let n = parseString("cos(x *\ty)").resolveTypes()
 
       expect(n.evaluate({ x: 0, y: 0 })).to.equal(1)
@@ -87,13 +87,18 @@ describe("ast", () => {
 
   describe("compilation", () => {
     describe("normal", () => {
-      it("Defaults to normal with a single target and scope input", () => {
+      it("Defaults to normal, with typechecks, with a single target and using scope input", () => {
         let n = compileNode(parseString("x * x + y").resolveTypes())
 
         expect(n.targets[0].evaluate).to.be.a("function")
+        expect(n.targets.length).to.equal(1)
 
         expect(n.targets[0].evaluate({ x: 2, y: 5 })).to.equal(9)
+        expect(Number.isNaN(n.targets[0].evaluate({ x: 2, y: NaN }))).to.equal(true)
         expect(() => n.targets[0].evaluate({ x: "chicken", y: 5 })).to.throw()
+        expect(() => n.targets[0].evaluate({ x: 3, y: "chicken" })).to.throw()
+        expect(() => n.targets[0].evaluate({ x: 0 })).to.throw()
+        expect(() => n.targets[0].evaluate({ y: 9 })).to.throw()
       })
     })
   })

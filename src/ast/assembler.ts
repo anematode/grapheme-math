@@ -2,7 +2,7 @@ import { AllowedJSPrimitive } from "./evaluator.js";
 import { CompilationError, CompileTarget, genVariableName } from "./compile.js";
 import { ConcreteAssignmentGraph } from "./assignment_graph.js";
 import { ConcreteType } from "./type.js";
-import { EvaluationError } from "./node";
+import { EvaluationError } from "./node.js"
 
 interface AssemblerEnvironment {
   assembler: Assembler
@@ -382,7 +382,7 @@ class TypecheckFragment implements CodeFragment {
     }
 
     let typecheckFast = env.importFunction(tc)
-    let typecheckVerbose = tcv ? env.importFunction(tcv) : ""
+    let typecheckVerbose = tcv ? env.importFunction(tcv) : ".js"
 
     let name = this.name
 
