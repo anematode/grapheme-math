@@ -85,6 +85,7 @@ export type CompileNodeOptions = {
   returnNew?: boolean
   variables?: {[key: string]: (string | MathematicalType)}
   resolveTypes?: ResolveTypesOptions
+  inputFormat?: string[]
 }
 
 type FilledCompileNodeOptions = {
@@ -98,8 +99,8 @@ type RootNodeProperties = {
 
 export type CompileTargetResult = {
   evaluate: Function
-  inputFormat: Array<string>
-  inputTypes: Array<ConcreteType | string>  // TODO make scope a special concrete type
+  inputFormat: string[]
+  inputTypes: (ConcreteType | string)[]  // TODO make scope a special concrete type?
   returns: ConcreteType
 
   targetOptions: CompileTarget
@@ -109,7 +110,7 @@ export type CompileNodeResult = {
   targets: CompileTargetResult | CompileTargetResult[]
 }
 
-const defaultTarget = {
+const defaultTarget: CompileTargetOptions = {
   mode: "normal",
   inputFormat: "scope",
   typechecks: true,
@@ -437,8 +438,8 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
   let targetOpts = options.targets
   if (!targetOpts) targetOpts = {}
 
-  // Merge default options
-  targetOpts = Object.assign({ ...defaultTarget }, targetOpts)
+  let dt = { ...defaultTarget }
+  if (options.inputFormat) dt.inputFormat = options.inputFormat
 
   if (!Array.isArray(targetOpts)) targetOpts = [ targetOpts ]   // default is a single target (targets[0])
 
@@ -451,7 +452,9 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
   // Convert each target to a full target
   let targets: CompileTarget[] = []
   for (let i = 0; i < targetOpts.length; ++i) {
+    // Merge default options
     let to = targetOpts[i]
+    to = Object.assign({ ...dt }, to)
 
     targets.push(fillTargetOptions(options, to, rootProperties, i))
   }

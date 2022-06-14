@@ -88,7 +88,7 @@ describe("ast", () => {
   describe("compilation", () => {
     describe("normal", () => {
       it("Defaults to normal, with typechecks, with a single target and using scope input", () => {
-        let n = compileNode(parseString("x * x + y").resolveTypes())
+        let n = compileNode("x * x + y")
 
         expect(n.targets[0].evaluate).to.be.a("function")
         expect(n.targets.length).to.equal(1)
@@ -99,6 +99,24 @@ describe("ast", () => {
         expect(() => n.targets[0].evaluate({ x: 3, y: "chicken" })).to.throw()
         expect(() => n.targets[0].evaluate({ x: 0 })).to.throw()
         expect(() => n.targets[0].evaluate({ y: 9 })).to.throw()
+      })
+
+      it("Allows a custom input format", () => {
+        let e = compileNode("x * x + y", {
+          inputFormat: [ "x", "y" ]
+        }).targets[0].evaluate
+
+        expect(e(2, 3)).to.eq(7)
+
+        e = compileNode("x * x + y", {
+          inputFormat: [ "scope", "y" ]
+        }).targets[0].evaluate
+
+        expect(e({ x: 2 }, 3)).to.eq(7)
+
+        expect(() => compileNode("x * x + y", {
+          inputFormat: [ "y" ]
+        })).to.throw()
       })
     })
   })

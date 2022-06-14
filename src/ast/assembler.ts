@@ -57,6 +57,17 @@ export class Assembler {
 
     let typechecks = target.typechecks
 
+    this.inputFormat = inputFormat
+
+    // Scope typecheck
+    if (usesScope && typechecks) {
+      let f = new TypecheckScopeFragment()
+
+      f.scopeName = "scope"
+
+      this.add(f)
+    }
+
     /**
      * Step 1: extract variables from scope or from arguments
      */
@@ -87,17 +98,6 @@ export class Assembler {
 
         this.add(f)
       }
-    }
-
-    this.inputFormat = inputFormat
-
-    // Scope typecheck
-    if (usesScope) {
-      let f = new TypecheckScopeFragment()
-
-      f.scopeName = "scope"
-
-      this.add(f)
     }
 
     // First fragment in main is to get the input variables out of the arguments
