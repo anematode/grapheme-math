@@ -57,9 +57,9 @@ const normal = new EvaluationMode("normal", {
 
 const fastInterval = new EvaluationMode("fast_interval", {
   typeMap: {
-    //"int": "fast_int_interval",
-    //"real": "fast_real_interval",
-    //"bool": "fast_bool_interval"
+    "int": "interval_int",
+    "real": "interval_real",
+    "bool": "interval_bool"
   }
 })
 

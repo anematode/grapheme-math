@@ -9,8 +9,11 @@ import { ROUNDING_MODE } from './other/rounding_modes.js'
 export { ROUNDING_MODE }
 
 export * from './real/normal.js'
+export * from './real/interval.js'
+
 export * from './complex/normal.js'
 export * from './complex/domain_coloring.js'
+
 export * from './bolus/bolus.js'
 export * from './core/renderer.js'
 export * from './other/color.js'

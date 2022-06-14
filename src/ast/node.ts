@@ -541,7 +541,7 @@ export class VariableNode extends ASTNode {
 
       let works = concreteType.typecheck(v)
       if (!works) {
-        let msg = concreteType.typecheckVerbose(v)
+        let msg = concreteType.typecheckVerbose?.(v) ?? ""
 
         throw new EvaluationError(`Variable ${this.name} should have concrete type ${concreteType.toHashStr()}. ${msg}`)
       }

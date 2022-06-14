@@ -7,7 +7,7 @@ import { ConcreteType, MathematicalType } from '../type.js'
 import { NullableBoolean } from '../../bool/normal.js'
 import { FastBooleanInterval } from '../../bool/fast_interval.js'
 import { NullableInteger } from '../../int/normal.js'
-import { FastRealInterval } from '../../real/fast_interval.js'
+import { RealInterval } from '../../real/interval.js'
 import { Complex } from '../../complex/normal.js'
 
 // The boolean type is nullable. meaning it takes on a value of 0, 1, or NaN. -0, false, and true are also ACCEPTED as
@@ -73,12 +73,12 @@ let concreteIntervalBoolean = new ConcreteType({
 let concreteIntervalReal = new ConcreteType({
   name: "interval_real",
   isPrimitive: false,
-  init: () => new FastRealInterval(0, 0, 0b1111),
+  init: () => new RealInterval(0, 0, 0b1111),
 
-  typecheck: b => b instanceof FastRealInterval,
-  clone: b => new FastRealInterval(b.min, b.max, b.info),
+  typecheck: b => b instanceof RealInterval,
+  clone: b => new RealInterval(b.min, b.max, b.info),
   copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info },
-  castPermissive: FastRealInterval.fromObj
+  castPermissive: RealInterval.fromObj
 })
 
 let concreteIntervalInt = new ConcreteType({

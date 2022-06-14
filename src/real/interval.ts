@@ -4,7 +4,7 @@ import { roundDown, roundUp } from '../fp/manip.js'
  * A real interval with only min, max, defMin (bit 0), defMax (bit 1), contMin (bit 2), contMax (bit 3)
  * TODO: types, functions
  */
-class FastRealInterval {
+class RealInterval {
   min: number;
   max: number;
   info: number;
@@ -44,20 +44,20 @@ class FastRealInterval {
       throw "unimplemented"
     }
 
-    return new FastRealInterval(min, max, info)
+    return new RealInterval(min, max, info)
   }
 
   cont () {
     return this.info & 0b100
   }
 
-  static set (src, dst) {
+  static set (src: RealInterval, dst: RealInterval) {
     dst.min = src.min
     dst.max = src.max
     dst.info = src.info
   }
 
-  static setNumber (num, dst) {
+  static setNumber (num, dst: RealInterval) {
     if (Number.isNaN(num)) {
       dst.info = 0
     } else {
@@ -67,7 +67,7 @@ class FastRealInterval {
     }
   }
 
-  static setRange (min, max, dst) {
+  static setRange (min, max, dst: RealInterval) {
     dst.min = min
     dst.max = max
     dst.info = 0b111
@@ -75,12 +75,12 @@ class FastRealInterval {
 
   /**
    * Add two fast real intervals, sending the result to dst
-   * @param src1 {FastRealInterval}
-   * @param src2 {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src1 {RealInterval}
+   * @param src2 {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static add (src1, src2, dst, correctRounding) {
+  static add (src1: RealInterval, src2: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src1.info & src2.info
     if (info === 0) {
       dst.info = 0
@@ -102,12 +102,12 @@ class FastRealInterval {
 
   /**
    * Subtract two fast real intervals, sending the result to dst
-   * @param src1 {FastRealInterval}
-   * @param src2 {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src1 {RealInterval}
+   * @param src2 {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static sub (src1, src2, dst, correctRounding) {
+  static sub (src1: RealInterval, src2: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src1.info & src2.info
     if (info === 0) {
       dst.info = 0
@@ -129,11 +129,11 @@ class FastRealInterval {
 
   /**
    * Negate a real interval, sending the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static unarySub (src, dst, correctRounding) {
+  static unaryMinus (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     dst.min = -src.max
     dst.max = -src.min
     dst.info = src.info
@@ -141,12 +141,12 @@ class FastRealInterval {
 
   /**
    * Multiply two fast real intervals, sending the result to dst
-   * @param src1 {FastRealInterval}
-   * @param src2 {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src1 {RealInterval}
+   * @param src2 {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static mul (src1, src2, dst, correctRounding) {
+  static mul (src1: RealInterval, src2: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src1.info & src2.info
     if (info === 0) {
       dst.info = 0
@@ -173,12 +173,12 @@ class FastRealInterval {
 
   /**
    * Divide two fast real intervals, sending the result to dst
-   * @param src1 {FastRealInterval}
-   * @param src2 {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src1 {RealInterval}
+   * @param src2 {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static div (src1, src2, dst, correctRounding) {
+  static div (src1: RealInterval, src2: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src1.info & src2.info
     if (info === 0) {
       dst.info = 0
@@ -212,11 +212,11 @@ class FastRealInterval {
 
   /**
    * Take the square root of a real interval, sending the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static sqrt (src, dst, correctRounding) {
+  static sqrt (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src.info
     if (info === 0) {
       dst.info = 0
@@ -258,11 +258,11 @@ class FastRealInterval {
 
   /**
    * Take the cube root of a real interval, sending the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static cbrt (src, dst, correctRounding) {
+  static cbrt (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src.info
     if (info === 0) {
       dst.info = 0
@@ -284,11 +284,11 @@ class FastRealInterval {
 
   /**
    * Take the sine of a fast real interval and send the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed TODO
    */
-  static sin (src, dst, correctRounding) {
+  static sin (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     const pio2 = Math.PI / 2
     const pi3o2 = 3 * Math.PI / 2
     const pi2 = 2 * Math.PI
@@ -343,11 +343,11 @@ class FastRealInterval {
 
   /**
    * Take the cosine of a fast real interval and send the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed TODO
    */
-  static cos (src, dst, correctRounding) {
+  static cos (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     const pi2 = 2 * Math.PI
     const pi3 = 3 * Math.PI
 
@@ -399,11 +399,11 @@ class FastRealInterval {
 
   /**
    * Take the tangent of a fast real interval and send the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed TODO
    */
-  static tan (src, dst, correctRounding) {
+  static tan (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     const pio2 = Math.PI / 2
 
     let info = src.info
@@ -453,11 +453,11 @@ class FastRealInterval {
 
   /**
    * Take the arcsine of a fast real interval and send the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static asin (src, dst, correctRounding) {
+  static asin (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src.info
     if (info === 0) {
       dst.info = 0
@@ -503,11 +503,11 @@ class FastRealInterval {
 
   /**
    * Take the arccosine of a fast real interval and send the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static acos (src, dst, correctRounding) {
+  static acos (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src.info
     if (info === 0) {
       dst.info = 0
@@ -553,11 +553,11 @@ class FastRealInterval {
 
   /**
    * Take the arctangent of a fast real interval and send the result to dst
-   * @param src {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
    */
-  static atan (src, dst, correctRounding) {
+  static atan (src: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src.info
     if (info === 0) {
       dst.info = 0
@@ -581,12 +581,12 @@ class FastRealInterval {
   /**
    * The power operation on two integers. This is a mathematical pow, rather than powSpecial where we try to guess that
    * numbers are rational. This function is a bit intricate because it needs to take care of a lot of cases. 0^0 = 0.
-   * @param src1 {FastRealInterval}
-   * @param src2 {FastRealInterval}
-   * @param dst {FastRealInterval}
+   * @param src1 {RealInterval}
+   * @param src2 {RealInterval}
+   * @param dst {RealInterval}
    * @param correctRounding {boolean}
    */
-  static pow (src1, src2, dst, correctRounding) {
+  static pow (src1: RealInterval, src2: RealInterval, dst: RealInterval, correctRounding: boolean = false) {
     let info = src1.info & src2.info
     if (info === 0) {
       dst.info = 0
@@ -816,6 +816,68 @@ class FastRealInterval {
     dst.max = maxPow
     dst.info = info
   }
+
+  /**
+   * Get the natural logarithm of a real interval
+   * @param src
+   * @param dst
+   * @param correctRounding
+   */
+  static ln(src: RealInterval, dst: RealInterval, correctRounding: boolean=false) {
+    let info = src.info
+    if (info === 0) {
+      dst.info = 0
+      return
+    }
+
+    let srcMin = src.min
+    let srcMax = src.max
+
+    let lnMin = Math.log(srcMin)
+    let lnMax = Math.log(srcMax)
+
+    // monotonically increasing, so our job is pretty easy
+    if (srcMin <= 0) {
+      info &= 0b1010   // def min, cont min
+    } else if (srcMax <= 0) {
+      info = 0   // entirely undefined
+    }
+
+    dst.min = lnMin
+    dst.max = lnMax
+    dst.info = info
+  }
+
+  /**
+   * Get the logarithm base 10 of a real interval
+   * @param src
+   * @param dst
+   * @param correctRounding
+   */
+  static log10(src: RealInterval, dst: RealInterval, correctRounding: boolean=false) {
+    let info = src.info
+    if (info === 0) {
+      dst.info = 0
+      return
+    }
+
+    let srcMin = src.min
+    let srcMax = src.max
+
+    let lnMin = Math.log10(srcMin)
+    let lnMax = Math.log10(srcMax)
+
+    // monotonically increasing, so our job is pretty easy
+    if (srcMin <= 0) {
+      info &= 0b1010   // def min, cont min
+    } else if (srcMax <= 0) {
+      info = 0   // entirely undefined
+    }
+
+    dst.min = lnMin
+    dst.max = lnMax
+    dst.info = info
+  }
 }
 
-export { FastRealInterval }
+export { RealInterval }

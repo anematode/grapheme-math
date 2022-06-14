@@ -3,6 +3,7 @@ import { castDistance, ConcreteEvaluator } from '../evaluator.js'
 import {gammaReal} from "../../real/gamma.js"
 import {Complex} from "../../complex/normal.js"
 import {MathematicalType} from "../type.js";
+import { RealInterval } from "../../real/interval";
 
 // For now we'll just have a mapping  name -> Array of possibilities
 const KNOWN_OPERATORS: Map<string, OperatorDefinition[]> = new Map()
@@ -139,6 +140,12 @@ registerOperator(new OperatorDefinition({
       args: [ "real", "real" ],
       returns: "real",
       primitive: "+"
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.add
     })
   ]
 }))
@@ -152,6 +159,12 @@ registerOperator(new OperatorDefinition({
       args: [ "real", "real" ],
       returns: "real",
       primitive: "*"
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.mul
     })
   ]
 }))
@@ -165,6 +178,12 @@ registerOperator(new OperatorDefinition({
       args: [ "real", "real" ],
       returns: "real",
       primitive: "/"
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.div
     })
   ]
 }))
@@ -178,6 +197,12 @@ registerOperator(new OperatorDefinition({
       args: [ "real", "real" ],
       returns: "real",
       primitive: "-"
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.sub
     })
   ]
 }))
@@ -192,6 +217,12 @@ registerOperator(new OperatorDefinition({
       args: [ "real" ],
       returns: "real",
       primitive: "-"
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.unaryMinus
     })
   ]
 }))
@@ -219,10 +250,17 @@ registerOperator(new OperatorDefinition({
       args: [ "real", "real" ],
       returns: "real",
       func: Math.pow
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.pow
     })
   ]
 }))
 
+// TODO: alias
 registerOperator(new OperatorDefinition({
   name: 'pow',
   args: ["real", "real"],
@@ -232,6 +270,12 @@ registerOperator(new OperatorDefinition({
       args: [ "real", "real" ],
       returns: "real",
       func: Math.pow
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.pow
     })
   ]
 }))
@@ -245,6 +289,12 @@ registerOperator(new OperatorDefinition({
       args: [ "real" ],
       returns: "real",
       func: Math.log
+    }),
+    new ConcreteEvaluator({
+      args: [ "interval_real", "interval_real" ],
+      returns: "interval_real",
+      evalType: "write",
+      func: RealInterval.ln
     })
   ]
 }))
