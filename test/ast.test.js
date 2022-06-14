@@ -138,6 +138,30 @@ describe("ast", () => {
       })
     })
 
+    describe("interval", () => {
+      it("works for x*x+y", () => {
+        let n = compileNode("x * x + y", {
+          inputFormat: [ "x", "y" ], mode: "fast_interval"
+        })
 
+        let e = n.targets[0].evaluate
+        expect(e).to.be.a("function")
+        expect(e(new RealInterval(0, 2), new RealInterval(0, 3)))
+          .to.deep.equal(new RealInterval(0, 7))
+      })
+
+      it("works for x/y", () => {
+        let n = compileNode("x/y", {
+          inputFormat: [ "x", "y" ], mode: "fast_interval"
+        })
+
+        let e = n.targets[0].evaluate
+        expect(e).to.be.a("function")
+        expect(e(new RealInterval(-2, 2), new RealInterval(1, 3)))
+          .to.deep.equal(new RealInterval(-2, 2))
+        expect(e(new RealInterval(-2, 2), new RealInterval(-1, 1)).info)
+          .to.equal(0b0101)
+      })
+    })
   })
 })

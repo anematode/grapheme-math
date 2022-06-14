@@ -202,7 +202,7 @@ class RealInterval {
     let s2min = src2.min, s2max = src2.max
 
     if (0 < s2min || 0 > s2max) {
-      // if 0 is outside the range...
+      // if 0 is outside the range then there are no singularities
       let s1min = src1.min, s1max = src1.max
       let p1 = s1min / s2min, p2 = s1max / s2min, p3 = s1min / s2max, p4 = s1max / s2max
 
@@ -220,7 +220,7 @@ class RealInterval {
     } else {
       dst.min = -Infinity
       dst.max = Infinity
-      dst.info = 1
+      dst.info = info & 0b0101
     }
   }
 
