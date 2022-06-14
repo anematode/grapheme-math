@@ -1477,11 +1477,63 @@
     });
 
     /**
+     * Given a string like "1.5", "3e10", etc., determine whether it is an integer without evaluating it. Assumes the string
+     * is well-formed.
+     */
+    function isStringInteger(s) {
+        if (s[0] === '-')
+            s = s.slice(1); // trim leading '-'
+        let exponent = 0, mIntTrailingZeros = Infinity, mFracLen = 0;
+        let e = s.indexOf('e');
+        // If mFracLen = 0 (no fractional part) and mIntTrailingZeros = 0 (no integer part), the result is 0, so integer
+        // If mFracLen > 0 (fractional part), integer if exponent >= mFracLen
+        // If mFracLen = 0 (no fractional part), integer if exponent >= -mIntTrailingZeros
+        if (e !== -1) { // get exponent
+            exponent = parseInt(s.slice(e + 1), 10);
+            if (Number.isNaN(exponent))
+                throw new Error("unrecognized exponent " + s.slice(e + 1));
+        }
+        else {
+            e = s.length;
+        }
+        let p = s.indexOf('.');
+        if (p !== -1) {
+            for (let i = e - 1; i > p; --i) {
+                // find trailing zeros
+                if (s[i] !== '0') {
+                    mFracLen = i - p;
+                    break;
+                }
+            }
+        }
+        else {
+            p = e;
+        }
+        for (let i = p - 1; i >= 0; --i) {
+            if (s[i] !== '0') {
+                mIntTrailingZeros = p - i;
+            }
+        }
+        if (mFracLen !== 0) {
+            return exponent >= mFracLen;
+        }
+        else {
+            if (mIntTrailingZeros !== 0) {
+                return exponent > -mIntTrailingZeros;
+            }
+            else {
+                // 0
+                return true;
+            }
+        }
+    }
+
+    /**
      * A real interval with only min, max, defMin (bit 0), defMax (bit 1), contMin (bit 2), contMax (bit 3)
      * TODO: types, functions
      */
-    class FastRealInterval {
-        constructor(min = 0, max = min, info = 0b111) {
+    class RealInterval {
+        constructor(min = 0, max = min, info = 0b1111) {
             this.min = +min;
             this.max = +max;
             this.info = info | 0;
@@ -1492,10 +1544,19 @@
         defMax() {
             return this.info & 0b10;
         }
-        static fromObj(o) {
-            let min = 0, max = 0, info = 0b111, isStr = false;
+        contMin() {
+            return this.info & 0b100;
+        }
+        contMax() {
+            return this.info & 0b1000;
+        }
+        static fromObj(o, correctRounding = false) {
+            let min = 0, max = 0, info = 0b1111, isStr = false;
             if (typeof o === "string") {
                 isStr = true;
+                if (correctRounding && isStringInteger(o)) {
+                    correctRounding = false;
+                }
                 o = +o;
             }
             if (typeof o === "number") {
@@ -1504,19 +1565,21 @@
                 }
                 else {
                     min = max = o;
-                    if (isStr) { // safely include the number
+                    if (isStr && correctRounding) { // safely include the number
                         min = roundDown(min);
                         max = roundUp(max);
                     }
                 }
             }
-            else {
-                throw "unimplemented";
+            else if (typeof o === "object" && o !== null) {
+                // @ts-ignore
+                if (o.min !== undefined && o.max !== undefined)
+                    min = +o.min, max = +o.max;
+                // @ts-ignore
+                if (o.info !== undefined)
+                    info = +o.info;
             }
-            return new FastRealInterval(min, max, info);
-        }
-        cont() {
-            return this.info & 0b100;
+            return new RealInterval(min, max, info);
         }
         static set(src, dst) {
             dst.min = src.min;
@@ -1530,22 +1593,22 @@
             else {
                 dst.min = num;
                 dst.max = num;
-                dst.info = 0b111;
+                dst.info = 0b1111;
             }
         }
         static setRange(min, max, dst) {
             dst.min = min;
             dst.max = max;
-            dst.info = 0b111;
+            dst.info = 0b1111;
         }
         /**
          * Add two fast real intervals, sending the result to dst
-         * @param src1 {FastRealInterval}
-         * @param src2 {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src1 {RealInterval}
+         * @param src2 {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static add(src1, src2, dst, correctRounding) {
+        static add(src1, src2, dst, correctRounding = false) {
             let info = src1.info & src2.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1563,12 +1626,12 @@
         }
         /**
          * Subtract two fast real intervals, sending the result to dst
-         * @param src1 {FastRealInterval}
-         * @param src2 {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src1 {RealInterval}
+         * @param src2 {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static sub(src1, src2, dst, correctRounding) {
+        static sub(src1, src2, dst, correctRounding = false) {
             let info = src1.info & src2.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1586,23 +1649,23 @@
         }
         /**
          * Negate a real interval, sending the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static unarySub(src, dst, correctRounding) {
+        static unaryMinus(src, dst, correctRounding = false) {
             dst.min = -src.max;
             dst.max = -src.min;
             dst.info = src.info;
         }
         /**
          * Multiply two fast real intervals, sending the result to dst
-         * @param src1 {FastRealInterval}
-         * @param src2 {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src1 {RealInterval}
+         * @param src2 {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static mul(src1, src2, dst, correctRounding) {
+        static mul(src1, src2, dst, correctRounding = false) {
             let info = src1.info & src2.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1622,12 +1685,12 @@
         }
         /**
          * Divide two fast real intervals, sending the result to dst
-         * @param src1 {FastRealInterval}
-         * @param src2 {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src1 {RealInterval}
+         * @param src2 {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static div(src1, src2, dst, correctRounding) {
+        static div(src1, src2, dst, correctRounding = false) {
             let info = src1.info & src2.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1635,7 +1698,7 @@
             }
             let s2min = src2.min, s2max = src2.max;
             if (0 < s2min || 0 > s2max) {
-                // if 0 is outside the range...
+                // if 0 is outside the range then there are no singularities
                 let s1min = src1.min, s1max = src1.max;
                 let p1 = s1min / s2min, p2 = s1max / s2min, p3 = s1min / s2max, p4 = s1max / s2max;
                 let min = Math.min(p1, p2, p3, p4);
@@ -1651,16 +1714,16 @@
             else {
                 dst.min = -Infinity;
                 dst.max = Infinity;
-                dst.info = 1;
+                dst.info = info & 0b0101;
             }
         }
         /**
          * Take the square root of a real interval, sending the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static sqrt(src, dst, correctRounding) {
+        static sqrt(src, dst, correctRounding = false) {
             let info = src.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1700,11 +1763,11 @@
         }
         /**
          * Take the cube root of a real interval, sending the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static cbrt(src, dst, correctRounding) {
+        static cbrt(src, dst, correctRounding = false) {
             let info = src.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1722,11 +1785,11 @@
         }
         /**
          * Take the sine of a fast real interval and send the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed TODO
          */
-        static sin(src, dst, correctRounding) {
+        static sin(src, dst, correctRounding = false) {
             const pio2 = Math.PI / 2;
             const pi3o2 = 3 * Math.PI / 2;
             const pi2 = 2 * Math.PI;
@@ -1772,11 +1835,11 @@
         }
         /**
          * Take the cosine of a fast real interval and send the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed TODO
          */
-        static cos(src, dst, correctRounding) {
+        static cos(src, dst, correctRounding = false) {
             const pi2 = 2 * Math.PI;
             const pi3 = 3 * Math.PI;
             let info = src.info;
@@ -1819,11 +1882,11 @@
         }
         /**
          * Take the tangent of a fast real interval and send the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed TODO
          */
-        static tan(src, dst, correctRounding) {
+        static tan(src, dst, correctRounding = false) {
             const pio2 = Math.PI / 2;
             let info = src.info;
             if (info === 0) {
@@ -1862,11 +1925,11 @@
         }
         /**
          * Take the arcsine of a fast real interval and send the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static asin(src, dst, correctRounding) {
+        static asin(src, dst, correctRounding = false) {
             let info = src.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1884,14 +1947,14 @@
             else {
                 if (srcMin < -1) {
                     min = -Math.PI / 2;
-                    info &= 0b010;
+                    info &= 0b1010;
                 }
                 else {
                     min = Math.asin(srcMin);
                 }
                 if (srcMax > 1) {
                     max = Math.PI / 2;
-                    info &= 0b010;
+                    info &= 0b1010;
                 }
                 else {
                     max = Math.asin(srcMax);
@@ -1907,11 +1970,11 @@
         }
         /**
          * Take the arccosine of a fast real interval and send the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static acos(src, dst, correctRounding) {
+        static acos(src, dst, correctRounding = false) {
             let info = src.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1919,7 +1982,7 @@
             }
             let srcMin = src.min, srcMax = src.max;
             if (srcMax < -1 || srcMin > 1) {
-                dst.info = 0;
+                dst.info = 0; // complete domain error
                 return;
             }
             let min, max;
@@ -1929,14 +1992,15 @@
             else {
                 if (srcMin < -1) {
                     max = Math.PI;
-                    info &= 0b010;
+                    // domain error
+                    info &= 0b1010;
                 }
                 else {
                     max = Math.acos(srcMin);
                 }
                 if (srcMax > 1) {
                     min = 0;
-                    info &= 0b010;
+                    info &= 0b1010;
                 }
                 else {
                     min = Math.acos(srcMax);
@@ -1952,11 +2016,11 @@
         }
         /**
          * Take the arctangent of a fast real interval and send the result to dst
-         * @param src {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean} Whether to use correct rounding so the result is mathematically guaranteed
          */
-        static atan(src, dst, correctRounding) {
+        static atan(src, dst, correctRounding = false) {
             let info = src.info;
             if (info === 0) {
                 dst.info = 0;
@@ -1976,12 +2040,12 @@
         /**
          * The power operation on two integers. This is a mathematical pow, rather than powSpecial where we try to guess that
          * numbers are rational. This function is a bit intricate because it needs to take care of a lot of cases. 0^0 = 0.
-         * @param src1 {FastRealInterval}
-         * @param src2 {FastRealInterval}
-         * @param dst {FastRealInterval}
+         * @param src1 {RealInterval}
+         * @param src2 {RealInterval}
+         * @param dst {RealInterval}
          * @param correctRounding {boolean}
          */
-        static pow(src1, src2, dst, correctRounding) {
+        static pow(src1, src2, dst, correctRounding = false) {
             let info = src1.info & src2.info;
             if (info === 0) {
                 dst.info = 0;
@@ -2009,14 +2073,14 @@
                                 // 1/x^2
                                 dst.min = Math.pow(Math.max(Math.abs(s1min), Math.abs(s1max)), exp);
                                 dst.max = Infinity;
-                                dst.info = info & 0b010;
+                                dst.info = info & 0b1010;
                             }
                             else {
                                 // Odd integers: if contains zero, contains an asymptote
                                 // 1/x
                                 dst.min = Infinity;
                                 dst.max = Infinity;
-                                dst.info = info & 0b010;
+                                dst.info = info & 0b1010;
                             }
                             return;
                         }
@@ -2057,7 +2121,7 @@
                         }
                         dst.min = min;
                         dst.max = max;
-                        dst.info = info & 0b010;
+                        dst.info = info & 0b1010;
                     }
                 }
                 // If we've fallen through to here, pow is monotonic and defined
@@ -2080,7 +2144,7 @@
                     let containsZero = s2max >= 0 && s2min <= 0;
                     dst.min = 0;
                     dst.max = containsZero ? 1 : 0; // 0^0 = 1
-                    dst.info = info & (containsZero ? 0b011 : 0b111);
+                    dst.info = info & (containsZero ? 0b1011 : 0b1111);
                     return;
                 }
                 else if (base === 1) {
@@ -2092,7 +2156,7 @@
                 else if (base === -1) {
                     dst.min = -1;
                     dst.max = 1;
-                    dst.info = info & 0b010;
+                    dst.info = info & 0b1010;
                     return;
                 }
                 // negative bases are weird. They have two branches depending on the denominator of the power they're being
@@ -2103,14 +2167,14 @@
                     let m = Math.pow(base, s2max);
                     min = -m;
                     max = m;
-                    info &= 0b010;
+                    info &= 0b1010;
                 }
                 else if (base < 0) {
                     // Shape: (-1/2)^x
                     let m = Math.pow(base, s2min);
                     min = -m;
                     max = m;
-                    info &= 0b010;
+                    info &= 0b1010;
                 }
                 else if (base < 1) {
                     // Monotonically decreasing
@@ -2139,13 +2203,13 @@
             if (hasAsymptote) {
                 dst.min = -Infinity;
                 dst.max = Infinity;
-                dst.info = info & 0b010;
+                dst.info = info & 0b1010;
                 return;
             }
             // Things are potentially undefined iff the denominator has negative numbers.
             let isAllDefined = s1min < 0;
             if (isAllDefined)
-                info &= 0b010;
+                info &= 0b1010;
             let minPow = Infinity, maxPow = -Infinity;
             let ps1mins2min = Math.pow(Math.abs(s1min), s2min);
             let ps1mins2max = Math.pow(Math.abs(s1min), s2max);
@@ -2177,6 +2241,60 @@
             }
             dst.min = minPow;
             dst.max = maxPow;
+            dst.info = info;
+        }
+        /**
+         * Get the natural logarithm of a real interval
+         * @param src
+         * @param dst
+         * @param correctRounding
+         */
+        static ln(src, dst, correctRounding = false) {
+            let info = src.info;
+            if (info === 0) {
+                dst.info = 0;
+                return;
+            }
+            let srcMin = src.min;
+            let srcMax = src.max;
+            let lnMin = Math.log(srcMin);
+            let lnMax = Math.log(srcMax);
+            // monotonically increasing, so our job is pretty easy
+            if (srcMin <= 0) {
+                info &= 0b1010; // def min, cont min
+            }
+            else if (srcMax <= 0) {
+                info = 0; // entirely undefined
+            }
+            dst.min = lnMin;
+            dst.max = lnMax;
+            dst.info = info;
+        }
+        /**
+         * Get the logarithm base 10 of a real interval
+         * @param src
+         * @param dst
+         * @param correctRounding
+         */
+        static log10(src, dst, correctRounding = false) {
+            let info = src.info;
+            if (info === 0) {
+                dst.info = 0;
+                return;
+            }
+            let srcMin = src.min;
+            let srcMax = src.max;
+            let lnMin = Math.log10(srcMin);
+            let lnMax = Math.log10(srcMax);
+            // monotonically increasing, so our job is pretty easy
+            if (srcMin <= 0) {
+                info &= 0b1010; // def min, cont min
+            }
+            else if (srcMax <= 0) {
+                info = 0; // entirely undefined
+            }
+            dst.min = lnMin;
+            dst.max = lnMax;
             dst.info = info;
         }
     }
@@ -2653,11 +2771,11 @@
     let concreteIntervalReal = new ConcreteType({
         name: "interval_real",
         isPrimitive: false,
-        init: () => new FastRealInterval(0, 0, 0b1111),
-        typecheck: b => b instanceof FastRealInterval,
-        clone: b => new FastRealInterval(b.min, b.max, b.info),
+        init: () => new RealInterval(0, 0, 0b1111),
+        typecheck: b => b instanceof RealInterval,
+        clone: b => new RealInterval(b.min, b.max, b.info),
         copyTo: (src, dst) => { dst.min = src.min; dst.max = src.max; dst.info = src.info; },
-        castPermissive: FastRealInterval.fromObj
+        castPermissive: RealInterval.fromObj
     });
     let concreteIntervalInt = new ConcreteType(Object.assign(Object.assign({}, concreteIntervalReal), { name: "interval_int" }));
     /**
@@ -2949,9 +3067,9 @@
     });
     const fastInterval = new EvaluationMode("fast_interval", {
         typeMap: {
-        //"int": "fast_int_interval",
-        //"real": "fast_real_interval",
-        //"bool": "fast_bool_interval"
+            "int": "interval_int",
+            "real": "interval_real",
+            "bool": "interval_bool"
         }
     });
     const EvaluationModes = new Map();
@@ -3347,6 +3465,12 @@
                 args: ["real", "real"],
                 returns: "real",
                 primitive: "+"
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.add
             })
         ]
     }));
@@ -3359,6 +3483,12 @@
                 args: ["real", "real"],
                 returns: "real",
                 primitive: "*"
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.mul
             })
         ]
     }));
@@ -3371,6 +3501,12 @@
                 args: ["real", "real"],
                 returns: "real",
                 primitive: "/"
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.div
             })
         ]
     }));
@@ -3383,6 +3519,12 @@
                 args: ["real", "real"],
                 returns: "real",
                 primitive: "-"
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.sub
             })
         ]
     }));
@@ -3396,6 +3538,12 @@
                 args: ["real"],
                 returns: "real",
                 primitive: "-"
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.unaryMinus
             })
         ]
     }));
@@ -3421,9 +3569,16 @@
                 args: ["real", "real"],
                 returns: "real",
                 func: Math.pow
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.pow
             })
         ]
     }));
+    // TODO: alias
     registerOperator(new OperatorDefinition({
         name: 'pow',
         args: ["real", "real"],
@@ -3433,6 +3588,12 @@
                 args: ["real", "real"],
                 returns: "real",
                 func: Math.pow
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.pow
             })
         ]
     }));
@@ -3445,6 +3606,12 @@
                 args: ["real"],
                 returns: "real",
                 func: Math.log
+            }),
+            new ConcreteEvaluator({
+                args: ["interval_real", "interval_real"],
+                returns: "interval_real",
+                evalType: "write",
+                func: RealInterval.ln
             })
         ]
     }));
@@ -4166,6 +4333,7 @@ In other words, the node cannot be used for computation until an abstract type a
             this.type = toMathematicalType(info !== null && info !== void 0 ? info : (defaultType !== null && defaultType !== void 0 ? defaultType : "real"));
         }
         _evaluate(vars, mode, opts) {
+            var _a, _b;
             if (this.operatorDefinition) { // pi, e, i
                 let evaluator = this.operatorDefinition.getDefaultEvaluator(mode);
                 if (evaluator === null) {
@@ -4181,7 +4349,7 @@ In other words, the node cannot be used for computation until an abstract type a
                 let concreteType = mode.getConcreteType(this.type);
                 let works = concreteType.typecheck(v);
                 if (!works) {
-                    let msg = concreteType.typecheckVerbose(v);
+                    let msg = (_b = (_a = concreteType.typecheckVerbose) === null || _a === void 0 ? void 0 : _a.call(concreteType, v)) !== null && _b !== void 0 ? _b : "";
                     throw new EvaluationError(`Variable ${this.name} should have concrete type ${concreteType.toHashStr()}. ${msg}`);
                 }
             }
@@ -4521,57 +4689,6 @@ In other words, the node cannot be used for computation until an abstract type a
                 return [startIndex, i, startToken, child];
         }
         return null;
-    }
-    /**
-     * Given a string like "1.5", "3e10", etc., determine whether it is an integer without evaluating it. Assumes the string
-     * is well-formed.
-     */
-    function isStringInteger(s) {
-        if (s[0] === '-')
-            s = s.slice(1); // trim leading '-'
-        let exponent = 0, mIntTrailingZeros = Infinity, mFracLen = 0;
-        let e = s.indexOf('e');
-        // If mFracLen = 0 (no fractional part) and mIntTrailingZeros = 0 (no integer part), the result is 0, so integer
-        // If mFracLen > 0 (fractional part), integer if exponent >= mFracLen
-        // If mFracLen = 0 (no fractional part), integer if exponent >= -mIntTrailingZeros
-        if (e !== -1) { // get exponent
-            exponent = parseInt(s.slice(e + 1), 10);
-            if (Number.isNaN(exponent))
-                throw new Error("unrecognized exponent " + s.slice(e + 1));
-        }
-        else {
-            e = s.length;
-        }
-        let p = s.indexOf('.');
-        if (p !== -1) {
-            for (let i = e - 1; i > p; --i) {
-                // find trailing zeros
-                if (s[i] !== '0') {
-                    mFracLen = i - p;
-                    break;
-                }
-            }
-        }
-        else {
-            p = e;
-        }
-        for (let i = p - 1; i >= 0; --i) {
-            if (s[i] !== '0') {
-                mIntTrailingZeros = p - i;
-            }
-        }
-        if (mFracLen !== 0) {
-            return exponent >= mFracLen;
-        }
-        else {
-            if (mIntTrailingZeros !== 0) {
-                return exponent > -mIntTrailingZeros;
-            }
-            else {
-                // 0
-                return true;
-            }
-        }
     }
     /**
      * Convert constants and variables to their ASTNode counterparts
@@ -4998,30 +5115,38 @@ In other words, the node cannot be used for computation until an abstract type a
             let inputFormat = target.inputFormat;
             let usesScope = inputFormat.includes("scope");
             let typechecks = target.typechecks;
+            this.inputFormat = inputFormat;
+            // Scope typecheck
+            if (usesScope && typechecks) {
+                let f = new TypecheckScopeFragment();
+                f.scopeName = "scope";
+                this.add(f);
+            }
+            /**
+             * Step 1: extract variables from scope or from arguments
+             */
             for (let [name, node] of neededInputs) {
-                if (inputFormat.includes(name)) {
-                    // Variable is immediately defined
-                    if (typechecks) {
-                        let f = new TypecheckFragment();
-                        f.name = name;
-                        f.concreteType = node.type;
-                        // TODO
-                    }
-                }
+                if (inputFormat.includes(name)) ;
                 else {
                     if (usesScope) {
                         let f = new VariableDefinitionCodeFragment();
                         f.name = name;
                         f.value = `scope.${name}`;
                         f.verbatim = true;
+                        f.construct = true; // In this case, we do construct the variable directly since we're extracting it
                         this.add(f);
                     }
                     else {
                         throw new CompilationError(`Can't find variable ${name}`);
                     }
                 }
+                if (typechecks) {
+                    let f = new TypecheckFragment();
+                    f.name = name;
+                    f.concreteType = node.type;
+                    this.add(f);
+                }
             }
-            this.inputFormat = inputFormat;
             // First fragment in main is to get the input variables out of the arguments
             for (let [name, node] of cGraph.nodesInOrder()) {
                 // Don't need to do anything if not input; everything taken care of above
@@ -5068,7 +5193,7 @@ In other words, the node cannot be used for computation until an abstract type a
                     }
                 }
                 if (name === cGraph.root) { // single return statement
-                    this.add(`return ${cGraph.root}`);
+                    this.add(`return ${cGraph.root};`);
                 }
             }
             let inputCTypes = this.inputFormat.map(varName => {
@@ -5203,7 +5328,7 @@ In other words, the node cannot be used for computation until an abstract type a
             for (let [name, e] of exports.entries()) {
                 exportText += `${name}: ${e},`;
             }
-            exportText += "}";
+            exportText += "};";
             let fBody = preambleF.text + fsText + exportText;
             //console.log(fBody)
             // Invoke the closure
@@ -5216,20 +5341,51 @@ In other words, the node cannot be used for computation until an abstract type a
             };
         }
     }
+    /**
+     * Fragment which throws an error if a typecheck fails. There is no "error code"–type handling for typecheck failures,
+     * because they are so damaging to performance that it would make no sense to use them. Essentially, if the wrong type
+     * is passed to a compiled function, it will have to be (partially or fully) deoptimized, defeating its purpose.
+     */
     class TypecheckFragment {
         compileToEnv(env) {
             let t = this.concreteType;
             let tc = t.typecheck;
             let tcv = t.typecheckVerbose;
             if (!tc) {
+                // TODO make warning?
                 throw new CompilationError(`No defined typecheck for concrete type ${t.toHashStr()}`);
             }
-            env.importFunction(tc);
-            tcv ? env.importFunction(tcv) : ""; // if no verbose typecheck available, don't include it
-            this.name;
-            /*env.addMain(`if (${typecheckFast}(${this.name}) {
-        
-            }`)*/
+            let typecheckFast = env.importFunction(tc);
+            let typecheckVerbose = tcv ? env.importFunction(tcv) : ""; // prevent doodoo
+            let name = this.name;
+            let inner = (typecheckVerbose) ?
+                `throw new ${env.importValue(EvaluationError)}("Variable ${name} failed typecheck: " + ${typecheckVerbose}(${name}));`
+                : `throw new ${env.importValue(EvaluationError)}("Variable ${name} failed typecheck");`; // verbose not available
+            // First perform a fast typecheck, then, if it fails, throw a verbose message
+            env.addMain(`if (!${typecheckFast}(${this.name})) {
+      ${inner}
+    }`);
+        }
+    }
+    function checkScopeFast(scope) {
+        return typeof scope === "object" && scope !== null;
+    }
+    function checkScopeVerbose(scope) {
+        if (!checkScopeFast(scope))
+            return "Expected scope object (i.e., associative array object with variables as keys and values as the variables' values)";
+        return "";
+    }
+    /**
+     * Typecheck the scope object in particular
+     */
+    class TypecheckScopeFragment {
+        compileToEnv(env) {
+            let scopeTypecheckFast = env.importFunction(checkScopeFast);
+            let scopeTypecheckVerbose = env.importFunction(checkScopeVerbose);
+            let scopeName = this.scopeName;
+            env.addMain(`if (!${scopeTypecheckFast}(${scopeName})) {
+    throw new ${env.importValue(EvaluationError)}("Variable ${scopeName} failed typecheck: " + ${scopeTypecheckVerbose}(${scopeName}));
+    }`);
         }
     }
     // Just a group of code fragments
@@ -5564,16 +5720,21 @@ In other words, the node cannot be used for computation until an abstract type a
                 throw new CompilationError("First argument to compileNode must be an ASTNode or string");
             root = parseString(root);
         }
+        // Resolve nodes if necessary
         if (!root.allResolved()) {
             root.resolveTypes((_a = options.variables) !== null && _a !== void 0 ? _a : {}, Object.assign(Object.assign({}, options.resolveTypes), { throwOnUnresolved: true }));
         }
+        // Uniformize properties
         let targetOpts = options.targets;
-        if (!targetOpts) {
-            targetOpts = defaultTarget;
-        }
-        if (!Array.isArray(targetOpts)) {
-            targetOpts = [targetOpts];
-        }
+        if (!targetOpts)
+            targetOpts = {};
+        let dt = Object.assign({}, defaultTarget);
+        if (options.inputFormat)
+            dt.inputFormat = options.inputFormat;
+        if (options.mode)
+            dt.mode = options.mode;
+        if (!Array.isArray(targetOpts))
+            targetOpts = [targetOpts]; // default is a single target (targets[0])
         let rootProperties = {
             usedVariables: root.getVariableDependencies()
         };
@@ -5581,7 +5742,9 @@ In other words, the node cannot be used for computation until an abstract type a
         // Convert each target to a full target
         let targets = [];
         for (let i = 0; i < targetOpts.length; ++i) {
+            // Merge default options
             let to = targetOpts[i];
+            to = Object.assign(Object.assign({}, dt), to);
             targets.push(fillTargetOptions(options, to, rootProperties, i));
         }
         let mAssignmentGraph = createAssnGraph(root);
@@ -5647,23 +5810,21 @@ In other words, the node cannot be used for computation until an abstract type a
             evalType: "new", func: r => new Complex(r, 0)
         }))
     ];
-    {
-        registerMathematicalCast(new MathematicalCast({
-            src: "int",
-            dst: "real",
-            evaluators: intToReal
-        }));
-        registerMathematicalCast(new MathematicalCast({
-            src: "int",
-            dst: "complex",
-            evaluators: intToComplex
-        }));
-        registerMathematicalCast(new MathematicalCast({
-            src: "real",
-            dst: "complex",
-            evaluators: realToComplex
-        }));
-    }
+    registerMathematicalCast(new MathematicalCast({
+        src: "int",
+        dst: "real",
+        evaluators: intToReal
+    }));
+    registerMathematicalCast(new MathematicalCast({
+        src: "int",
+        dst: "complex",
+        evaluators: intToComplex
+    }));
+    registerMathematicalCast(new MathematicalCast({
+        src: "real",
+        dst: "complex",
+        evaluators: realToComplex
+    }));
 
     function _clampRGB(x) {
         return (((x < 0) ? 0 : ((x > 255) ? 255 : x)) + 0.5) | 0;
@@ -9980,6 +10141,7 @@ In other words, the node cannot be used for computation until an abstract type a
     exports.Plot2D = Plot2D;
     exports.PolylineElement = PolylineElement;
     exports.ROUNDING_MODE = ROUNDING_MODE;
+    exports.RealInterval = RealInterval;
     exports.StandardColoringScheme = StandardColoringScheme;
     exports.Vec2 = Vec2;
     exports.WASM = WASM;
