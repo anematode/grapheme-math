@@ -1,4 +1,4 @@
-import {parseString, ParserError, Complex} from "../build/index.js"
+import {parseString, ParserError, Complex, compileNode} from "../build/index.js"
 import { expect } from "chai"
 import {expectMultipleCases} from "./test.js"
 
@@ -85,9 +85,16 @@ describe("ast", () => {
     })
   })
 
-  describe("compile", () => {
+  describe("compilation", () => {
     describe("normal", () => {
+      it("Defaults to normal with a single target and scope input", () => {
+        let n = compileNode(parseString("x * x + y").resolveTypes())
 
+        expect(n.targets[0].evaluate).to.be.a("function")
+
+        expect(n.targets[0].evaluate({ x: 2, y: 5 })).to.equal(9)
+        expect(() => n.targets[0].evaluate({ x: "chicken", y: 5 })).to.throw()
+      })
     })
   })
 })

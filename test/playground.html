@@ -14,8 +14,7 @@
 
         <script>
             function play() {
-              str = "(x+2)^2"
-              n = Grapheme.parseString(str)
+              n = Grapheme.compileNode(Grapheme.parseString("x * x + y").resolveTypes())
             }
 
             function play2() {

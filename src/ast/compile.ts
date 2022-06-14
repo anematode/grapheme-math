@@ -428,18 +428,19 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
     root = parseString(root)
   }
 
+  // Resolve nodes if necessary
   if (!root.allResolved()) {
     root.resolveTypes(options.variables ?? {}, { ...options.resolveTypes, throwOnUnresolved: true })
   }
 
+  // Uniformize properties
   let targetOpts = options.targets
-  if (!targetOpts) {
-    targetOpts = defaultTarget
-  }
+  if (!targetOpts) targetOpts = {}
 
-  if (!Array.isArray(targetOpts)) {
-    targetOpts = [ targetOpts ]
-  }
+  // Merge default options
+  targetOpts = Object.assign({ ...defaultTarget }, targetOpts)
+
+  if (!Array.isArray(targetOpts)) targetOpts = [ targetOpts ]   // default is a single target (targets[0])
 
   let rootProperties = {
     usedVariables: root.getVariableDependencies()

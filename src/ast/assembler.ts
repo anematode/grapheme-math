@@ -2,6 +2,7 @@ import { AllowedJSPrimitive } from "./evaluator.js";
 import { CompilationError, CompileTarget, genVariableName } from "./compile.js";
 import { ConcreteAssignmentGraph } from "./assignment_graph.js";
 import { ConcreteType } from "./type.js";
+import { EvaluationError } from "./node";
 
 interface AssemblerEnvironment {
   assembler: Assembler
@@ -56,32 +57,48 @@ export class Assembler {
 
     let typechecks = target.typechecks
 
+    /**
+     * Step 1: extract variables from scope or from arguments
+     */
     for (let [ name, node ] of neededInputs) {
       if (inputFormat.includes(name)) {
-        // Variable is immediately defined
+        // Variable is defined *in the input*, so we don't have to define it, although we may have to perform a typecheck
 
-        if (typechecks) {
-          let f = new TypecheckFragment()
-          f.name = name
-          f.concreteType = node.type
-
-          // TODO
-        }
       } else {
         if (usesScope) {
           let f = new VariableDefinitionCodeFragment()
+
           f.name = name
           f.value = `scope.${name}`
           f.verbatim = true
+          f.construct = true  // In this case, we do construct the variable directly since we're extracting it
 
           this.add(f)
         } else {
           throw new CompilationError(`Can't find variable ${name}`)
         }
       }
+
+      if (typechecks) {
+        let f = new TypecheckFragment()
+
+        f.name = name
+        f.concreteType = node.type
+
+        this.add(f)
+      }
     }
 
     this.inputFormat = inputFormat
+
+    // Scope typecheck
+    if (usesScope) {
+      let f = new TypecheckScopeFragment()
+
+      f.scopeName = "scope"
+
+      this.add(f)
+    }
 
     // First fragment in main is to get the input variables out of the arguments
 
@@ -344,10 +361,15 @@ abstract class CodeFragment {
   compileToEnv: (env: AssemblerEnvironment) => void
 }
 
+/**
+ * Fragment which throws an error if a typecheck fails. There is no "error code"–type handling for typecheck failures,
+ * because they are so damaging to performance that it would make no sense to use them. Essentially, if the wrong type
+ * is passed to a compiled function, it will have to be (partially or fully) deoptimized, defeating its purpose.
+ */
 class TypecheckFragment implements CodeFragment {
   preamble: null
-  name: string
-  concreteType: ConcreteType
+  name: string  // name of the variable to typecheck
+  concreteType: ConcreteType // concrete type it should follow
 
   compileToEnv (env: AssemblerEnvironment) {
     let t = this.concreteType
@@ -355,17 +377,50 @@ class TypecheckFragment implements CodeFragment {
     let tcv = t.typecheckVerbose
 
     if (!tc) {
+      // TODO make warning?
       throw new CompilationError(`No defined typecheck for concrete type ${t.toHashStr()}`)
     }
 
     let typecheckFast = env.importFunction(tc)
-    let typecheckVerbose = tcv ? env.importFunction(tcv) : "" // if no verbose typecheck available, don't include it
+    let typecheckVerbose = tcv ? env.importFunction(tcv) : ""
 
     let name = this.name
 
-    /*env.addMain(`if (${typecheckFast}(${this.name}) {
+    let inner = (typecheckVerbose) ?
+      `throw new ${env.importValue(EvaluationError)}("Variable ${name} failed typecheck: " + ${typecheckVerbose}(${name}));`
+    : `throw new ${env.importValue(EvaluationError)}("Variable ${name} failed typecheck");`  // verbose not available
 
-    }`)*/
+    // First perform a fast typecheck, then, if it fails, throw a verbose message
+    env.addMain(`if (!${typecheckFast}(${this.name})) {
+      ${inner}
+    }`)
+  }
+}
+
+export function checkScopeFast(scope: unknown): boolean {
+  return typeof scope === "object" && scope !== null
+}
+
+export function checkScopeVerbose(scope: unknown): string {
+  if (!checkScopeFast(scope)) return "Expected scope object (i.e., associative array object with variables as keys and values as the variables' values)"
+  return ""
+}
+
+/**
+ * Typecheck the scope object in particular
+ */
+class TypecheckScopeFragment implements CodeFragment {
+  preamble: null
+  scopeName: string
+
+  compileToEnv(env: AssemblerEnvironment) {
+    let scopeTypecheckFast = env.importFunction(checkScopeFast)
+    let scopeTypecheckVerbose = env.importFunction(checkScopeVerbose)
+    let scopeName = this.scopeName
+
+    env.addMain(`if (!${scopeTypecheckFast}(${scopeName})) {
+    throw new ${env.importValue(EvaluationError)}("Variable ${scopeName} failed typecheck: " + ${scopeTypecheckVerbose}(${scopeName}));
+    }`)
   }
 }
 
