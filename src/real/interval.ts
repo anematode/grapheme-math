@@ -9,7 +9,7 @@ class RealInterval {
   max: number;
   info: number;
 
-  constructor (min=0, max=min, info=0b111) {
+  constructor (min=0, max=min, info=0b1111) {
     this.min = +min
     this.max = +max
     this.info = info | 0
@@ -23,8 +23,16 @@ class RealInterval {
     return this.info & 0b10
   }
 
+  contMin () {
+    return this.info & 0b100
+  }
+
+  contMax () {
+    return this.info & 0b1000
+  }
+
   static fromObj (o) {
-    let min = 0, max = 0, info = 0b111, isStr = false
+    let min = 0, max = 0, info = 0b1111, isStr = false
     if (typeof o === "string") {
       isStr = true
       o = +o
@@ -47,10 +55,6 @@ class RealInterval {
     return new RealInterval(min, max, info)
   }
 
-  cont () {
-    return this.info & 0b100
-  }
-
   static set (src: RealInterval, dst: RealInterval) {
     dst.min = src.min
     dst.max = src.max
@@ -63,14 +67,14 @@ class RealInterval {
     } else {
       dst.min = num
       dst.max = num
-      dst.info = 0b111
+      dst.info = 0b1111
     }
   }
 
   static setRange (min, max, dst: RealInterval) {
     dst.min = min
     dst.max = max
-    dst.info = 0b111
+    dst.info = 0b1111
   }
 
   /**
@@ -478,14 +482,14 @@ class RealInterval {
     } else {
       if (srcMin < -1) {
         min = -Math.PI / 2
-        info &= 0b010
+        info &= 0b1010
       } else {
         min = Math.asin(srcMin)
       }
 
       if (srcMax > 1) {
         max = Math.PI / 2
-        info &= 0b010
+        info &= 0b1010
       } else {
         max = Math.asin(srcMax)
       }
@@ -517,7 +521,7 @@ class RealInterval {
     let srcMin = src.min, srcMax = src.max
 
     if (srcMax < -1 || srcMin > 1) {
-      dst.info = 0
+      dst.info = 0 // complete domain error
       return
     }
 
@@ -528,14 +532,15 @@ class RealInterval {
     } else {
       if (srcMin < -1) {
         max = Math.PI
-        info &= 0b010
+        // domain error
+        info &= 0b1010
       } else {
         max = Math.acos(srcMin)
       }
 
       if (srcMax > 1) {
         min = 0
-        info &= 0b010
+        info &= 0b1010
       } else {
         min = Math.acos(srcMax)
       }
@@ -619,13 +624,13 @@ class RealInterval {
               // 1/x^2
               dst.min = Math.pow(Math.max(Math.abs(s1min), Math.abs(s1max)), exp)
               dst.max = Infinity
-              dst.info = info & 0b010
+              dst.info = info & 0b1010
             } else {
               // Odd integers: if contains zero, contains an asymptote
               // 1/x
               dst.min = Infinity
               dst.max = Infinity
-              dst.info = info & 0b010
+              dst.info = info & 0b1010
             }
 
             return
@@ -670,7 +675,7 @@ class RealInterval {
 
           dst.min = min
           dst.max = max
-          dst.info = info & 0b010
+          dst.info = info & 0b1010
         }
       }
 
@@ -700,7 +705,7 @@ class RealInterval {
 
         dst.min = 0
         dst.max = containsZero ? 1 : 0 // 0^0 = 1
-        dst.info = info & (containsZero ? 0b011 : 0b111)
+        dst.info = info & (containsZero ? 0b1011 : 0b1111)
 
         return
       } else if (base === 1) {
@@ -712,7 +717,7 @@ class RealInterval {
       } else if (base === -1) {
         dst.min = -1
         dst.max = 1
-        dst.info = info & 0b010
+        dst.info = info & 0b1010
 
         return
       }
@@ -728,14 +733,14 @@ class RealInterval {
 
         min = -m
         max = m
-        info &= 0b010
+        info &= 0b1010
       } else if (base < 0) {
         // Shape: (-1/2)^x
         let m = Math.pow(base, s2min)
 
         min = -m
         max = m
-        info &= 0b010
+        info &= 0b1010
       } else if (base < 1) {
         // Monotonically decreasing
         min = Math.pow(base, s2max)
@@ -767,14 +772,14 @@ class RealInterval {
     if (hasAsymptote) {
       dst.min = -Infinity
       dst.max = Infinity
-      dst.info = info & 0b010
+      dst.info = info & 0b1010
 
       return
     }
 
     // Things are potentially undefined iff the denominator has negative numbers.
     let isAllDefined = s1min < 0
-    if (isAllDefined) info &= 0b010
+    if (isAllDefined) info &= 0b1010
 
     let minPow = Infinity, maxPow = -Infinity
 

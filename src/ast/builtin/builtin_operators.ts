@@ -3,7 +3,7 @@ import { castDistance, ConcreteEvaluator } from '../evaluator.js'
 import {gammaReal} from "../../real/gamma.js"
 import {Complex} from "../../complex/normal.js"
 import {MathematicalType} from "../type.js";
-import { RealInterval } from "../../real/interval";
+import { RealInterval } from "../../real/interval.js"
 
 // For now we'll just have a mapping  name -> Array of possibilities
 const KNOWN_OPERATORS: Map<string, OperatorDefinition[]> = new Map()

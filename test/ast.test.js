@@ -1,4 +1,4 @@
-import {parseString, ParserError, Complex, compileNode} from "../build/index.js"
+import {parseString, ParserError, Complex, compileNode, RealInterval} from "../build/index.js"
 import { expect } from "chai"
 import {expectMultipleCases} from "./test.js"
 
@@ -70,6 +70,24 @@ describe("ast", () => {
     })
   })
 
+  describe("interval real evaluation", () => {
+    describe("interval", () => {
+      it("Works for x*x+y", () => {
+        let n = parseString("x*x+y").resolveTypes({})
+
+        expect(n.evaluate({ x: new RealInterval(0, 2), y: new RealInterval(0, 3) }, { mode: "fast_interval" }))
+          .to.deep.equal(new RealInterval(0, 7, 0b1111))
+
+        expect(n.evaluate({ x: new RealInterval(-2, 2), y: new RealInterval(0, 3) }, { mode: "fast_interval" }))
+          .to.deep.equal(new RealInterval(-4, 7, 0b1111))
+
+        expect(() => n.evaluate(2, { mode: "fast_interval" })).to.throw()
+        expect(() => n.evaluate({ x: new RealInterval(-2, 2) }, { mode: "fast_interval" })).to.throw()
+        expect(() => n.evaluate({ x: 2, y: 3 }, { mode: "fast_interval" })).to.throw()
+      })
+    })
+  })
+
   describe("mathematical constants", () => {
     it("Works for pi and e", () => {
       let n = parseString("pi+e").resolveTypes()
@@ -119,5 +137,7 @@ describe("ast", () => {
         })).to.throw()
       })
     })
+
+
   })
 })
