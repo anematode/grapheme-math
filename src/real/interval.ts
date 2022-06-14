@@ -1,4 +1,5 @@
 import { roundDown, roundUp } from '../fp/manip.js'
+import { isStringInteger } from "../ast/is_string_integer.js"
 
 /**
  * A real interval with only min, max, defMin (bit 0), defMax (bit 1), contMin (bit 2), contMax (bit 3)
@@ -31,10 +32,15 @@ class RealInterval {
     return this.info & 0b1000
   }
 
-  static fromObj (o) {
+  static fromObj (o: unknown, correctRounding=false) {
     let min = 0, max = 0, info = 0b1111, isStr = false
     if (typeof o === "string") {
       isStr = true
+
+      if (correctRounding && isStringInteger(o)) {
+        correctRounding = false
+      }
+
       o = +o
     }
 
@@ -43,13 +49,17 @@ class RealInterval {
         info = 0
       } else {
         min = max = o
-        if (isStr) { // safely include the number
+        if (isStr && correctRounding) { // safely include the number
           min = roundDown(min)
           max = roundUp(max)
         }
       }
-    } else {
-      throw "unimplemented"
+    } else if (typeof o === "object" && o !== null) {
+      // @ts-ignore
+      if (o.min !== undefined && o.max !== undefined) min = +o.min, max = +o.max
+
+      // @ts-ignore
+      if (o.info !== undefined) info = +o.info
     }
 
     return new RealInterval(min, max, info)

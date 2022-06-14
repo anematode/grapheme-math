@@ -155,7 +155,7 @@ export class Assembler {
       }
 
       if (name === cGraph.root) { // single return statement
-        this.add(`return ${cGraph.root}`)
+        this.add(`return ${cGraph.root};`)
       }
     }
 
@@ -339,7 +339,7 @@ export class Assembler {
     for (let [ name, e ] of exports.entries()) {
       exportText += `${name}: ${e},`
     }
-    exportText += "}"
+    exportText += "};"
 
     let fBody = preambleF.text + fsText + exportText
     //console.log(fBody)
@@ -382,7 +382,7 @@ class TypecheckFragment implements CodeFragment {
     }
 
     let typecheckFast = env.importFunction(tc)
-    let typecheckVerbose = tcv ? env.importFunction(tcv) : ".js"
+    let typecheckVerbose = tcv ? env.importFunction(tcv) : "" // prevent doodoo
 
     let name = this.name
 

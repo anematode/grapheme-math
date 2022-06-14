@@ -79,13 +79,38 @@ export type CompileTarget = {
 }
 
 export type CompileNodeOptions = {
+  /**
+   * An explicit list of compile targets. If empty, a single target will be outputted
+   */
   targets?: CompileTargetOptions | CompileTargetOptions[]
+  /**
+   * List of variables considered static, augmented by built-in static variables (e.g., pi, i)
+   */
   staticVariables?: string[]
+  /**
+   * Whether to perform typechecks (may be overridden in specific targets)
+   */
   typechecks?: boolean
+  /**
+   * Whether to return a new instance of non primitive types each time (may be overridden in specific targets)
+   */
   returnNew?: boolean
+  /**
+   * List of variables and their mathematical types (may not be overridden in specific targets)
+   */
   variables?: {[key: string]: (string | MathematicalType)}
+  /**
+   * Specification for how mathematical types should be resolved (may not be overridden in specific targets)
+   */
   resolveTypes?: ResolveTypesOptions
+  /**
+   * Input format (may be overridden in a specific target)
+   */
   inputFormat?: string[]
+  /**
+   * Evaluation mode (may be overridden in a specific target)
+   */
+  mode?: string | EvaluationMode
 }
 
 type FilledCompileNodeOptions = {
@@ -440,6 +465,7 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
 
   let dt = { ...defaultTarget }
   if (options.inputFormat) dt.inputFormat = options.inputFormat
+  if (options.mode) dt.mode = options.mode
 
   if (!Array.isArray(targetOpts)) targetOpts = [ targetOpts ]   // default is a single target (targets[0])
 
