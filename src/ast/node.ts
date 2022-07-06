@@ -5,6 +5,7 @@ import {MathematicalConstants} from "./builtin/globals.js"
 import {localWarn} from "../utils.js";
 import {MathematicalType} from "./type.js";
 import {MathematicalCast, OperatorDefinition} from "./operator_definition.js";
+import { KeywordOperatorName } from "./parse";
 
 /**
  * To evaluate a given node whose operators and types have been identified, we provide the following:
@@ -145,6 +146,26 @@ type ResolveTypesVariableInfo = {
 
 type NodeTypeEnum = 0 | 1 | 2 | 3 | 4
 
+type ConvertToStringOptions = {
+  elideParentheses?: boolean
+}
+
+type FilledConvertToStringOptions = {
+  elideParentheses: boolean
+}
+
+type StringIntermediateResult = {
+  isOnlyVariable: boolean
+  lastOperator: KeywordOperatorName | string
+  lastNodeType: NodeTypeEnum
+  lastArity: 0 | 1 | 2
+  contents: string
+}
+
+const DEFAULT_CONVERT_TO_STRING_OPTIONS: FilledConvertToStringOptions = {
+  elideParentheses: true
+}
+
 export class ASTNode {
   type: MathematicalType | null
   info: ASTNodeInfo
@@ -204,6 +225,21 @@ export class ASTNode {
 
   toString (): string {
     return `[object ${this.nodeTypeAsString()}]`
+  }
+
+  /**
+   * Stringify this node by turning it into a readable string
+   */
+  toExprString(opts: ConvertToStringOptions = {}): string {
+    let filledOpts = Object.assign({}, DEFAULT_CONVERT_TO_STRING_OPTIONS, opts) as FilledConvertToStringOptions
+
+    let intermediate = this._toExprString(opts)
+
+
+  }
+
+  _toExprString(opts: FilledConvertToStringOptions): StringIntermediateResult {
+
   }
 
   /**

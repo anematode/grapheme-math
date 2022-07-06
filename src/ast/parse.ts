@@ -35,9 +35,44 @@ type ConstantToken = BaseToken & {
   value: string
 }
 
+const KEYWORD_OPERATOR_NAMES = [
+  '-' , '*' , '/' , '+' , 'and' , 'or' , '>=' , '>' , '<' , '<=' , '==' , '!=' , '^'
+] as const
+
+export type KeywordOperatorName = typeof KEYWORD_OPERATOR_NAMES[number]
+
+export function isKeywordOperator(s: string): boolean {
+  return KEYWORD_OPERATOR_NAMES.includes(s)
+}
+
+const PRECEDENCES = {
+  '': 20,
+  'cchain': 19,
+    '^': 11,
+  // unary minus is handled separately
+  '*': 10,
+  '/': 10,
+  '+': 8,
+  '-': 8,
+}
+
+export function getOperatorPrecedence(s: string, arity: number): number {
+  // PFCUEMDAS, where the empty string is considered to be generic parentheses. P=F, U=E right to left, M=D, A=S. If the
+  // returned precedence is odd, it should be considered right to left.
+  if (arity !== 1 && arity !== 2) throw new RangeError("?")
+
+  if (arity === 1) {
+    return (s === '-') ? 11 : -2
+  }
+
+  let p: number | undefined = PRECEDENCES[s]
+
+  return p ?? 20
+}
+
 type OperatorToken = BaseToken & {
   type: "operator"
-  op: string
+  op: KeywordOperatorName
 }
 
 type FunctionToken = BaseToken & {
@@ -162,12 +197,14 @@ function raiseParserError (string: string, info: ParserErrorInfo, message: strin
   let errorLen = (endToken?.index ?? index) - index + 1
 
   throw new ParserError(
-    'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen)) + (postScript ? ('\nNote: ' + postScript) :"")
+    'Malformed expression; ' + message +
+    (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen))
+    + (postScript ? ('\nNote: ' + postScript) :"")
   )
 }
 
 function raiseUnknownParserError (): never {
-  throw new ParserError("?") // hi
+  throw new ParserError("?")
 }
 
 function checkParensBalanced (s: string) {
@@ -221,6 +258,7 @@ const trimRight = ('trimRight' in String.prototype) ? (s: string): string => (s 
 }
 
 function getTokens (s: string): Token[] {
+  // TODO swtich to non-regex implementation
   let i = 0
   let original_string = s
 
@@ -333,8 +371,6 @@ function getTokens (s: string): Token[] {
           contents: match[0].slice(1, -1),
           index: i
         })
-
-        // fall through
       }
 
       raiseParserError(original_string, { index: i }, 'unrecognized token')
