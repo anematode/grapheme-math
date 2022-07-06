@@ -126,7 +126,7 @@ const operator_regex = /^[*\-\/+^]|^[<>]=?|^[=!]=|^and\s+|^or\s+/
 const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/  // functions may only use (, [ is reserved for indexing
 const constant_regex = /^[0-9]*\.?[0-9]*e?[0-9]+/
 const variable_regex = /^[a-zA-Z_][a-zA-Z0-9_]*/
-const paren_regex = /^[()\[\]]/
+const paren_regex = /^[()\[\]]|\|\|?/
 const comma_regex = /^,/
 const string_regex = /^"(?:[^"\\]|\\.)*"/
 
@@ -137,8 +137,9 @@ const string_regex = /^"(?:[^"\\]|\\.)*"/
  * @param info The token in the string where the error occurred, ideally with an index attribute
  * @param message The raw error message, to be combined with contextual information
  * @param noIndex If true, provide no index
+ * @param postScript Note to provide at end of message.
  */
-function raiseParserError (string: string, info: ParserErrorInfo, message: string = "", noIndex: boolean =false): never {
+function raiseParserError (string: string, info: ParserErrorInfo, message: string = "", noIndex: boolean =false, postScript: string=""): never {
   let index = -1, token: null | Token = null, endToken: null | Token = null
 
   if (info !== null) {
@@ -161,7 +162,7 @@ function raiseParserError (string: string, info: ParserErrorInfo, message: strin
   let errorLen = (endToken?.index ?? index) - index + 1
 
   throw new ParserError(
-    'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen))
+    'Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen)) + (postScript ? ('\nNote: ' + postScript) :"")
   )
 }
 
@@ -240,9 +241,17 @@ function getTokens (s: string): Token[] {
       match = s.match(paren_regex)
 
       if (match) {
+        let paren = match[0]
+        if (paren === '|' || paren === '||') {
+          // Attempted to use unsupported parenthesis-like syntax
+          raiseParserError(original_string, { index: i }, 'unrecognized token', false,
+            'For absolute value, use abs(x) or mag(z), both of which accept complex values.')
+          // TODO: For the norm of a vector, use norm(v). For the determinant of a matrix, use det(M).
+        }
+
         tokens.push({
           type: 'paren',
-          paren: match[0],
+          paren,
           index: i
         })
 
