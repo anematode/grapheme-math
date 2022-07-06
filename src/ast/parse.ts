@@ -42,7 +42,7 @@ const KEYWORD_OPERATOR_NAMES = [
 export type KeywordOperatorName = typeof KEYWORD_OPERATOR_NAMES[number]
 
 export function isKeywordOperator(s: string): boolean {
-  return KEYWORD_OPERATOR_NAMES.includes(s)
+  return KEYWORD_OPERATOR_NAMES.includes(s as any)
 }
 
 const PRECEDENCES = {

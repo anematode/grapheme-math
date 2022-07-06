@@ -233,13 +233,13 @@ export class ASTNode {
   toExprString(opts: ConvertToStringOptions = {}): string {
     let filledOpts = Object.assign({}, DEFAULT_CONVERT_TO_STRING_OPTIONS, opts) as FilledConvertToStringOptions
 
-    let intermediate = this._toExprString(opts)
+    let intermediate = this._toExprString(filledOpts as FilledConvertToStringOptions)
 
-
+    return ""
   }
 
   _toExprString(opts: FilledConvertToStringOptions): StringIntermediateResult {
-
+    return "poop" as any
   }
 
   /**
