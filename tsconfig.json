@@ -4,7 +4,7 @@
     "lib": [
       "es2017",
       "dom",
-      "es2021.weakref"
+      "esnext.weakref"
     ],
     "target": "es2017",
     "outDir": "build",

@@ -122,17 +122,53 @@ type RootNodeProperties = {
   usedVariables: VariableDependencies
 }
 
-export type CompileTargetResult = {
+export class CompileTargetResult {
   evaluate: Function
+
+  /**
+   * Input variables as a list of strings (for example, f(x,y)
+   */
   inputFormat: string[]
+
+  /**
+   * Input types as an array of ConcreteTypes, or a string in the case of "scope". In other words, scope is not (for
+   * now) considered a ConcreteType
+   */
   inputTypes: (ConcreteType | string)[]  // TODO make scope a special concrete type?
+
+  /**
+   * Return type
+   */
   returns: ConcreteType
 
-  targetOptions: CompileTarget
+  /**
+   * Properties of the target (evaluation mode, etc.)
+   */
+  properties: CompileTarget
+  usesScope: boolean
+
+  constructor(evaluate: Function, inputFormat: string[], inputTypes: (ConcreteType | string)[], returns: ConcreteType, properties: CompileTarget) {
+    this.evaluate = evaluate
+    this.inputFormat = inputFormat
+    this.inputTypes = inputTypes
+    this.returns = returns
+    this.properties = properties
+
+    this.usesScope = inputFormat.includes("scope")
+  }
 }
 
-export type CompileNodeResult = {
-  targets: CompileTargetResult | CompileTargetResult[]
+/**
+ * Result of calling compileNode
+ */
+export class CompileNodeResult {
+  rootNode: ASTNode
+  targets: CompileTargetResult[]
+
+  constructor(root: ASTNode, targets: CompileTargetResult[]) {
+    this.rootNode = root
+    this.targets = targets
+  }
 }
 
 const defaultTarget: CompileTargetOptions = {
@@ -442,9 +478,13 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
 
 /**
  * Compile an ASTNode into an evaluable function or functions. This should be preferred for any expression that will be
- * evaluated many times. This function needs to be pretty well optimized...
- * @param root
- * @param options
+ * evaluated many times, because although compilation takes some time, the benefit is quickly reached after even a few
+ * thousand evaluations. The traversal of the full AST is expensive!
+ * @param root Node to compile
+ * @param options List of options
+ * @return Returns, among other things, a list of targets, which reflect the targets specified in the compilation opts.
+ * If no targets are specified, or the options for the target are given at the topic level rather than in a list of
+ * targets, a target array with a single target is returned.
  */
 export function compileNode(root: ASTNode | string, options: CompileNodeOptions = {}): CompileNodeResult {
   if (!(root instanceof ASTNode)) {
@@ -505,23 +545,16 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
     assembler.prepareConcreteGraph(cAssignmentGraph, target)
 
     let compiled = assembler.compile()
+    let result = new CompileTargetResult((compiled.result as any).evaluate,
+      compiled.inputFormat,
+      compiled.inputTypes,
+      compiled.returns,
+      target)
 
-    compiledResults.push({
-      evaluate: (compiled.result as any).evaluate,
-      returns: compiled.returns,
-      inputFormat: compiled.inputFormat,
-      inputTypes: compiled.inputTypes,
-      targetOptions: target
-    })
+    compiledResults.push(result)
   }
 
-  if (!Array.isArray(targetOpts)) {
-    compiledResults = compiledResults[0]
-  }
-
-  return {
-    targets: compiledResults
-  }
+  return new CompileNodeResult(root.clone(), compiledResults)
 }
 
 // grep "from [^.]\+'$" -r src

@@ -365,6 +365,97 @@ In other words, the node cannot be used for computation until an abstract type a
 
     return knownVars
   }
+
+  /**
+   * Convert a node to LaTeX under a set of LaTeX options. LaTeX is done recursively
+   */
+  toLatex (opts: ConversionToLatexOptions = {}): string {
+    opts = Object.assign({}, DefaultConversionToLatexOptions, opts)
+
+    let filledOpts: FilledConversionToLatexOptions = {
+      useDynamicDelimeters: cvtMaybeBooleanOpt(opts.useDynamicDelimeters) as FilledUseDynamicDelimeters,
+      elideParentheses: cvtMaybeBooleanOpt(opts.elideParentheses) as FilledElideParentheses,
+      elideMultiplication: cvtMaybeBooleanOpt(opts.elideMultiplication) as FilledElideMultiplication,
+      multiplicationSymbol: opts.multiplicationSymbol as MultiplicationSymbol
+    }
+
+    let intermediate = this._toLatex(filledOpts)
+
+    return intermediate.contents
+  }
+
+  /**
+   * Internal conversion function
+   * @param opts
+   */
+  _toLatex (opts: FilledConversionToLatexOptions): LatexIntermediateResult {
+    return {
+      isTall: false,
+      contents: ""
+    }
+  }
+}
+
+function cvtMaybeBooleanOpt(opt: any): any {
+  if (typeof opt === "boolean") {
+    return opt ? "always" : "never"
+  }
+
+  return opt
+}
+
+type LatexIntermediateResult = {
+  /**
+   * Whether the result is considered "tall" for the purposes of dynamic delimeters
+   */
+  isTall: boolean,
+
+  contents: string
+}
+
+type FilledUseDynamicDelimeters = "always" | "sometimes" | "never"
+
+/**
+ * Whether to always use \left and \right with parentheses, etc. Always/true means use these with every parenthesis.
+ * Sometimes means use these with every parenthesis which is predicted to contain a "tall" element. Tall elements
+ * include fractions,
+ */
+type UseDynamicDelimeters = FilledUseDynamicDelimeters | boolean
+
+type FilledElideParentheses = "always" | "sometimes" | "never"
+
+/**
+ * Whether to remove parentheses which may be ignored by the usual rules of PEMDAS. If "sometimes", parentheses that are
+ * unnecessary for disambiguation, EXCEPT for non-nested parentheses in vertical fractions and non-nested parentheses in
+ * repeated exponentiation, will be kept. If "never", parentheses
+ */
+type ElideParentheses = FilledElideParentheses | boolean
+
+type FilledElideMultiplication = "always" | "never"
+
+type ElideMultiplication = FilledElideMultiplication | boolean
+
+type MultiplicationSymbol = "cdot" | "times"
+
+export type ConversionToLatexOptions = {
+  useDynamicDelimeters?: UseDynamicDelimeters
+  elideParentheses?: ElideParentheses
+  multiplicationSymbol?: "cdot" | "times"
+  elideMultiplication?: ElideMultiplication
+}
+
+const DefaultConversionToLatexOptions: FilledConversionToLatexOptions = {
+  useDynamicDelimeters: "always",
+  elideParentheses: "always",
+  multiplicationSymbol: "cdot",
+  elideMultiplication: "always"
+}
+
+type FilledConversionToLatexOptions = {
+  useDynamicDelimeters: FilledUseDynamicDelimeters
+  elideParentheses: FilledElideParentheses
+  multiplicationSymbol: MultiplicationSymbol
+  elideMultiplication: ElideMultiplication
 }
 
 export type ASTGroupParams = ASTNodeParams & {
@@ -426,6 +517,10 @@ export class ASTGroup extends ASTNode {
 
   _evaluate (vars, mode, opts) {
     return this.children[0]._evaluate(vars, mode, opts)
+  }
+
+  __toLatex(opts) {
+    // An ASTGroup is a purposefully parenthesed
   }
 }
 
