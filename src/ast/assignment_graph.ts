@@ -13,13 +13,13 @@
 
 import { ConcreteType, MathematicalType } from "./type.js";
 import { ConcreteEvaluator } from "./evaluator.js";
-import { OperatorDefinition } from "./operator_definition.js";
-import { ASTNode } from "./node.js";
-import { CompilationError } from "./compile.js";
+import { MathematicalCast, OperatorDefinition } from "./operator_definition.js";
+import { ASTGroup, ASTNode, ConstantNode, OperatorNode, VariableNode } from "./node.js";
+import { CompilationError, genVariableName } from "./compile.js";
 
 type NodeBase = {
   // Technically duplicates the information in the Map, but makes things a bit easier. Each node has a unique name,
-  // including across function boundaries, except for variables and the special variable $output.
+  // including across function boundaries, except for variables and the special variable $ret.
   name: string
 
   // Whether this node is an input node
@@ -131,7 +131,132 @@ class AssignmentGraph<NodeType extends NodeBase> {
 }
 
 export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGraphNode> {
+  constructFromNode(root: ASTNode) {
+    let assnMap = new Map<string, MathematicalGraphNode>()
 
+    // ASTNode -> graph node name
+    let astToGraphMap = new Map<ASTNode, string>()
+
+    function defineGraphNode(name: string, astNode: ASTNode | null, info: MathematicalGraphNode) {
+      if (astNode) {
+        astToGraphMap.set(astNode, name)
+      }
+
+      assnMap.set(name, info)
+    }
+
+    // Implicitly left to right
+    root.applyAll((astNode: ASTNode) => {
+      let gNode: MathematicalGraphNode | null = null
+      let name = astToGraphMap.get(astNode) ?? genVariableName()
+
+      switch (astNode.nodeType()) {
+        case ASTNode.TYPES.VariableNode: {
+          if (astToGraphMap.get(astNode)) {
+            // Only define variables once
+            return
+          }
+
+          if (!astNode.operatorDefinition) {
+            name = (astNode as VariableNode).name
+
+            gNode = {
+              name,
+              type: astNode.type!,  // must be non-null since it passed null checks earlier
+              isConditional: false,
+              isCast: false,
+              isInput: true,
+              astNode
+            }
+
+            break
+          }
+        }
+        // Fall through
+        case ASTNode.TYPES.OperatorNode:
+          let n = astNode as OperatorNode
+
+          let args: ASTNode[] = n.children ?? []
+          let casts: MathematicalCast[] = (args.length === 0) ? [] : n.casts!
+
+          let castedArgs = casts.map((cast, i) => {
+            let arg = args[i]
+            let argName = astToGraphMap.get(arg)
+
+            if (!argName) {
+              throw new CompilationError("?")
+            }
+
+            if (cast.isIdentity()) {
+              return argName
+            }
+
+            let castedArgName = genVariableName()
+
+            // Create node for the cast
+            defineGraphNode(castedArgName, arg, {
+              name: castedArgName,
+              type: cast.dstType(),
+              isConditional: false,
+              isCast: true,
+              isInput: false,
+              args: [ argName ],
+              operatorDefinition: cast,
+              astNode: arg // for casts, store the argument as the corresponding node
+            })
+
+            return castedArgName
+          })
+
+          gNode = {
+            name,
+            type: n.type!,
+            isConditional: false,
+            isCast: false,
+            isInput: false,
+            args: castedArgs,
+            operatorDefinition: n.operatorDefinition!,
+            astNode
+          }
+
+          break
+        case ASTNode.TYPES.ASTGroup:
+          // Groups are entirely elided by mapping them to the variable name of their only child
+          let c = (astNode as ASTGroup).children[0]
+          if (!c) {
+            throw new CompilationError("Empty ASTGroup in expression")
+          }
+
+          astToGraphMap.set(astNode, astToGraphMap.get(c)!)
+          return
+        case ASTNode.TYPES.ConstantNode:
+          gNode = {
+            name,
+            type: astNode.type!,
+            isConditional: false,
+            isCast: false,
+            isInput: false,
+            value: (astNode as ConstantNode).value,
+            astNode
+          }
+
+          break
+        case ASTNode.TYPES.ASTNode:
+          throw new CompilationError(`Raw ASTNode in expression`)
+      }
+
+      defineGraphNode(name, astNode, gNode)
+    }, false /* all children */, true /* children first */)
+
+    this.nodes = assnMap
+
+    let graphRoot = astToGraphMap.get(root)
+    if (!graphRoot) {
+      throw new CompilationError("?")
+    }
+
+    this.root = graphRoot
+  }
 }
 
 export class ConcreteAssignmentGraph extends AssignmentGraph<ConcreteGraphNode> {

@@ -1,7 +1,6 @@
 
 /**
- * Given a string like "1.5", "3e10", etc., determine whether it is an integer without evaluating it. Assumes the string
- * is well-formed.
+ * Given a string like "1.5", "3e10", etc., determine whether it has an integer value without evaluating it.
  */
 export function isStringInteger (s: string): boolean {
   if (s[0] === '-') s = s.slice(1) // trim leading '-'

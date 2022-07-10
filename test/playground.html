@@ -14,7 +14,10 @@
 
         <script>
             function play() {
-              n = Grapheme.compileNode(Grapheme.parseString("x * x + y").resolveTypes())
+              n = Grapheme.compileNode(Grapheme.parseString("x * x + y").resolveTypes(), {
+                inputFormat: ['x', 'y'],
+                typechecks: true
+              })
             }
 
             function play2() {
@@ -28,7 +31,6 @@
 
               scene.add(plot2d)
               scene.add(polyline)
-
 
               polyline.setVertices([100, 100, 200, 200])
 

@@ -4,6 +4,11 @@ import { ConcreteAssignmentGraph } from "./assignment_graph.js";
 import { ConcreteType } from "./type.js";
 import { EvaluationError } from "./node.js"
 
+/**
+ * The assembler transforms an optimized concrete assignment graph or set of graphs into an actual, invocable JS
+ * function or set of functions.
+ */
+
 interface AssemblerEnvironment {
   assembler: Assembler
   importFunction: (f: Function) => string

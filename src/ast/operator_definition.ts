@@ -246,43 +246,27 @@ export class IdentityMathematicalCast extends MathematicalCast {
   }
 }
 
-type TemplateTypeRestrictions = {
-  // ?
-}
-
-
-type TemplateTypeBase = {
-  name: string    // Generic name
-  restrictions: TemplateTypeRestrictions
-}
-
-type VariadicTemplateType = {
-  isVariadic: true
-  variadicCountMin: number
-  variadicCountMax: number
-}
-
-type TemplateType = {  // Either variadic or not
-  isVariadic: false
-} & VariadicTemplateType
-
-type TemplateTypes = {
-  types: TemplateType[]
-}
-
 /**
- * An operator definition template *generates* OperatorDefinitions based off of various templates. It is not an
- * OperatorDefinition itself, but does try to check for satisfiability: does a given set of arguments have an
- * appropriate specialization? In the future, template arguments will also be able to be explicitly specified.
+ * An operator definition template may generate operator definitions on the fly, with various signatures. An operator
+ * definition template may be variadic and may take types as template parameters. To see whether certain arguments can
+ * call a given template definition, the following stages are done:
+ *
+ * - Any "length" attributes, in terms of number of parameters, are found
+ * - Types are compared. The "last common ancestor" of a set of types mapping to a template argument T will be chosen
+ *   for T.
+ *
+ * Template definitions of built-in functions are always tried after non-template definitions have been tried. They are
+ * then selected in an as-yet-undetermined order.
+ *
+ * Example: ifelse::<T>(a: T, cond: bool, b: T): T
+ * Example: piecewise::<T,N>(a: T, [cond: bool, b: T] * N): T
+ * Example: cchain::<N>(a: real, [cmp: cmp, b: real] * N): bool
+ * Example: restrict::<T>(a: T, cond: bool)
  */
-class OperatorDefinitionTemplate {
-  templateTypes: TemplateType[]  // Types that the template extends from
-  returnType: TemplateType[]
+export class OperatorDefinitionTemplate {
 
-  isVariadic: boolean
-  variadicCountMin: number
-  variadicCountMax: number
 }
+
 
 /**
  * Identity casts generated on a per-type basis (somewhat of a formalism; in a compiled setting these will all be elided)

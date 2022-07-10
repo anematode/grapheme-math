@@ -9,6 +9,7 @@ import { FastBooleanInterval } from '../../bool/fast_interval.js'
 import { NullableInteger } from '../../int/normal.js'
 import { RealInterval } from '../../real/interval.js'
 import { Complex } from '../../complex/normal.js'
+import { Vec2 } from "../../vec/vec2";
 
 // The boolean type is nullable. meaning it takes on a value of 0, 1, or NaN. -0, false, and true are also ACCEPTED as
 // values, but aren't used that way internally, since each is implicitly casted to the correct value in all numeric
@@ -59,6 +60,29 @@ let concreteComplex = new ConcreteType({
   castPermissive: Complex.fromObj
 })
 
+// Strings are not implemented in interval arithmetic because that's rather meaningless
+let concreteString = new ConcreteType({
+  name: "string",
+  isPrimitive: true,
+  init: () => "",
+
+  typecheck: b => typeof b === "string",
+  typecheckVerbose: b => (typeof b !== "string") ? ("Expected JS string, found type " + (typeof b)) : "",
+  castPermissive: x => x + ''
+})
+
+let concreteVec2 = new ConcreteType({
+  name: "vec2",
+  isPrimitive: false,
+  init: () => new Vec2(0, 0),
+
+  typecheck: b => b instanceof Vec2,
+  typecheckVerbose: b => (b instanceof Vec2) ? "Expected Vec2" : "",
+  clone: (c: Vec2) => new Vec2(c.x, c.y),
+  copyTo: (src: Vec2, dst: Vec2) => { dst.x = src.x; dst.y = src.y },
+  castPermissive: Vec2.fromObj
+})
+
 let concreteIntervalBoolean = new ConcreteType({
   name: "interval_bool",
   isPrimitive: false,
@@ -85,21 +109,27 @@ let concreteIntervalInt = new ConcreteType({
   ...concreteIntervalReal,
   name: "interval_int"
 })
+
 /**
  * MATHEMATICAL TYPES
  */
 
-let mathematicalReal = new MathematicalType({
+;[{
   name: "real"
-})
-
-let mathematicalInt = new MathematicalType({
+}, {
   name: "int"
-})
-
-let mathematicalComplex = new MathematicalType({
+}, {
   name: "complex"
-})
+}, {
+  name: "vec2"
+}, {
+  name: "vec3"
+}, {
+  name: "bool"
+}, {
+  name: "string"
+}].forEach(params => defineMathematicalType(new MathematicalType(params)))
+
 
 export function defineConcreteType (concreteType: ConcreteType) {
   let { name } = concreteType
@@ -154,6 +184,3 @@ let mathematicalTypes = new Map<string, MathematicalType>()
 
   // Concrete types
 ;[concreteBoolean, concreteInt, concreteReal, concreteIntervalBoolean, concreteIntervalInt, concreteIntervalReal, concreteComplex].forEach(defineConcreteType)
-
-// abstract types
-;[mathematicalReal, mathematicalInt, mathematicalComplex].forEach(defineMathematicalType)

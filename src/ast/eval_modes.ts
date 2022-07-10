@@ -78,9 +78,9 @@ export function toEvaluationMode(o: any, throwOnError=true): EvaluationMode | nu
 
   if (!mode && throwOnError) {
     if (typeof o === "string") {
-      throw new Error("Unrecognized evaluation mode " + o)
+      throw new Error(`Unrecognized evaluation mode '${o}'`)
     } else {
-      throw new Error("Evaluation mode must be a string ('normal') or EvaluationMode object")
+      throw new Error("Evaluation mode must be a string (e.g., 'normal') or EvaluationMode object")
     }
   }
 

@@ -180,20 +180,17 @@ export class ASTNode {
 
     /**
      * Other info about the node (for example, where it was in a parsed string)
-     * @type {{}}
      */
     this.info = params.info ?? {}
 
     /**
      * The node's operator. If a constant, this will be null and the value will be converted later. If an operator, this
      * must not be null (or the definition is not known). If a variable, this will be called if this is not null.
-     * @type {null|OperatorDefinition}
      */
     this.operatorDefinition = params.operatorDefinition ?? null
 
     /**
      * Highest node in this tree
-     * @type {null|ASTNode}
      */
     this.topNode = null
   }

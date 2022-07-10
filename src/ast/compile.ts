@@ -201,7 +201,7 @@ function checkInputFormat(inputFormat: string[]) {
 
     for (let j = i + 1; j < inputFormat.length; ++j) {
       if (varName === inputFormat[j]) {
-        throw new CompilationError(`Variable ${varName} is defined twice (at indices ${i} and ${j})`)
+        throw new CompilationError(`Variable ${varName} is given twice (at indices ${i} and ${j})`)
       }
     }
   }
@@ -247,135 +247,7 @@ function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOpti
 
 function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
   let graph = new MathematicalAssignmentGraph()
-  let assnMap = new Map<string, MathematicalGraphNode>()
-
-  // ASTNode -> graph node name
-  let astToGraphMap = new Map<ASTNode, string>()
-
-  //astToGraphMap.set(root, "$ret")
-
-  function defineGraphNode(name: string, astNode: ASTNode | null, inf: MathematicalGraphNode) {
-    if (astNode) {
-      astToGraphMap.set(astNode, name)
-    }
-
-    assnMap.set(name, inf)
-  }
-
-  // Implicitly left to right
-  root.applyAll((astNode: ASTNode) => {
-    let gNode: MathematicalGraphNode | null = null
-    let name = astToGraphMap.get(astNode) ?? genVariableName()
-
-    switch (astNode.nodeType()) {
-      case ASTNode.TYPES.VariableNode: {
-        if (astToGraphMap.get(astNode)) {
-          // Only define variables once
-          return
-        }
-
-        if (!astNode.operatorDefinition) {
-          name = (astNode as VariableNode).name
-
-          gNode = {
-            name,
-            type: astNode.type!,  // must be non-null since it passed null checks earlier
-            isConditional: false,
-            isCast: false,
-            isInput: true,
-            astNode
-          }
-
-          break
-        }
-      }
-      // Fall through
-      case ASTNode.TYPES.OperatorNode:
-        let n = astNode as (OperatorNode | VariableNode)
-
-        // @ts-ignore
-        let args: ASTNode[] = n.children ?? []
-        // @ts-ignore
-        let casts: MathematicalCast[] = (args.length === 0) ? [] : n.casts
-
-        let castedArgs = casts.map((cast, i) => {
-          let arg = args[i]
-          let argName = astToGraphMap.get(arg)
-
-          if (!argName) {
-            throw new CompilationError("?")
-          }
-
-          if (cast.isIdentity()) {
-            return argName
-          }
-
-          let castedArgName = genVariableName()
-
-          // Create node for the cast
-          defineGraphNode(castedArgName, arg, {
-            name: castedArgName,
-            type: cast.dstType(),
-            isConditional: false,
-            isCast: true,
-            isInput: false,
-            args: [ argName ],
-            operatorDefinition: cast,
-            astNode: arg // for casts, store the argument as the corresponding node
-          })
-
-          return castedArgName
-        })
-
-        gNode = {
-          name,
-          type: n.type!,
-          isConditional: false,
-          isCast: false,
-          isInput: false,
-          args: castedArgs,
-          operatorDefinition: n.operatorDefinition!,
-          astNode
-        }
-
-        break
-      case ASTNode.TYPES.ASTGroup:
-        // Groups are entirely elided by mapping them to the variable name of their only child
-        let c = (astNode as ASTGroup).children[0]
-        if (!c) {
-          throw new CompilationError("Empty ASTGroup in expression")
-        }
-
-        astToGraphMap.set(astNode, astToGraphMap.get(c)!)
-        return
-      case ASTNode.TYPES.ConstantNode:
-        gNode = {
-          name,
-          type: astNode.type!,
-          isConditional: false,
-          isCast: false,
-          isInput: false,
-          value: (astNode as ConstantNode).value,
-          astNode
-        }
-
-        break
-      case ASTNode.TYPES.ASTNode:
-        throw new CompilationError(`Raw ASTNode in expression`)
-    }
-
-    defineGraphNode(name, astNode, gNode)
-  }, false /* all children */, true /* children first */)
-
-  graph.nodes = assnMap
-
-  let graphRoot = astToGraphMap.get(root)
-  if (!graphRoot) {
-    throw new CompilationError("?")
-  }
-
-  graph.root = graphRoot
-
+  graph.constructFromNode(root)
   return graph
 }
 
@@ -504,8 +376,10 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
   if (!targetOpts) targetOpts = {}
 
   let dt = { ...defaultTarget }
+
   if (options.inputFormat) dt.inputFormat = options.inputFormat
   if (options.mode) dt.mode = options.mode
+  if ('typechecks' in options) dt.typechecks = options.typechecks
 
   if (!Array.isArray(targetOpts)) targetOpts = [ targetOpts ]   // default is a single target (targets[0])
 
@@ -556,5 +430,3 @@ export function compileNode(root: ASTNode | string, options: CompileNodeOptions 
 
   return new CompileNodeResult(root.clone(), compiledResults)
 }
-
-// grep "from [^.]\+'$" -r src

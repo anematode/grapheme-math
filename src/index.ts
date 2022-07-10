@@ -1,5 +1,7 @@
 export * from './fp/manip.js'
 export * from './arb/bigfloat.js'
+
+//export * from './ast/ast.js'
 export * from './ast/parse.js'
 export * from './ast/compile.js'
 export * from './ast/builtin/builtin_casts.js'
