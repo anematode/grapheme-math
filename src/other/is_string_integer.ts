@@ -1,4 +1,3 @@
-
 /**
  * Given a string like "1.5", "3e10", etc., determine whether it has an integer value without evaluating it.
  */

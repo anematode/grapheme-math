@@ -12,9 +12,9 @@
 // shared logic.
 
 import { ConcreteType, MathematicalType } from "./type.js";
-import { ConcreteEvaluator } from "./evaluator.js";
+import { ConcreteEvaluator } from "./concrete_evaluator.js";
 import { MathematicalCast, OperatorDefinition } from "./operator_definition.js";
-import { ASTGroup, ASTNode, ConstantNode, OperatorNode, VariableNode } from "./node.js";
+import { ExpressionASTGroup, ExpressionASTNode, ConstantNode, OperatorNode, VariableNode } from "./expression.js";
 import { CompilationError, genVariableName } from "./compile.js";
 
 type NodeBase = {
@@ -34,7 +34,7 @@ type NodeBase = {
   args?: string[]
 
   // Corresponding AST node, if applicable
-  astNode?: ASTNode
+  astNode?: ExpressionASTNode
 
   // Used for constant nodes
   value?: any
@@ -131,13 +131,13 @@ class AssignmentGraph<NodeType extends NodeBase> {
 }
 
 export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGraphNode> {
-  constructFromNode(root: ASTNode) {
+  constructFromNode(root: ExpressionASTNode) {
     let assnMap = new Map<string, MathematicalGraphNode>()
 
     // ASTNode -> graph node name
-    let astToGraphMap = new Map<ASTNode, string>()
+    let astToGraphMap = new Map<ExpressionASTNode, string>()
 
-    function defineGraphNode(name: string, astNode: ASTNode | null, info: MathematicalGraphNode) {
+    function defineGraphNode(name: string, astNode: ExpressionASTNode | null, info: MathematicalGraphNode) {
       if (astNode) {
         astToGraphMap.set(astNode, name)
       }
@@ -146,12 +146,12 @@ export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGra
     }
 
     // Implicitly left to right
-    root.applyAll((astNode: ASTNode) => {
+    root.applyAll((astNode: ExpressionASTNode) => {
       let gNode: MathematicalGraphNode | null = null
       let name = astToGraphMap.get(astNode) ?? genVariableName()
 
       switch (astNode.nodeType()) {
-        case ASTNode.TYPES.VariableNode: {
+        case ExpressionASTNode.TYPES.VariableNode: {
           if (astToGraphMap.get(astNode)) {
             // Only define variables once
             return
@@ -173,10 +173,10 @@ export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGra
           }
         }
         // Fall through
-        case ASTNode.TYPES.OperatorNode:
+        case ExpressionASTNode.TYPES.OperatorNode:
           let n = astNode as OperatorNode
 
-          let args: ASTNode[] = n.children ?? []
+          let args: ExpressionASTNode[] = n.children ?? []
           let casts: MathematicalCast[] = (args.length === 0) ? [] : n.casts!
 
           let castedArgs = casts.map((cast, i) => {
@@ -220,16 +220,16 @@ export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGra
           }
 
           break
-        case ASTNode.TYPES.ASTGroup:
+        case ExpressionASTNode.TYPES.ASTGroup:
           // Groups are entirely elided by mapping them to the variable name of their only child
-          let c = (astNode as ASTGroup).children[0]
+          let c = (astNode as ExpressionASTGroup).children[0]
           if (!c) {
             throw new CompilationError("Empty ASTGroup in expression")
           }
 
           astToGraphMap.set(astNode, astToGraphMap.get(c)!)
           return
-        case ASTNode.TYPES.ConstantNode:
+        case ExpressionASTNode.TYPES.ConstantNode:
           gNode = {
             name,
             type: astNode.type!,
@@ -241,7 +241,7 @@ export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGra
           }
 
           break
-        case ASTNode.TYPES.ASTNode:
+        case ExpressionASTNode.TYPES.ASTNode:
           throw new CompilationError(`Raw ASTNode in expression`)
       }
 

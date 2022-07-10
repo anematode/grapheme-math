@@ -14,7 +14,7 @@
 
         <script>
             function play() {
-              n = Grapheme.compileNode(Grapheme.parseString("x * x + y").resolveTypes(), {
+              n = Grapheme.compileNode("x * x + y", {
                 inputFormat: ['x', 'y'],
                 typechecks: true
               })

@@ -1,4 +1,4 @@
-import {toConcreteType} from "./builtin/builtin_types.js"
+import {toConcreteType} from "./builtin/types.js"
 import {ConcreteType, MathematicalType} from "./type.js";
 
 type AcceptableTypeMap = Map<string, ConcreteType> | { [key: string]: string }

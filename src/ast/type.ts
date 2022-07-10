@@ -83,11 +83,15 @@ export class ConcreteType {
       if (!this.init || !this.initStr) {
         let init, initStr
 
-        if (typeof this.defaultValue === "number") { // nullable booleans, ints, and reals are all represented by a JS number
-          init = () => 0;
-          initStr = "0";
+        if (typeof this.defaultValue === "number") {
+          // nullable booleans, ints, and reals are all represented by a JS number and default to 0
+          init = () => 0
+          initStr = "0"
+        } else if (typeof this.defaultValue === "string") {
+          init = () => ""
+          initStr = "''"
         } else {
-          throw new Error("Invalid primitive")
+          throw new Error("Invalid primitive " + (typeof this.defaultValue))
         }
 
         this.init = init

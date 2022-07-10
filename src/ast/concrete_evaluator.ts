@@ -29,7 +29,7 @@
 // cast and a concrete cast. What's special about casts, though, is that there are casts between concrete types that
 // usually are used in different modes. For example, real -> fast_interval_real.
 
-import { toConcreteType } from './builtin/builtin_types.js'
+import { toConcreteType } from './builtin/types.js'
 import {ConcreteType} from "./type.js"
 import { MathematicalCast } from "./operator_definition.js";
 

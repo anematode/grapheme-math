@@ -1,23 +1,22 @@
-/**
- * In this file, we convert strings representing expressions in Grapheme into their ASTNode counterparts. For example,
- * x^2 is compiled to OperatorNode{operator=^, children=[VariableNode{name="x"}, ConstantNode{value="2"}]}
- */
 import {
   ConstantNode,
   VariableNode,
   OperatorNode,
-  ASTGroup,
-  ASTNode, ConstantNodeParams, ASTGroupParams, OperatorNodeParams, VariableNodeParams
-} from './node.js'
-import { toMathematicalType } from './builtin/builtin_types.js'
+  ExpressionASTGroup,
+  ExpressionASTNode, ConstantNodeParams, ASTGroupParams, OperatorNodeParams, VariableNodeParams
+} from './expression.js'
+import { toMathematicalType } from './builtin/types.js'
 import {MathematicalType} from "./type.js";
-import { isStringInteger } from "./is_string_integer.js"
+import { isStringInteger } from "../other/is_string_integer.js"
 
-export class ParserError extends Error {
+/**
+ * Thrown by parseExpression, usually with a descriptive message.
+ */
+export class ParseExpressionError extends Error {
   constructor (message) {
     super(message)
 
-    this.name = 'ParserError'
+    this.name = 'ParseExpressionError'
   }
 }
 
@@ -35,40 +34,11 @@ type ConstantToken = BaseToken & {
   value: string
 }
 
-const KEYWORD_OPERATOR_NAMES = [
+export const KEYWORD_OPERATOR_NAMES = [
   '-' , '*' , '/' , '+' , 'and' , 'or' , '>=' , '>' , '<' , '<=' , '==' , '!=' , '^'
 ] as const
 
 export type KeywordOperatorName = typeof KEYWORD_OPERATOR_NAMES[number]
-
-export function isKeywordOperator(s: string): boolean {
-  return KEYWORD_OPERATOR_NAMES.includes(s as any)
-}
-
-const PRECEDENCES = {
-  '': 20,
-  'cchain': 19,
-    '^': 11,
-  // unary minus is handled separately
-  '*': 10,
-  '/': 10,
-  '+': 8,
-  '-': 8,
-}
-
-export function getOperatorPrecedence(s: string, arity: number): number {
-  // PFCUEMDAS, where the empty string is considered to be generic parentheses. P=F, U=E right to left, M=D, A=S. If the
-  // returned precedence is odd, it should be considered right to left.
-  if (arity !== 1 && arity !== 2) throw new RangeError("?")
-
-  if (arity === 1) {
-    return (s === '-') ? 11 : -2
-  }
-
-  let p: number | undefined = PRECEDENCES[s]
-
-  return p ?? 20
-}
 
 type OperatorToken = BaseToken & {
   type: "operator"
@@ -167,7 +137,6 @@ const string_regex = /^"(?:[^"\\]|\\.)*"/
 
 /**
  * Helper function to throw an error at a specific index in a string.
- * TODO make signature uniform
  * @param string Erroneous parsed string
  * @param info The token in the string where the error occurred, ideally with an index attribute
  * @param message The raw error message, to be combined with contextual information
@@ -196,7 +165,7 @@ function raiseParserError (string: string, info: ParserErrorInfo, message: strin
   let spaces = noIndex ? '' : ' '.repeat(index)
   let errorLen = (endToken?.index ?? index) - index + 1
 
-  throw new ParserError(
+  throw new ParseExpressionError(
     'Malformed expression; ' + message +
     (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen))
     + (postScript ? ('\nNote: ' + postScript) :"")
@@ -204,7 +173,7 @@ function raiseParserError (string: string, info: ParserErrorInfo, message: strin
 }
 
 function raiseUnknownParserError (): never {
-  throw new ParserError("?")
+  throw new ParseExpressionError("?")
 }
 
 function checkParensBalanced (s: string) {
@@ -475,7 +444,7 @@ function findParenIndices (children: UnprocessedChild[]): [ number, number, Toke
 /**
  * Convert constants and variables to their ASTNode counterparts
  */
-function processConstantsAndVariables (tokens: (Token|ASTNode)[]) {
+function processConstantsAndVariables (tokens: (Token|ExpressionASTNode)[]) {
   for (let i = 0; i < tokens.length; ++i) {
     let token = tokens[i]
     let node
@@ -840,15 +809,15 @@ function parseTokens (tokens: Token[], string: string): UnprocessedASTNode {
   raiseUnknownParserError()
 }
 
-function convertToASTNode(string: string, n: UnprocessedASTNode): ASTNode {
-  let nn: ASTNode, isGroup = false
+function convertToASTNode(string: string, n: UnprocessedASTNode): ExpressionASTNode {
+  let nn: ExpressionASTNode, isGroup = false
 
   switch (n.nodeType) {
     case "constant":
       nn = new ConstantNode(n.info as ConstantNodeParams)
       break
     case "group":
-      nn = new ASTGroup(n.info as ASTGroupParams)
+      nn = new ExpressionASTGroup(n.info as ASTGroupParams)
       isGroup = true
       break
     case "operator":
@@ -864,7 +833,7 @@ function convertToASTNode(string: string, n: UnprocessedASTNode): ASTNode {
   }
 
   if (isGroup) {
-    let children: ASTNode[] = []
+    let children: ExpressionASTNode[] = []
 
     for (let i = 0; i < n.children.length; ++i) {
       let child = n.children[i]
@@ -877,16 +846,16 @@ function convertToASTNode(string: string, n: UnprocessedASTNode): ASTNode {
     }
 
     // nn is an ast group by construction
-    (nn as ASTGroup).children = children
+    (nn as ExpressionASTGroup).children = children
   }
 
   return nn
 }
 
-function parseString (string: string): ASTNode {
+function parseExpression (string: string): ExpressionASTNode {
   // noinspection ALL
   if (typeof string !== "string") {
-    throw new ParserError("parseString expects a string")
+    throw new ParseExpressionError("parseString expects a string")
   }
 
   checkParensBalanced(string)
@@ -899,4 +868,5 @@ function parseString (string: string): ASTNode {
   return convertToASTNode(string, parsed)
 }
 
-export { parseString, getTokens }
+export { parseExpression, getTokens }
+

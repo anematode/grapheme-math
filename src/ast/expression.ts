@@ -1,11 +1,11 @@
-import {resolveOperatorDefinition} from './builtin/builtin_operators.js'
-import {toMathematicalType} from "./builtin/builtin_types.js"
+import {resolveOperatorDefinition} from './builtin/operators.js'
+import {toMathematicalType} from "./builtin/types.js"
 import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
 import {MathematicalConstants} from "./builtin/globals.js"
 import {localWarn} from "../utils.js";
 import {MathematicalType} from "./type.js";
 import {MathematicalCast, OperatorDefinition} from "./operator_definition.js";
-import { KeywordOperatorName } from "./parse";
+import { KeywordOperatorName } from "./parse_expression";
 
 /**
  * To evaluate a given node whose operators and types have been identified, we provide the following:
@@ -70,7 +70,7 @@ const reservedVariableNames = [
  * Helper function (doesn't need to be fast)
  * @returns {string}
  */
-function prettyPrintNode(node: ASTNode, name: string, keys: string[], params: any) {
+function prettyPrintNode(node: ExpressionASTNode, name: string, keys: string[], params: any) {
   let out: string[] = []
 
   for (let key of keys) {
@@ -108,7 +108,7 @@ export type ASTNodeParams = {
   operatorDefinition?: OperatorDefinition | null
 }
 
-type ASTNodeFunctor = (node: ASTNode, depth?: number) => void
+type ASTNodeFunctor = (node: ExpressionASTNode, depth?: number) => void
 
 export type ResolveTypesOptions = {
   /** @defaultValue "real" */
@@ -166,7 +166,7 @@ const DEFAULT_CONVERT_TO_STRING_OPTIONS: FilledConvertToStringOptions = {
   elideParentheses: true
 }
 
-export class ASTNode {
+export class ExpressionASTNode {
   type: MathematicalType | null
   info: ASTNodeInfo
   operatorDefinition: OperatorDefinition | null
@@ -281,8 +281,8 @@ export class ASTNode {
   /**
    * Deep clone this ASTNode TODO
    */
-  clone (): ASTNode {
-    return new ASTNode(this)
+  clone (): ExpressionASTNode {
+    return new ExpressionASTNode(this)
   }
 
   /**
@@ -302,7 +302,7 @@ export class ASTNode {
    * @param vars {{}} Mapping from variable names to their types
    * @param opts
    */
-  resolveTypes (vars: ResolveTypesVariableInfo | undefined, opts: ResolveTypesOptions = {}): ASTNode {
+  resolveTypes (vars: ResolveTypesVariableInfo | undefined, opts: ResolveTypesOptions = {}): ExpressionASTNode {
     // Convert all arg values to mathematical types
 
     let { defaultType = "real", throwOnUnresolved = true } = opts
@@ -373,8 +373,8 @@ In other words, the node cannot be used for computation until an abstract type a
   getVariableDependencies (): VariableDependencies {
     let knownVars: VariableDependencies = new Map()
 
-    this.applyAll((node: ASTNode) => {
-      if (node.nodeType() === ASTNode.TYPES.VariableNode) {
+    this.applyAll((node: ExpressionASTNode) => {
+      if (node.nodeType() === ExpressionASTNode.TYPES.VariableNode) {
         let name = (node as VariableNode).name
         let info = knownVars.get(name)
 
@@ -492,12 +492,12 @@ type FilledConversionToLatexOptions = {
 }
 
 export type ASTGroupParams = ASTNodeParams & {
-  children?: ASTNode[]
+  children?: ExpressionASTNode[]
 }
 
 // Node with children. A plain ASTGroup is usually just a parenthesized thing
-export class ASTGroup extends ASTNode {
-  children: ASTNode[]
+export class ExpressionASTGroup extends ExpressionASTNode {
+  children: ExpressionASTNode[]
 
   constructor (params: ASTGroupParams = {}) {
     super(params)
@@ -534,7 +534,7 @@ export class ASTGroup extends ASTNode {
   }
 
   clone () {
-    return new ASTGroup(this)
+    return new ExpressionASTGroup(this)
   }
 
   _resolveTypes (opts: FilledResolveTypesOptions) {
@@ -562,7 +562,7 @@ export type ConstantNodeParams = ASTNodeParams & {
   type: MathematicalType | null // type required for constants
 }
 
-export class ConstantNode extends ASTNode {
+export class ConstantNode extends ExpressionASTNode {
   value: string
 
   constructor (params: ConstantNodeParams) {
@@ -609,7 +609,7 @@ export type VariableNodeParams = ASTNodeParams & {
   operatorDefinition?: OperatorDefinition | null
 }
 
-export class VariableNode extends ASTNode {
+export class VariableNode extends ExpressionASTNode {
   name: string
   operatorDefinition: OperatorDefinition | null
 
@@ -685,7 +685,7 @@ export type OperatorNodeParams = ASTGroupParams & {
   casts: MathematicalCast[] | null
 }
 
-export class OperatorNode extends ASTGroup {
+export class OperatorNode extends ExpressionASTGroup {
   name: string
   casts: MathematicalCast[] | null  // null when casts are not known
 
@@ -779,4 +779,11 @@ export class OperatorNode extends ASTGroup {
 
     return evaluator.callNew(childrenValues)
   }
+}
+
+/**
+ * Node specifically for expressions of the form 0 < x < 2
+ */
+export class ComparisonChainNode extends OperatorNode {
+
 }

@@ -11,6 +11,9 @@ import { RealInterval } from '../../real/interval.js'
 import { Complex } from '../../complex/normal.js'
 import { Vec2 } from "../../vec/vec2";
 
+const concreteTypes = new Map<string, ConcreteType>()
+const mathematicalTypes = new Map<string, MathematicalType>()
+
 // The boolean type is nullable. meaning it takes on a value of 0, 1, or NaN. -0, false, and true are also ACCEPTED as
 // values, but aren't used that way internally, since each is implicitly casted to the correct value in all numeric
 // calculations.
@@ -179,8 +182,26 @@ export function toMathematicalType (o, throwOnError=false): MathematicalType | n
   return r
 }
 
-let concreteTypes = new Map<string, ConcreteType>()
-let mathematicalTypes = new Map<string, MathematicalType>()
-
   // Concrete types
 ;[concreteBoolean, concreteInt, concreteReal, concreteIntervalBoolean, concreteIntervalInt, concreteIntervalReal, concreteComplex].forEach(defineConcreteType)
+
+const ScopeTypeInit = () => {
+  throw new Error("?")
+}
+
+/**
+ * "Formal" concrete type representing a scope input into a compiled function
+ */
+export class ScopeType extends ConcreteType {
+  scopeDict: [string: ConcreteType]
+
+  constructor(scopeDict) {
+    super({
+      name: "scope",
+      init: ScopeTypeInit,
+      castPermissive: ScopeTypeInit
+    })
+
+    this.scopeDict = scopeDict
+  }
+}

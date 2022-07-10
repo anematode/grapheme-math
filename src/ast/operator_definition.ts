@@ -1,6 +1,6 @@
-import { toMathematicalType } from './builtin/builtin_types.js'
+import { toMathematicalType } from './builtin/types.js'
 import { ConcreteType, MathematicalType } from './type.js'
-import {castDistance, ConcreteCast, ConcreteEvaluator} from './evaluator.js'
+import {castDistance, ConcreteCast, ConcreteEvaluator} from './concrete_evaluator.js'
 import {EvaluationMode, EvaluationModes} from "./eval_modes.js"
 
 /**

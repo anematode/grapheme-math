@@ -1,5 +1,5 @@
 import { roundDown, roundUp } from '../fp/manip.js'
-import { isStringInteger } from "../ast/is_string_integer.js"
+import { isStringInteger } from "../other/is_string_integer.js"
 
 /**
  * A real interval with only min, max, defMin (bit 0), defMax (bit 1), contMin (bit 2), contMax (bit 3)

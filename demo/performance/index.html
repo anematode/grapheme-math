@@ -123,7 +123,7 @@
     function compileExample() {
       timeStart("parse")
       s = $expr
-      n = Grapheme.parseString(s)
+      n = Grapheme.parseExpression(s)
       timeEnd("parse")
 
       timeStart("resolve")
@@ -155,7 +155,7 @@
     function evaluateExample() {
       timeStart("parse")
       s = $expr
-      n = Grapheme.parseString(s)
+      n = Grapheme.parseExpression(s)
       timeEnd("parse")
 
       timeStart("resolve")
@@ -205,8 +205,8 @@
     // warmup
 
     s = $expr
-    n = Grapheme.parseString(s)
-    n = Grapheme.parseString(s)
+    n = Grapheme.parseExpression(s)
+    n = Grapheme.parseExpression(s)
 
     n.resolveTypes({}, {defaultType: "real"})
     n.resolveTypes({}, {defaultType: "real"})

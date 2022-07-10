@@ -1,12 +1,12 @@
 import {
-  ASTGroup,
-  ASTNode,
+  ExpressionASTGroup,
+  ExpressionASTNode,
   ConstantNode,
   EvaluationError,
   OperatorNode, ResolveTypesOptions,
   VariableDependencies,
   VariableNode
-} from "./node.js"
+} from "./expression.js"
 import {EvaluationMode, toEvaluationMode} from "./eval_modes.js"
 import {
   ConcreteAssignmentGraph,
@@ -17,7 +17,7 @@ import {
 import { MathematicalCast } from "./operator_definition.js";
 import { ConcreteType, MathematicalType } from "./type.js";
 import { Assembler } from "./assembler.js";
-import { parseString } from "./parse.js";
+import { parseExpression } from "./parse_expression.js";
 
 export class CompilationError extends Error {
   constructor (message) {
@@ -162,10 +162,10 @@ export class CompileTargetResult {
  * Result of calling compileNode
  */
 export class CompileNodeResult {
-  rootNode: ASTNode
+  rootNode: ExpressionASTNode
   targets: CompileTargetResult[]
 
-  constructor(root: ASTNode, targets: CompileTargetResult[]) {
+  constructor(root: ExpressionASTNode, targets: CompileTargetResult[]) {
     this.rootNode = root
     this.targets = targets
   }
@@ -245,7 +245,7 @@ function fillTargetOptions(nodeOpts: CompileNodeOptions, opts: CompileTargetOpti
   }
 }
 
-function createAssnGraph(root: ASTNode): MathematicalAssignmentGraph {
+function createAssnGraph(root: ExpressionASTNode): MathematicalAssignmentGraph {
   let graph = new MathematicalAssignmentGraph()
   graph.constructFromNode(root)
   return graph
@@ -358,12 +358,12 @@ function concretizeAssnGraph(mGraph: MathematicalAssignmentGraph, target: Compil
  * If no targets are specified, or the options for the target are given at the topic level rather than in a list of
  * targets, a target array with a single target is returned.
  */
-export function compileNode(root: ASTNode | string, options: CompileNodeOptions = {}): CompileNodeResult {
-  if (!(root instanceof ASTNode)) {
+export function compileNode(root: ExpressionASTNode | string, options: CompileNodeOptions = {}): CompileNodeResult {
+  if (!(root instanceof ExpressionASTNode)) {
     if (!(typeof root === "string"))
       throw new CompilationError("First argument to compileNode must be an ASTNode or string")
 
-    root = parseString(root)
+    root = parseExpression(root)
   }
 
   // Resolve nodes if necessary

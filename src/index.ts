@@ -1,11 +1,10 @@
 export * from './fp/manip.js'
 export * from './arb/bigfloat.js'
 
-//export * from './ast/ast.js'
-export * from './ast/parse.js'
+export * from './ast/parse_expression.js'
 export * from './ast/compile.js'
-export * from './ast/builtin/builtin_casts.js'
-export * from './ast/builtin/builtin_operators.js'
+export * from './ast/builtin/casts.js'
+export * from './ast/builtin/operators.js'
 
 import { ROUNDING_MODE } from './other/rounding_modes.js'
 export { ROUNDING_MODE }

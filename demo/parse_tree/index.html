@@ -94,7 +94,7 @@
 
   function play() {
     try {
-      node = Grapheme.parseString(document.getElementById("eqn").value)
+      node = Grapheme.parseExpression(document.getElementById("eqn").value)
       node.resolveTypes({}, {defaultType: "real"})
 
       drawAST()

@@ -3,7 +3,7 @@
 // Constants are treated as operators, since they are mathematical in nature and may have any number of concrete impls.
 
 import {OperatorDefinition} from "../operator_definition.js"
-import {ConcreteEvaluator} from "../evaluator.js"
+import {ConcreteEvaluator} from "../concrete_evaluator.js"
 import {Complex} from "../../complex/normal.js"
 
 export const MathematicalConstants = {

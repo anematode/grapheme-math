@@ -1,8 +1,8 @@
-import { AllowedJSPrimitive } from "./evaluator.js";
+import { AllowedJSPrimitive } from "./concrete_evaluator.js";
 import { CompilationError, CompileTarget, genVariableName } from "./compile.js";
 import { ConcreteAssignmentGraph } from "./assignment_graph.js";
 import { ConcreteType } from "./type.js";
-import { EvaluationError } from "./node.js"
+import { EvaluationError } from "./expression.js"
 
 /**
  * The assembler transforms an optimized concrete assignment graph or set of graphs into an actual, invocable JS

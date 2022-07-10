@@ -1,3 +1,0 @@
-
-// Typechecks for concrete types
-
