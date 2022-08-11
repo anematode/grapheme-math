@@ -5,7 +5,7 @@ import {MathematicalConstants} from "./builtin/globals.js"
 import {localWarn} from "../utils.js";
 import {MathematicalType} from "./type.js";
 import {MathematicalCast, OperatorDefinition} from "./operator_definition.js";
-import { KeywordOperatorName } from "./parse_expression";
+import { KeywordOperatorName } from "./parse_expression.js"
 
 /**
  * To evaluate a given node whose operators and types have been identified, we provide the following:

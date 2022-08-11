@@ -1,5 +1,6 @@
 export * from './fp/manip.js'
 export * from './arb/bigfloat.js'
+export * as R from './arb/reference.js'
 
 export * from './ast/parse_expression.js'
 export * from './ast/compile.js'

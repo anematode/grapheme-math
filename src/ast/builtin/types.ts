@@ -9,7 +9,7 @@ import { FastBooleanInterval } from '../../bool/fast_interval.js'
 import { NullableInteger } from '../../int/normal.js'
 import { RealInterval } from '../../real/interval.js'
 import { Complex } from '../../complex/normal.js'
-import { Vec2 } from "../../vec/vec2";
+import { Vec2 } from "../../vec/vec2.js"
 
 const concreteTypes = new Map<string, ConcreteType>()
 const mathematicalTypes = new Map<string, MathematicalType>()

@@ -2,7 +2,7 @@
     typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
     typeof define === 'function' && define.amd ? define(['exports'], factory) :
     (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.Grapheme = {}));
-}(this, (function (exports) { 'use strict';
+})(this, (function (exports) { 'use strict';
 
     // Used for bit-level manipulation of floats
     const floatStore = new Float64Array(1);
@@ -463,7 +463,7 @@
     const BIGFLOAT_MIN_EXP = -BIGFLOAT_MAX_EXP;
     const BIGFLOAT_MIN_PRECISION = 4; // in bits
     const BIGFLOAT_MAX_PRECISION = 1 << 24; // can be changed later
-    const BIGFLOAT_MAX_MANTISSA_LEN = neededWordsForPrecision(BIGFLOAT_MAX_PRECISION); // Mantissas larger than this are impossible
+    const BIGFLOAT_MAX_MANTISSA_LEN = neededWordsForPrecision(BIGFLOAT_MAX_PRECISION); // Mantissas larger than this are prohibited
     const recip2Pow30 = 9.313225746154785e-10; // 2^-30
     const recip2Pow60 = 8.673617379884035e-19; // 2^-60
     // Default precision and rounding mode values
@@ -1286,12 +1286,17 @@
             if (this.isPrimitive) {
                 if (!this.init || !this.initStr) {
                     let init, initStr;
-                    if (typeof this.defaultValue === "number") { // nullable booleans, ints, and reals are all represented by a JS number
+                    if (typeof this.defaultValue === "number") {
+                        // nullable booleans, ints, and reals are all represented by a JS number and default to 0
                         init = () => 0;
                         initStr = "0";
                     }
+                    else if (typeof this.defaultValue === "string") {
+                        init = () => "";
+                        initStr = "''";
+                    }
                     else {
-                        throw new Error("Invalid primitive");
+                        throw new Error("Invalid primitive " + (typeof this.defaultValue));
                     }
                     this.init = init;
                     this.initStr = initStr;
@@ -1477,8 +1482,7 @@
     });
 
     /**
-     * Given a string like "1.5", "3e10", etc., determine whether it is an integer without evaluating it. Assumes the string
-     * is well-formed.
+     * Given a string like "1.5", "3e10", etc., determine whether it has an integer value without evaluating it.
      */
     function isStringInteger(s) {
         if (s[0] === '-')
@@ -2717,7 +2721,167 @@
         }
     }
 
+    /**
+     * Generic Vec2 class, reinventing the wheel...
+     */
+    class Vec2 {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+        }
+        /**
+         * Permissively convert to Vec2 from an arbitrary object, ideally something that is Vec2Like
+         * @param obj
+         */
+        static fromObj(obj) {
+            let x = NaN, y = NaN;
+            if (Array.isArray(obj)) {
+                x = obj[0];
+                y = obj[1];
+            }
+            else if (typeof obj === 'object' && (obj !== null)) {
+                let o = obj;
+                if ('x' in obj) {
+                    x = +o.x;
+                    y = +o.y;
+                }
+                else if ('re' in obj) {
+                    x = +o.re;
+                    y = +o.im;
+                }
+            }
+            else if (typeof obj === 'string') {
+                switch (obj) {
+                    case 'N':
+                    case 'NE':
+                    case 'NW':
+                        y = 1;
+                        break;
+                    case 'S':
+                    case 'SE':
+                    case 'SW':
+                        y = -1;
+                        break;
+                    case 'C':
+                        y = 0;
+                }
+                switch (obj) {
+                    case 'E':
+                    case 'NE':
+                    case 'SE':
+                        x = 1;
+                        break;
+                    case 'W':
+                    case 'NW':
+                    case 'SW':
+                        x = -1;
+                        break;
+                    case 'C':
+                        x = 0;
+                }
+            }
+            return new Vec2(x, y);
+        }
+        add(vec) {
+            return new Vec2(this.x + vec.x, this.y + vec.y);
+        }
+        subtract(vec) {
+            return new Vec2(this.x - vec.x, this.y - vec.y);
+        }
+        multiplyScalar(scalar) {
+            return new Vec2(this.x * scalar, this.y * scalar);
+        }
+        rot(angle, centre) {
+            // TODO
+            let s = Math.sin(angle), c = Math.cos(angle);
+            if (!centre)
+                return new Vec2(c * this.x - s * this.y, s * this.x + c * this.y);
+        }
+        rotDeg(angle, centre) {
+            return this.rot((angle * Math.PI) / 180, centre);
+        }
+        unit() {
+            return this.multiplyScalar(1 / this.length());
+        }
+        length() {
+            return Math.hypot(this.x, this.y);
+        }
+        lengthSquared() {
+            return this.x * this.x + this.y * this.y;
+        }
+    }
+    function throwInconvertibleElement(elem, i) {
+        throw new TypeError(`Expected input to be convertible to a flat array of Vec2s, found element ${elem} at index ${i}`);
+    }
+    function throwOddLengthArray(len) {
+        throw new Error(`Expected input to be convertible to a flat array of Vec2s, got array of odd length ${len}`);
+    }
+    function vec2NonFlatArrayConversion(arr, f32 = true, throwOnError = false) {
+        let ret = new (f32 ? Float32Array : Float64Array)(arr.length * 2);
+        let retIndex = -1;
+        for (let i = 0; i < arr.length; ++i) {
+            let elem = arr[i];
+            if (elem.x) {
+                ret[++retIndex] = elem.x;
+                ret[++retIndex] = elem.y;
+            }
+            else if (Array.isArray(elem)) {
+                if (elem.length !== 2) {
+                    if (throwOnError)
+                        throwInconvertibleElement(elem, i);
+                    return;
+                }
+                ret[++retIndex] = elem[0];
+                ret[++retIndex] = elem[1];
+            }
+            else {
+                if (throwOnError)
+                    throwInconvertibleElement(elem, i);
+                return;
+            }
+        }
+        return ret;
+    }
+    /**
+     * Flatten a given array relatively permissively into an flat array; returns undefined if the conversion failed
+     * @param obj
+     * @param f32
+     * @param throwOnError
+     */
+    function vec2ArrayConversion(obj, f32 = true, throwOnError = false) {
+        if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; ++i) {
+                if (typeof obj[i] !== 'number') {
+                    return vec2NonFlatArrayConversion(obj);
+                }
+            }
+            // Obj is just an array of numbers
+            if (obj.length % 2 === 1) {
+                if (throwOnError)
+                    throwOddLengthArray(obj.length);
+                return;
+            }
+            return new (f32 ? Float32Array : Float64Array)(obj);
+        }
+        else if (isTypedArray(obj)) {
+            if (obj.length % 2 === 1) {
+                if (throwOnError)
+                    throwOddLengthArray(obj.length);
+                return;
+            }
+            if (f32 && obj instanceof Float32Array)
+                return obj;
+            if (!f32 && obj instanceof Float64Array)
+                return obj;
+            return new (f32 ? Float32Array : Float64Array)(obj);
+        }
+        if (throwOnError)
+            throw new TypeError(`Could not convert object into flat Vec2 array`);
+    }
+
     // The actual types and typecasts used by Grapheme.
+    const concreteTypes = new Map();
+    const mathematicalTypes = new Map();
     // The boolean type is nullable. meaning it takes on a value of 0, 1, or NaN. -0, false, and true are also ACCEPTED as
     // values, but aren't used that way internally, since each is implicitly casted to the correct value in all numeric
     // calculations.
@@ -2759,6 +2923,25 @@
         copyTo: (src, dst) => { dst.re = src.re; dst.im = src.im; },
         castPermissive: Complex.fromObj
     });
+    // Strings are not implemented in interval arithmetic because that's rather meaningless
+    new ConcreteType({
+        name: "string",
+        isPrimitive: true,
+        init: () => "",
+        typecheck: b => typeof b === "string",
+        typecheckVerbose: b => (typeof b !== "string") ? ("Expected JS string, found type " + (typeof b)) : "",
+        castPermissive: x => x + ''
+    });
+    new ConcreteType({
+        name: "vec2",
+        isPrimitive: false,
+        init: () => new Vec2(0, 0),
+        typecheck: b => b instanceof Vec2,
+        typecheckVerbose: b => (b instanceof Vec2) ? "Expected Vec2" : "",
+        clone: (c) => new Vec2(c.x, c.y),
+        copyTo: (src, dst) => { dst.x = src.x; dst.y = src.y; },
+        castPermissive: Vec2.fromObj
+    });
     let concreteIntervalBoolean = new ConcreteType({
         name: "interval_bool",
         isPrimitive: false,
@@ -2778,18 +2961,21 @@
         castPermissive: RealInterval.fromObj
     });
     let concreteIntervalInt = new ConcreteType(Object.assign(Object.assign({}, concreteIntervalReal), { name: "interval_int" }));
-    /**
-     * MATHEMATICAL TYPES
-     */
-    let mathematicalReal = new MathematicalType({
-        name: "real"
-    });
-    let mathematicalInt = new MathematicalType({
-        name: "int"
-    });
-    let mathematicalComplex = new MathematicalType({
-        name: "complex"
-    });
+    [{
+            name: "real"
+        }, {
+            name: "int"
+        }, {
+            name: "complex"
+        }, {
+            name: "vec2"
+        }, {
+            name: "vec3"
+        }, {
+            name: "bool"
+        }, {
+            name: "string"
+        }].forEach(params => defineMathematicalType(new MathematicalType(params)));
     function defineConcreteType(concreteType) {
         let { name } = concreteType;
         concreteTypes.set(name, concreteType);
@@ -2834,10 +3020,7 @@
         }
         return r;
     }
-    let concreteTypes = new Map();
-    let mathematicalTypes = new Map();
     [concreteBoolean, concreteInt, concreteReal, concreteIntervalBoolean, concreteIntervalInt, concreteIntervalReal, concreteComplex].forEach(defineConcreteType);
-    [mathematicalReal, mathematicalInt, mathematicalComplex].forEach(defineMathematicalType);
 
     // Evaluators are functions of a specific signature that compute some operator. They are less abstract than the
     const jsPrimitives = Object.freeze(['+', '-', '/', '*', '&&', '||', '==', '!=', '<=', '>=', '<', '>']);
@@ -3087,10 +3270,10 @@
         let mode = (_a = EvaluationModes.get(o)) !== null && _a !== void 0 ? _a : null;
         if (!mode && throwOnError) {
             if (typeof o === "string") {
-                throw new Error("Unrecognized evaluation mode " + o);
+                throw new Error(`Unrecognized evaluation mode '${o}'`);
             }
             else {
-                throw new Error("Evaluation mode must be a string ('normal') or EvaluationMode object");
+                throw new Error("Evaluation mode must be a string (e.g., 'normal') or EvaluationMode object");
             }
         }
         return mode;
@@ -4047,7 +4230,10 @@
         "defaultType",
         "throwOnUnresolved"
     ];
-    class ASTNode {
+    const DEFAULT_CONVERT_TO_STRING_OPTIONS = {
+        elideParentheses: true
+    };
+    class ExpressionASTNode {
         constructor(params) {
             var _a, _b, _c;
             /**
@@ -4056,18 +4242,15 @@
             this.type = (_a = params.type) !== null && _a !== void 0 ? _a : null;
             /**
              * Other info about the node (for example, where it was in a parsed string)
-             * @type {{}}
              */
             this.info = (_b = params.info) !== null && _b !== void 0 ? _b : {};
             /**
              * The node's operator. If a constant, this will be null and the value will be converted later. If an operator, this
              * must not be null (or the definition is not known). If a variable, this will be called if this is not null.
-             * @type {null|OperatorDefinition}
              */
             this.operatorDefinition = (_c = params.operatorDefinition) !== null && _c !== void 0 ? _c : null;
             /**
              * Highest node in this tree
-             * @type {null|ASTNode}
              */
             this.topNode = null;
         }
@@ -4096,6 +4279,17 @@
         }
         toString() {
             return `[object ${this.nodeTypeAsString()}]`;
+        }
+        /**
+         * Stringify this node by turning it into a readable string
+         */
+        toExprString(opts = {}) {
+            let filledOpts = Object.assign({}, DEFAULT_CONVERT_TO_STRING_OPTIONS, opts);
+            this._toExprString(filledOpts);
+            return "";
+        }
+        _toExprString(opts) {
+            return "poop";
         }
         /**
          * Node type as an enum (use nodeTypeAsString() for a string version)
@@ -4127,7 +4321,7 @@
          * Deep clone this ASTNode TODO
          */
         clone() {
-            return new ASTNode(this);
+            return new ExpressionASTNode(this);
         }
         /**
          * Figure out the type of each node, given the type of each variable node within it. Examples:
@@ -4202,7 +4396,7 @@ In other words, the node cannot be used for computation until an abstract type a
         getVariableDependencies() {
             let knownVars = new Map();
             this.applyAll((node) => {
-                if (node.nodeType() === ASTNode.TYPES.VariableNode) {
+                if (node.nodeType() === ExpressionASTNode.TYPES.VariableNode) {
                     let name = node.name;
                     let info = knownVars.get(name);
                     if (!info) {
@@ -4223,17 +4417,53 @@ In other words, the node cannot be used for computation until an abstract type a
             });
             return knownVars;
         }
+        /**
+         * Convert a node to LaTeX under a set of LaTeX options. LaTeX is done recursively
+         */
+        toLatex(opts = {}) {
+            opts = Object.assign({}, DefaultConversionToLatexOptions, opts);
+            let filledOpts = {
+                useDynamicDelimeters: cvtMaybeBooleanOpt(opts.useDynamicDelimeters),
+                elideParentheses: cvtMaybeBooleanOpt(opts.elideParentheses),
+                elideMultiplication: cvtMaybeBooleanOpt(opts.elideMultiplication),
+                multiplicationSymbol: opts.multiplicationSymbol
+            };
+            let intermediate = this._toLatex(filledOpts);
+            return intermediate.contents;
+        }
+        /**
+         * Internal conversion function
+         * @param opts
+         */
+        _toLatex(opts) {
+            return {
+                isTall: false,
+                contents: ""
+            };
+        }
     }
     // Enum of node types
-    ASTNode.TYPES = Object.freeze({
+    ExpressionASTNode.TYPES = Object.freeze({
         ASTNode: 0,
         ConstantNode: 1,
         VariableNode: 2,
         OperatorNode: 3,
         ASTGroup: 4
     });
+    function cvtMaybeBooleanOpt(opt) {
+        if (typeof opt === "boolean") {
+            return opt ? "always" : "never";
+        }
+        return opt;
+    }
+    const DefaultConversionToLatexOptions = {
+        useDynamicDelimeters: "always",
+        elideParentheses: "always",
+        multiplicationSymbol: "cdot",
+        elideMultiplication: "always"
+    };
     // Node with children. A plain ASTGroup is usually just a parenthesized thing
-    class ASTGroup extends ASTNode {
+    class ExpressionASTGroup extends ExpressionASTNode {
         constructor(params = {}) {
             var _a;
             super(params);
@@ -4262,7 +4492,7 @@ In other words, the node cannot be used for computation until an abstract type a
             return 4;
         }
         clone() {
-            return new ASTGroup(this);
+            return new ExpressionASTGroup(this);
         }
         _resolveTypes(opts) {
             // Only called on a raw group, aka a parenthesized group
@@ -4275,8 +4505,11 @@ In other words, the node cannot be used for computation until an abstract type a
         _evaluate(vars, mode, opts) {
             return this.children[0]._evaluate(vars, mode, opts);
         }
+        __toLatex(opts) {
+            // An ASTGroup is a purposefully parenthesed
+        }
     }
-    class ConstantNode extends ASTNode {
+    class ConstantNode extends ExpressionASTNode {
         constructor(params) {
             super(params);
             // Generally a text rendition of the constant node; e.g., "0.3" or "50"
@@ -4305,7 +4538,7 @@ In other words, the node cannot be used for computation until an abstract type a
             return type.castPermissive(this.value);
         }
     }
-    class VariableNode extends ASTNode {
+    class VariableNode extends ExpressionASTNode {
         constructor(params) {
             var _a;
             super(params);
@@ -4356,7 +4589,7 @@ In other words, the node cannot be used for computation until an abstract type a
             return v;
         }
     }
-    class OperatorNode extends ASTGroup {
+    class OperatorNode extends ExpressionASTGroup {
         constructor(params) {
             var _a, _b, _c;
             super(params);
@@ -4426,15 +4659,17 @@ In other words, the node cannot be used for computation until an abstract type a
     }
 
     /**
-     * In this file, we convert strings representing expressions in Grapheme into their ASTNode counterparts. For example,
-     * x^2 is compiled to OperatorNode{operator=^, children=[VariableNode{name="x"}, ConstantNode{value="2"}]}
+     * Thrown by parseExpression, usually with a descriptive message.
      */
-    class ParserError extends Error {
+    class ParseExpressionError extends Error {
         constructor(message) {
             super(message);
-            this.name = 'ParserError';
+            this.name = 'ParseExpressionError';
         }
     }
+    const KEYWORD_OPERATOR_NAMES = [
+        '-', '*', '/', '+', 'and', 'or', '>=', '>', '<', '<=', '==', '!=', '^'
+    ];
     // ASTNode that might still have tokens in it
     class UnprocessedASTNode {
         constructor(nodeType, info, children) {
@@ -4464,18 +4699,18 @@ In other words, the node cannot be used for computation until an abstract type a
     const function_regex = /^([a-zA-Z_][a-zA-Z0-9_]*)\(/; // functions may only use (, [ is reserved for indexing
     const constant_regex = /^[0-9]*\.?[0-9]*e?[0-9]+/;
     const variable_regex = /^[a-zA-Z_][a-zA-Z0-9_]*/;
-    const paren_regex = /^[()\[\]]/;
+    const paren_regex = /^[()\[\]]|\|\|?/;
     const comma_regex = /^,/;
     const string_regex = /^"(?:[^"\\]|\\.)*"/;
     /**
      * Helper function to throw an error at a specific index in a string.
-     * TODO make signature uniform
      * @param string Erroneous parsed string
      * @param info The token in the string where the error occurred, ideally with an index attribute
      * @param message The raw error message, to be combined with contextual information
      * @param noIndex If true, provide no index
+     * @param postScript Note to provide at end of message.
      */
-    function raiseParserError(string, info, message = "", noIndex = false) {
+    function raiseParserError(string, info, message = "", noIndex = false, postScript = "") {
         var _a;
         let index = -1, token = null, endToken = null;
         if (info !== null) {
@@ -4494,10 +4729,12 @@ In other words, the node cannot be used for computation until an abstract type a
             noIndex = index === -1;
         let spaces = noIndex ? '' : ' '.repeat(index);
         let errorLen = ((_a = endToken === null || endToken === void 0 ? void 0 : endToken.index) !== null && _a !== void 0 ? _a : index) - index + 1;
-        throw new ParserError('Malformed expression; ' + message + (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen)));
+        throw new ParseExpressionError('Malformed expression; ' + message +
+            (noIndex ? '' : ' at index ' + index + ':\n' + string + '\n' + spaces + '^'.repeat(errorLen))
+            + (postScript ? ('\nNote: ' + postScript) : ""));
     }
     function raiseUnknownParserError() {
-        throw new ParserError("?"); // hi
+        throw new ParseExpressionError("?");
     }
     function checkParensBalanced(s) {
         // TODO: Handle strings as tokens
@@ -4542,6 +4779,7 @@ In other words, the node cannot be used for computation until an abstract type a
         return s.replace(/\s+$/, '');
     };
     function getTokens(s) {
+        // TODO swtich to non-regex implementation
         let i = 0;
         let original_string = s;
         s = trimRight(s);
@@ -4555,9 +4793,15 @@ In other words, the node cannot be used for computation until an abstract type a
             do {
                 match = s.match(paren_regex);
                 if (match) {
+                    let paren = match[0];
+                    if (paren === '|' || paren === '||') {
+                        // Attempted to use unsupported parenthesis-like syntax
+                        raiseParserError(original_string, { index: i }, 'unrecognized token', false, 'For absolute value, use abs(x) or mag(z), both of which accept complex values.');
+                        // TODO: For the norm of a vector, use norm(v). For the determinant of a matrix, use det(M).
+                    }
                     tokens.push({
                         type: 'paren',
-                        paren: match[0],
+                        paren,
                         index: i
                     });
                     break;
@@ -4619,7 +4863,6 @@ In other words, the node cannot be used for computation until an abstract type a
                         contents: match[0].slice(1, -1),
                         index: i
                     });
-                    // fall through
                 }
                 raiseParserError(original_string, { index: i }, 'unrecognized token');
             } while (false);
@@ -4997,7 +5240,7 @@ In other words, the node cannot be used for computation until an abstract type a
                 nn = new ConstantNode(n.info);
                 break;
             case "group":
-                nn = new ASTGroup(n.info);
+                nn = new ExpressionASTGroup(n.info);
                 isGroup = true;
                 break;
             case "operator":
@@ -5027,10 +5270,10 @@ In other words, the node cannot be used for computation until an abstract type a
         }
         return nn;
     }
-    function parseString(string) {
+    function parseExpression(string) {
         // noinspection ALL
         if (typeof string !== "string") {
-            throw new ParserError("parseString expects a string");
+            throw new ParseExpressionError("parseString expects a string");
         }
         checkParensBalanced(string);
         let tokens = getTokens(string);
@@ -5087,6 +5330,110 @@ In other words, the node cannot be used for computation until an abstract type a
         }
     }
     class MathematicalAssignmentGraph extends AssignmentGraph {
+        constructFromNode(root) {
+            let assnMap = new Map();
+            // ASTNode -> graph node name
+            let astToGraphMap = new Map();
+            function defineGraphNode(name, astNode, info) {
+                if (astNode) {
+                    astToGraphMap.set(astNode, name);
+                }
+                assnMap.set(name, info);
+            }
+            // Implicitly left to right
+            root.applyAll((astNode) => {
+                var _a, _b;
+                let gNode = null;
+                let name = (_a = astToGraphMap.get(astNode)) !== null && _a !== void 0 ? _a : genVariableName();
+                switch (astNode.nodeType()) {
+                    case ExpressionASTNode.TYPES.VariableNode: {
+                        if (astToGraphMap.get(astNode)) {
+                            // Only define variables once
+                            return;
+                        }
+                        if (!astNode.operatorDefinition) {
+                            name = astNode.name;
+                            gNode = {
+                                name,
+                                type: astNode.type,
+                                isConditional: false,
+                                isCast: false,
+                                isInput: true,
+                                astNode
+                            };
+                            break;
+                        }
+                    }
+                    // Fall through
+                    case ExpressionASTNode.TYPES.OperatorNode:
+                        let n = astNode;
+                        let args = (_b = n.children) !== null && _b !== void 0 ? _b : [];
+                        let casts = (args.length === 0) ? [] : n.casts;
+                        let castedArgs = casts.map((cast, i) => {
+                            let arg = args[i];
+                            let argName = astToGraphMap.get(arg);
+                            if (!argName) {
+                                throw new CompilationError("?");
+                            }
+                            if (cast.isIdentity()) {
+                                return argName;
+                            }
+                            let castedArgName = genVariableName();
+                            // Create node for the cast
+                            defineGraphNode(castedArgName, arg, {
+                                name: castedArgName,
+                                type: cast.dstType(),
+                                isConditional: false,
+                                isCast: true,
+                                isInput: false,
+                                args: [argName],
+                                operatorDefinition: cast,
+                                astNode: arg // for casts, store the argument as the corresponding node
+                            });
+                            return castedArgName;
+                        });
+                        gNode = {
+                            name,
+                            type: n.type,
+                            isConditional: false,
+                            isCast: false,
+                            isInput: false,
+                            args: castedArgs,
+                            operatorDefinition: n.operatorDefinition,
+                            astNode
+                        };
+                        break;
+                    case ExpressionASTNode.TYPES.ASTGroup:
+                        // Groups are entirely elided by mapping them to the variable name of their only child
+                        let c = astNode.children[0];
+                        if (!c) {
+                            throw new CompilationError("Empty ASTGroup in expression");
+                        }
+                        astToGraphMap.set(astNode, astToGraphMap.get(c));
+                        return;
+                    case ExpressionASTNode.TYPES.ConstantNode:
+                        gNode = {
+                            name,
+                            type: astNode.type,
+                            isConditional: false,
+                            isCast: false,
+                            isInput: false,
+                            value: astNode.value,
+                            astNode
+                        };
+                        break;
+                    case ExpressionASTNode.TYPES.ASTNode:
+                        throw new CompilationError(`Raw ASTNode in expression`);
+                }
+                defineGraphNode(name, astNode, gNode);
+            }, false /* all children */, true /* children first */);
+            this.nodes = assnMap;
+            let graphRoot = astToGraphMap.get(root);
+            if (!graphRoot) {
+                throw new CompilationError("?");
+            }
+            this.root = graphRoot;
+        }
     }
     class ConcreteAssignmentGraph extends AssignmentGraph {
         optimize(opts = {}) {
@@ -5454,6 +5801,25 @@ In other words, the node cannot be used for computation until an abstract type a
     function genVariableName() {
         return "$" + (++id);
     }
+    class CompileTargetResult {
+        constructor(evaluate, inputFormat, inputTypes, returns, properties) {
+            this.evaluate = evaluate;
+            this.inputFormat = inputFormat;
+            this.inputTypes = inputTypes;
+            this.returns = returns;
+            this.properties = properties;
+            this.usesScope = inputFormat.includes("scope");
+        }
+    }
+    /**
+     * Result of calling compileNode
+     */
+    class CompileNodeResult {
+        constructor(root, targets) {
+            this.rootNode = root;
+            this.targets = targets;
+        }
+    }
     const defaultTarget = {
         mode: "normal",
         inputFormat: "scope",
@@ -5479,7 +5845,7 @@ In other words, the node cannot be used for computation until an abstract type a
             let varName = inputFormat[i];
             for (let j = i + 1; j < inputFormat.length; ++j) {
                 if (varName === inputFormat[j]) {
-                    throw new CompilationError(`Variable ${varName} is defined twice (at indices ${i} and ${j})`);
+                    throw new CompilationError(`Variable ${varName} is given twice (at indices ${i} and ${j})`);
                 }
             }
         }
@@ -5518,111 +5884,7 @@ In other words, the node cannot be used for computation until an abstract type a
     }
     function createAssnGraph(root) {
         let graph = new MathematicalAssignmentGraph();
-        let assnMap = new Map();
-        // ASTNode -> graph node name
-        let astToGraphMap = new Map();
-        //astToGraphMap.set(root, "$ret")
-        function defineGraphNode(name, astNode, inf) {
-            if (astNode) {
-                astToGraphMap.set(astNode, name);
-            }
-            assnMap.set(name, inf);
-        }
-        // Implicitly left to right
-        root.applyAll((astNode) => {
-            var _a, _b;
-            let gNode = null;
-            let name = (_a = astToGraphMap.get(astNode)) !== null && _a !== void 0 ? _a : genVariableName();
-            switch (astNode.nodeType()) {
-                case ASTNode.TYPES.VariableNode: {
-                    if (astToGraphMap.get(astNode)) {
-                        // Only define variables once
-                        return;
-                    }
-                    if (!astNode.operatorDefinition) {
-                        name = astNode.name;
-                        gNode = {
-                            name,
-                            type: astNode.type,
-                            isConditional: false,
-                            isCast: false,
-                            isInput: true,
-                            astNode
-                        };
-                        break;
-                    }
-                }
-                // Fall through
-                case ASTNode.TYPES.OperatorNode:
-                    let n = astNode;
-                    // @ts-ignore
-                    let args = (_b = n.children) !== null && _b !== void 0 ? _b : [];
-                    // @ts-ignore
-                    let casts = (args.length === 0) ? [] : n.casts;
-                    let castedArgs = casts.map((cast, i) => {
-                        let arg = args[i];
-                        let argName = astToGraphMap.get(arg);
-                        if (!argName) {
-                            throw new CompilationError("?");
-                        }
-                        if (cast.isIdentity()) {
-                            return argName;
-                        }
-                        let castedArgName = genVariableName();
-                        // Create node for the cast
-                        defineGraphNode(castedArgName, arg, {
-                            name: castedArgName,
-                            type: cast.dstType(),
-                            isConditional: false,
-                            isCast: true,
-                            isInput: false,
-                            args: [argName],
-                            operatorDefinition: cast,
-                            astNode: arg // for casts, store the argument as the corresponding node
-                        });
-                        return castedArgName;
-                    });
-                    gNode = {
-                        name,
-                        type: n.type,
-                        isConditional: false,
-                        isCast: false,
-                        isInput: false,
-                        args: castedArgs,
-                        operatorDefinition: n.operatorDefinition,
-                        astNode
-                    };
-                    break;
-                case ASTNode.TYPES.ASTGroup:
-                    // Groups are entirely elided by mapping them to the variable name of their only child
-                    let c = astNode.children[0];
-                    if (!c) {
-                        throw new CompilationError("Empty ASTGroup in expression");
-                    }
-                    astToGraphMap.set(astNode, astToGraphMap.get(c));
-                    return;
-                case ASTNode.TYPES.ConstantNode:
-                    gNode = {
-                        name,
-                        type: astNode.type,
-                        isConditional: false,
-                        isCast: false,
-                        isInput: false,
-                        value: astNode.value,
-                        astNode
-                    };
-                    break;
-                case ASTNode.TYPES.ASTNode:
-                    throw new CompilationError(`Raw ASTNode in expression`);
-            }
-            defineGraphNode(name, astNode, gNode);
-        }, false /* all children */, true /* children first */);
-        graph.nodes = assnMap;
-        let graphRoot = astToGraphMap.get(root);
-        if (!graphRoot) {
-            throw new CompilationError("?");
-        }
-        graph.root = graphRoot;
+        graph.constructFromNode(root);
         return graph;
     }
     /**
@@ -5709,16 +5971,20 @@ In other words, the node cannot be used for computation until an abstract type a
     }
     /**
      * Compile an ASTNode into an evaluable function or functions. This should be preferred for any expression that will be
-     * evaluated many times. This function needs to be pretty well optimized...
-     * @param root
-     * @param options
+     * evaluated many times, because although compilation takes some time, the benefit is quickly reached after even a few
+     * thousand evaluations. The traversal of the full AST is expensive!
+     * @param root Node to compile
+     * @param options List of options
+     * @return Returns, among other things, a list of targets, which reflect the targets specified in the compilation opts.
+     * If no targets are specified, or the options for the target are given at the topic level rather than in a list of
+     * targets, a target array with a single target is returned.
      */
     function compileNode(root, options = {}) {
         var _a;
-        if (!(root instanceof ASTNode)) {
+        if (!(root instanceof ExpressionASTNode)) {
             if (!(typeof root === "string"))
                 throw new CompilationError("First argument to compileNode must be an ASTNode or string");
-            root = parseString(root);
+            root = parseExpression(root);
         }
         // Resolve nodes if necessary
         if (!root.allResolved()) {
@@ -5733,6 +5999,8 @@ In other words, the node cannot be used for computation until an abstract type a
             dt.inputFormat = options.inputFormat;
         if (options.mode)
             dt.mode = options.mode;
+        if ('typechecks' in options)
+            dt.typechecks = options.typechecks;
         if (!Array.isArray(targetOpts))
             targetOpts = [targetOpts]; // default is a single target (targets[0])
         let rootProperties = {
@@ -5761,22 +6029,11 @@ In other words, the node cannot be used for computation until an abstract type a
             let assembler = new Assembler();
             assembler.prepareConcreteGraph(cAssignmentGraph, target);
             let compiled = assembler.compile();
-            compiledResults.push({
-                evaluate: compiled.result.evaluate,
-                returns: compiled.returns,
-                inputFormat: compiled.inputFormat,
-                inputTypes: compiled.inputTypes,
-                targetOptions: target
-            });
+            let result = new CompileTargetResult(compiled.result.evaluate, compiled.inputFormat, compiled.inputTypes, compiled.returns, target);
+            compiledResults.push(result);
         }
-        if (!Array.isArray(targetOpts)) {
-            compiledResults = compiledResults[0];
-        }
-        return {
-            targets: compiledResults
-        };
+        return new CompileNodeResult(root.clone(), compiledResults);
     }
-    // grep "from [^.]\+'$" -r src
 
     let intToReal = [
         registerConcreteCast(new ConcreteCast({
@@ -7089,164 +7346,6 @@ In other words, the node cannot be used for computation until an abstract type a
     }
 
     /**
-     * Generic Vec2 class, reinventing the wheel...
-     */
-    class Vec2 {
-        constructor(x, y) {
-            this.x = x;
-            this.y = y;
-        }
-        /**
-         * Permissively convert to Vec2 from an arbitrary object, ideally something that is Vec2Like
-         * @param obj
-         */
-        static fromObj(obj) {
-            let x = NaN, y = NaN;
-            if (Array.isArray(obj)) {
-                x = obj[0];
-                y = obj[1];
-            }
-            else if (typeof obj === 'object' && (obj !== null)) {
-                let o = obj;
-                if ('x' in obj) {
-                    x = +o.x;
-                    y = +o.y;
-                }
-                else if ('re' in obj) {
-                    x = +o.re;
-                    y = +o.im;
-                }
-            }
-            else if (typeof obj === 'string') {
-                switch (obj) {
-                    case 'N':
-                    case 'NE':
-                    case 'NW':
-                        y = 1;
-                        break;
-                    case 'S':
-                    case 'SE':
-                    case 'SW':
-                        y = -1;
-                        break;
-                    case 'C':
-                        y = 0;
-                }
-                switch (obj) {
-                    case 'E':
-                    case 'NE':
-                    case 'SE':
-                        x = 1;
-                        break;
-                    case 'W':
-                    case 'NW':
-                    case 'SW':
-                        x = -1;
-                        break;
-                    case 'C':
-                        x = 0;
-                }
-            }
-            return new Vec2(x, y);
-        }
-        add(vec) {
-            return new Vec2(this.x + vec.x, this.y + vec.y);
-        }
-        subtract(vec) {
-            return new Vec2(this.x - vec.x, this.y - vec.y);
-        }
-        multiplyScalar(scalar) {
-            return new Vec2(this.x * scalar, this.y * scalar);
-        }
-        rot(angle, centre) {
-            // TODO
-            let s = Math.sin(angle), c = Math.cos(angle);
-            if (!centre)
-                return new Vec2(c * this.x - s * this.y, s * this.x + c * this.y);
-        }
-        rotDeg(angle, centre) {
-            return this.rot((angle * Math.PI) / 180, centre);
-        }
-        unit() {
-            return this.multiplyScalar(1 / this.length());
-        }
-        length() {
-            return Math.hypot(this.x, this.y);
-        }
-        lengthSquared() {
-            return this.x * this.x + this.y * this.y;
-        }
-    }
-    function throwInconvertibleElement(elem, i) {
-        throw new TypeError(`Expected input to be convertible to a flat array of Vec2s, found element ${elem} at index ${i}`);
-    }
-    function throwOddLengthArray(len) {
-        throw new Error(`Expected input to be convertible to a flat array of Vec2s, got array of odd length ${len}`);
-    }
-    function vec2NonFlatArrayConversion(arr, f32 = true, throwOnError = false) {
-        let ret = new (f32 ? Float32Array : Float64Array)(arr.length * 2);
-        let retIndex = -1;
-        for (let i = 0; i < arr.length; ++i) {
-            let elem = arr[i];
-            if (elem.x) {
-                ret[++retIndex] = elem.x;
-                ret[++retIndex] = elem.y;
-            }
-            else if (Array.isArray(elem)) {
-                if (elem.length !== 2) {
-                    if (throwOnError)
-                        throwInconvertibleElement(elem, i);
-                    return;
-                }
-                ret[++retIndex] = elem[0];
-                ret[++retIndex] = elem[1];
-            }
-            else {
-                if (throwOnError)
-                    throwInconvertibleElement(elem, i);
-                return;
-            }
-        }
-        return ret;
-    }
-    /**
-     * Flatten a given array relatively permissively into an flat array; returns undefined if the conversion failed
-     * @param obj
-     * @param f32
-     * @param throwOnError
-     */
-    function vec2ArrayConversion(obj, f32 = true, throwOnError = false) {
-        if (Array.isArray(obj)) {
-            for (let i = 0; i < obj.length; ++i) {
-                if (typeof obj[i] !== 'number') {
-                    return vec2NonFlatArrayConversion(obj);
-                }
-            }
-            // Obj is just an array of numbers
-            if (obj.length % 2 === 1) {
-                if (throwOnError)
-                    throwOddLengthArray(obj.length);
-                return;
-            }
-            return new (f32 ? Float32Array : Float64Array)(obj);
-        }
-        else if (isTypedArray(obj)) {
-            if (obj.length % 2 === 1) {
-                if (throwOnError)
-                    throwOddLengthArray(obj.length);
-                return;
-            }
-            if (f32 && obj instanceof Float32Array)
-                return obj;
-            if (!f32 && obj instanceof Float64Array)
-                return obj;
-            return new (f32 ? Float32Array : Float64Array)(obj);
-        }
-        if (throwOnError)
-            throw new TypeError(`Could not convert object into flat Vec2 array`);
-    }
-
-    /**
      * Here lies madness.
      *
      * Grapheme's renderer is going to be pretty monolithic, with a lot of interdependent moving parts. As such, I'm going
@@ -7760,6 +7859,7 @@ In other words, the node cannot be used for computation until an abstract type a
             return { xm, xb, ym, yb };
         }
     });
+    new BoundingBox(0, 0, 0, 0);
 
     class LinearPlot2DTransform {
         /**
@@ -8769,6 +8869,7 @@ In other words, the node cannot be used for computation until an abstract type a
         }
     }
 
+    new SceneDimensions(640, 480, 1);
     const MIN_SIZE = 100, MAX_SIZE = 16384;
     function checkDimInRange(d) {
         if (typeof d !== "number" || Number.isNaN(d) || d < MIN_SIZE || d > MAX_SIZE) {
@@ -10133,10 +10234,13 @@ In other words, the node cannot be used for computation until an abstract type a
     exports.Color = Color;
     exports.Colors = Colors;
     exports.CompilationError = CompilationError;
+    exports.CompileNodeResult = CompileNodeResult;
+    exports.CompileTargetResult = CompileTargetResult;
     exports.Complex = Complex;
     exports.InteractiveScene = InteractiveScene;
+    exports.KEYWORD_OPERATOR_NAMES = KEYWORD_OPERATOR_NAMES;
     exports.LinearPlot2DTransform = LinearPlot2DTransform;
-    exports.ParserError = ParserError;
+    exports.ParseExpressionError = ParseExpressionError;
     exports.Pen = Pen;
     exports.Plot2D = Plot2D;
     exports.PolylineElement = PolylineElement;
@@ -10184,7 +10288,7 @@ In other words, the node cannot be used for computation until an abstract type a
     exports.mantissaClz = mantissaClz;
     exports.mantissaCtz = mantissaCtz;
     exports.neededWordsForPrecision = neededWordsForPrecision;
-    exports.parseString = parseString;
+    exports.parseExpression = parseExpression;
     exports.pointInTriangle = pointInTriangle;
     exports.pow2 = pow2;
     exports.prettyPrintMantissa = prettyPrintMantissa;
@@ -10209,4 +10313,4 @@ In other words, the node cannot be used for computation until an abstract type a
 
     Object.defineProperty(exports, '__esModule', { value: true });
 
-})));
+}));

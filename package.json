@@ -10,5 +10,8 @@
     "test": "mocha --require esm --grep",
     "start": "http-server -a localhost -p 8000 --ext js -c-1"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "prettier-standard": "^16.4.1"
+  }
 }
