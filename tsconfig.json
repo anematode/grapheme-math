@@ -6,7 +6,7 @@
       "dom",
       "esnext.weakref"
     ],
-    "target": "es2017",
+    "target": "es2020",
     "outDir": "build",
     "sourceMap": true,
     "esModuleInterop": true,

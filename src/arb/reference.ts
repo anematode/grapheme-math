@@ -56,10 +56,13 @@ export function addMantissas (mant1, mant1Len, mant2, mant2Len, mant2Shift, targ
 }
 
 export function subtractMantissas (mant1, mant2, mant2Shift, prec, target, round) {
-  let cmp = compareMantissas(mant1, mant1.length, mant2, mant2.length)
-  if (mant2Shift === 0 && cmp === 0) return 0;  // erroneous inputs
-  else if (cmp === -1) {
-    ;[mant2, mant1] = [mant2, mant1]
+  let swp = 0
+  let cmp = compareMantissas(mant1, mant2)
+
+  if (mant2Shift === 0 && cmp === 0) return 0b10;  // equal
+  else if (mant2Shift === 0 && cmp === -1) {
+    ;[mant1, mant2] = [mant2, mant1]
+    swp = 1
   }
 
   let output = new Int32Array(Math.max(mant1.length, mant2.length + mant2Shift) + 1)
@@ -86,13 +89,9 @@ export function subtractMantissas (mant1, mant2, mant2Shift, prec, target, round
     output[i] = word
   }
 
-  if (carry === 1) {
-    throw new Error(`Invalid mantissas ${prettyPrintMantissa(mant1)}, ${prettyPrintMantissa(mant2)}`)
-  }
-
   let roundingShift = roundMantissaToPrecisionWithSeek(output, output.length, target, target.length, prec, round)
 
-  return roundingShift
+  return (roundingShift << 2) | swp
 }
 
 export function multiplyMantissas (mant1, mant2, precision, targetMantissa, roundingMode) {

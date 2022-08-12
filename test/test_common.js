@@ -103,3 +103,21 @@ typicalWords.forEach(w1 => w1 ? typicalWords.forEach(w2 => typicalWords.forEach(
 export function cartesianProduct (...args) {
   return args.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat(1))))
 }
+
+export const ALL_NUMBERS = [ ...TYPICAL_NUMBERS, ...RANDOM_NUMBERS, ...PATHOLOGICAL_NUMBERS ]
+export const RANDOM_BIGINTS = []
+
+let rng = getRNG(11)
+let k = 14204n
+
+for (let i = -1000; i < 1000; ++i) {
+  RANDOM_BIGINTS.push(BigInt(i))
+
+  k >>= 20n;
+  k += BigInt(rng())
+
+  k *= BigInt(rng())
+  RANDOM_BIGINTS.push(k)
+  RANDOM_BIGINTS.push(-k)
+}
+

@@ -647,8 +647,8 @@ export function subtractMantissas (m1: Mantissa,
     // We already assume that mant1 and mant2 are both valid mantissas, and that mant1 > mant2. We need to find the
     // location of the first word of the result mantissa.
 
-    let mant1Len = m1.length, mant2Len = m2.length, mant2End = mant2Len + m2shift, targetLen = t.length
-    let exactEnd = Math.max(mant1Len, mant2End) // The end of exact computation, relative to the first word of mant1
+    let mant2End = m2Len + m2shift
+    let exactEnd = Math.max(m1Len, mant2End) // The end of exact computation, relative to the first word of mant1
 
     // We can visualize the situation as follows:
     //  <--           mant1Len = 4                  -->
@@ -688,18 +688,45 @@ export function subtractMantissas (m1: Mantissa,
     let positiveComputedI = -1
     let positiveComputedWord = 0
     let wordIndex = 0
+    let swp = 0
 
     for (; wordIndex < exactEnd; ++wordIndex) {
       let mant2Index = wordIndex - m2shift
-      let mant1Word = (wordIndex < mant1Len) ? m1[wordIndex] : 0,
-          mant2Word = (mant2Index >= 0 && mant2Index < mant2Len) ? m2[mant2Index] : 0
+      let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
+          mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
 
       let computedWord = mant1Word - mant2Word
-      if (computedWord > 0) {
+      if (computedWord !== 0) {
+        if (computedWord < 0) {
+          // Oops, m2 > m1. Swap them
+          swp = 1
+          computedWord = -computedWord
+
+          // Swap m1 and m2
+          {
+            let tmp = m1
+            m1 = m2
+            m2 = tmp
+          }
+
+          {
+            let tmp = m1Len
+            m1Len = m2Len
+            m2Len = tmp
+          }
+        }
+
         positiveComputedI = wordIndex
         positiveComputedWord = computedWord
+
+
         break
       }
+    }
+
+    if (wordIndex === exactEnd) {
+      // Equality
+      return 0b10  // bit field indicating zero, see above for meaning
     }
 
     t[0] = positiveComputedWord
@@ -710,7 +737,7 @@ export function subtractMantissas (m1: Mantissa,
     //                                            ^ positiveComputedWordIndex
 
     // Returns the number of zero words that occurred at the beginning of target
-    function doCarry (startIndex = targetLen-1) {
+    function doCarry (startIndex = tLen-1) {
       // Before: [ 0x00000002, -0x3fffffff, -0x3fffffff, -0x3ffffffe ]
       // After:  [ 0x00000001,  0x00000000,  0x00000000,  0x00000002 ]
       //          n = 0 zero words
@@ -734,7 +761,7 @@ export function subtractMantissas (m1: Mantissa,
       }
 
       let zeroWords = 0
-      for (; zeroWords < targetLen && (!t[zeroWords]); ++zeroWords);
+      for (; zeroWords < tLen && (!t[zeroWords]); ++zeroWords);
 
       // Before: [ 0x00000000,  0x00000000,  0x00000000,  0x00000002 ]
       //          <--       n = 3 zero words        -->
@@ -751,7 +778,7 @@ export function subtractMantissas (m1: Mantissa,
     // Compute words after the first positive computed word, carrying whenever the target is exhausted
     for (wordIndex = positiveComputedI + 1; wordIndex < exactEnd; ++wordIndex) {
       let targetIndex = wordIndex - positiveComputedI
-      if (targetIndex >= targetLen) {
+      if (targetIndex >= tLen) {
         let zeroWords = doCarry()
 
         if (zeroWords !== 0) {
@@ -764,8 +791,8 @@ export function subtractMantissas (m1: Mantissa,
       }
 
       let mant2Index = wordIndex - m2shift
-      let mant1Word = (wordIndex < mant1Len) ? m1[wordIndex] : 0,
-          mant2Word = (mant2Index >= 0 && mant2Index < mant2Len) ? m2[mant2Index] : 0
+      let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
+          mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
       let computedWord = (mant1Word - mant2Word) | 0
 
       t[targetIndex] = computedWord
@@ -774,11 +801,11 @@ export function subtractMantissas (m1: Mantissa,
     if (wordIndex === exactEnd) {
       // Target was large enough to store the exact result. We clear everything after the last word and round
       let lastIndex = wordIndex - positiveComputedI
-      for (let i = lastIndex; i < targetLen; ++i) t[i] = 0
+      for (let i = lastIndex; i < tLen; ++i) t[i] = 0
 
       doCarry(lastIndex - 1)
 
-      return -positiveComputedI + roundMantissaToPrecision(t, tLen, t, tLen, prec, rm)
+      return swp | ((-positiveComputedI + roundMantissaToPrecision(t, tLen, t, tLen, prec, rm)) << 2)
     } else {
       let canBeRounded = canMantissaBeRounded(t, tLen, prec, wordIndex, rm, 1, 1)
       let trailingInfo = 0
@@ -789,16 +816,16 @@ export function subtractMantissas (m1: Mantissa,
 
         while (1) {
           let mant2Index = wordIndex - m2shift
-          let mant1Word = (wordIndex < mant1Len) ? m1[wordIndex] : 0,
-              mant2Word = (mant2Index >= 0 && mant2Index < mant2Len) ? m2[mant2Index] : 0
+          let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
+              mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
 
           nextWord = (mant1Word - mant2Word) | 0
 
           if (nextWord < 0) {
-            t[targetLen - 1] -= 1
+            t[tLen - 1] -= 1
             nextWord += 0x40000000
 
-            let zeros = doCarry(targetLen - 1)
+            let zeros = doCarry(tLen - 1)
 
             if (zeros) {
               // Rare edge case:
@@ -808,7 +835,7 @@ export function subtractMantissas (m1: Mantissa,
               // nextWord before: -0x00000001
               // target after:   [ 0x3fffffff, 0x3fffffff ]
 
-              t[targetLen - 1] = nextWord
+              t[tLen - 1] = nextWord
               wordIndex++
 
               continue
@@ -835,13 +862,13 @@ export function subtractMantissas (m1: Mantissa,
 
           // If the second mantissa is wholly after the first mantissa, skip ahead to the second mantissa since all the
           // words in between will be 0
-          if (m2shift > mant1Len)
+          if (m2shift > m1Len)
             wordIndex = Math.max(wordIndex, m2shift)
 
           for (; wordIndex < exactEnd; ++wordIndex) {
             let mant2Index = wordIndex - m2shift
-            let mant1Word = (wordIndex < mant1Len) ? m1[wordIndex] : 0,
-                mant2Word = (mant2Index >= 0 && mant2Index < mant2Len) ? m2[mant2Index] : 0
+            let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
+                mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
 
             let word = (mant1Word - mant2Word) | 0
 
@@ -854,10 +881,10 @@ export function subtractMantissas (m1: Mantissa,
               }
 
               // Subtract one ulp, then set trailing info to 3 (equivalent to "trailing mode -1")
-              t[targetLen - 1]--
-              let zeros = doCarry(targetLen - 1)
+              t[tLen - 1]--
+              let zeros = doCarry(tLen - 1)
 
-              if (zeros) t[targetLen - 1] = 0x3fffffff
+              if (zeros) t[tLen - 1] = 0x3fffffff
 
               trailingInfo = 3
               break
@@ -871,7 +898,7 @@ export function subtractMantissas (m1: Mantissa,
         }
       }
 
-      return -positiveComputedI + roundMantissaToPrecision(t, tLen, t, tLen, prec, rm, trailingInfo)
+      return swp | ((-positiveComputedI + roundMantissaToPrecision(t, tLen, t, tLen, prec, rm, trailingInfo)) << 2)
     }
   }
 
@@ -1249,6 +1276,15 @@ class BigFloat {
   }
 
   /**
+   * Create a BigFloat, initialized to zero, of a given precision
+   * @param prec
+   */
+  static newUnchecked(prec: number=WORKING_PRECISION): BigFloat {
+    let mant = createMantissa(prec)
+    return new BigFloat(0, 0, prec, mant)
+  }
+
+  /**
    * Create a BigFloat from a JS number, rounding in the given direction. Special numbers will be preserved
    * @param n {number} Any JS number
    * @param prec {number} Precision
@@ -1257,6 +1293,7 @@ class BigFloat {
    */
   static fromNumber (n: number, prec: number=WORKING_PRECISION, rm: RoundingMode=WORKING_RM): BigFloat {
     let f = BigFloat.new(prec)
+
     f.setFromNumber(n, rm)
 
     return f
@@ -1407,8 +1444,12 @@ class BigFloat {
       return this
     }
 
-    if (typeof n !== "number") throw new TypeError("BigFloat.setFromNumber takes a JS number")
+    // if (typeof n !== "number") throw new TypeError("BigFloat.setFromNumber takes a JS number")
     n = +n
+    if (n === 0 || !Number.isFinite(n)) {
+      this.sign = n
+      return this
+    }
 
     const mant = this.mant  // mant.length guaranteed >= 3
 
@@ -1458,6 +1499,143 @@ class BigFloat {
   }
 
   /**
+   * Set the precision of this number, attempting to maintain the current value
+   * @param n
+   * @param rm
+   */
+  setPrecision(n: number, rm: RoundingMode = ROUNDING_MODE.NEAREST) {
+    let p = this.prec, m = this.mant, s = this.sign
+    if (p !== n) {
+      let newMant = createMantissa(n)
+
+      if (s !== 0 && Number.isFinite(s)) {
+        let carry = roundMantissaToPrecision(m, m.length, newMant, newMant.length, n, rm, 0)
+
+        this.exp += carry
+      }
+
+      this.prec = n
+      this.mant = newMant
+    }
+  }
+
+  /**
+   * Set this float from a native bigint, with a specified rounding mode. If the precision is set to adjust, it will be
+   * set to the minimum precision that is a multiple of 30 that is capable of holding the number.
+   * @param n
+   * @param rm
+   * @param adjustPrecToFit
+   */
+  setFromNativeBigInt(n: bigint, rm: RoundingMode=WORKING_RM, adjustPrecToFit: boolean = false): BigFloat {
+    let s = 1
+    if (n === 0n) {
+      this.sign = 0
+
+      if (adjustPrecToFit) {
+        this.setPrecision(30)
+      }
+
+      return this
+    } else if (n < 0n) {
+      s = -1
+      n = -n
+    } else {
+      this.sign = 1
+    }
+
+    let prec = this.prec
+
+    // We split n into 30-bit words and count prec bits forward
+    let m = n
+    let words: number[] = []  // reverse order
+
+    // No faster way to do this that I can think of. Average bigint.
+    do {
+      let w = Number(m & 0x3fffffffn)
+      words.push(w)
+      m >>= 30n
+    } while (m !== 0n)
+
+    let wc = words.length
+
+    let asInt32 = new Int32Array(words)
+    asInt32.reverse()  // slow, but whatever... shouldn't be using native bigints anyway
+
+    if (adjustPrecToFit) {
+      this.sign = 0
+      this.setPrecision(prec = wc * 30)
+    }
+
+    let t = this.mant, tl = t.length
+    let carry = roundMantissaToPrecision(asInt32, wc, t, tl, prec, rm, 0)
+    this.exp = carry + wc
+    this.sign = s
+
+    return this
+  }
+
+  static BIGINT_RETURN_MAX_BITS = 1 << 24
+
+  /**
+   * Create a BigFloat from a native bigint. If the precision is set to -1, a precision just above the minimum precision
+   * to faithfully hold the integer is chosen.
+   * @param n
+   * @param rm
+   * @param prec
+   */
+  static fromNativeBigInt(n: bigint, rm: RoundingMode = ROUNDING_MODE.NEAREST, prec: number = -1) {
+    let f = BigFloat.new(Math.max(prec, BIGFLOAT_MIN_PRECISION))
+
+    f.setFromNativeBigInt(n, rm, prec === -1)
+    return f
+  }
+
+  /**
+   * Convert to bigint, returning 0n for non-finite values and values exceeding 2^BIGINT_RETURN_MAX in magnitude
+   * @param rm
+   */
+  toBigInt(rm: RoundingMode = ROUNDING_MODE.TOWARD_ZERO): bigint {
+    let s = this.sign, m = this.mant, mLen = m.length, e = this.exp, p = this.prec
+    if (s === 0 || !Number.isFinite(s)) {
+      return 0n
+    }
+
+    if (e < 0) { // trivially between -0.5 and 0.5 TODO rounding mode
+      return 0n
+    } else if (e === 0) {
+      // Less than 1
+      let r = (s === -1) ? -1n : 1n
+      if (m[0] == 0x20000000) {
+        for (let j = 1; j < mLen; ++j) {
+          if (m[j] != 0) { // rounds up
+            return r
+          }
+        }
+
+        // Tie between 0 and (-)1
+        return 0n
+      } else if (m[0] > 0x20000000) {
+        return r
+      }
+
+      return 0n
+    } else {
+      // Build the bigint word-by-word
+      let w = new Int32Array(neededWordsForPrecision(p))
+      roundMantissaToPrecision(m, mLen, w, w.length, 2 - Math.clz32(m[0]) + 30 * e, rm, 0)
+
+      let k = 0n
+      let i = 0
+      for (; i < e; ++i) {
+        k <<= 30n
+        k += BigInt(w[i]) | 0n
+      }
+
+      return (s === -1) ? -k : k
+    }
+  }
+
+  /**
    * Whether this number is ±0, NaN, or ±inf and therefore is treated specially
    * @returns {boolean}
    */
@@ -1472,15 +1650,19 @@ class BigFloat {
    * @param target {BigFloat}
    * @param rm {number} Rounding mode
    */
-  static addTo (f1: BigFloat, f2: BigFloat, target: BigFloat, rm: RoundingMode=WORKING_RM) {
+  static addTo (f1: BigFloat, f2: BigFloat, target: BigFloat, rm: RoundingMode=WORKING_RM, flipF2Sign=false) {
     let f1Sign = f1.sign, f2Sign = f2.sign
+    f2Sign = flipF2Sign ? -f2Sign : f2Sign
     if (!Number.isFinite(f1Sign) || !Number.isFinite(f2.sign)) {
       target.sign = f1Sign + f2Sign
       return
     }
 
     if (f1Sign === 0) {
-      target.setFromBigFloat(f2, rm)
+      if (f2Sign === 0) {
+        target.sign = f1Sign + f2Sign
+      } else
+        target.setFromBigFloat(f2, rm)
       return
     } else if (f2Sign === 0) {
       target.setFromBigFloat(f1, rm)
@@ -1488,25 +1670,51 @@ class BigFloat {
     }
 
     let f1m = f1.mant, f2m = f2.mant, f1e = f1.exp, f2e = f2.exp
-    let tm = target.mant, tml = tm.length, tPrec = target.prec
+    let tm = target.mant, tml = tm.length, tPrec = target.prec, swp=false
+
+    if (f1e < f2e) { // swap
+      let tmp = f1m
+      f1m = f2m
+      f2m = tmp
+
+      let tmp2 = f1e
+      f1e = f2e
+      f2e = tmp2
+
+      swp = true
+    }
 
     if (f1Sign === f2Sign) {
-      if (f1e < f2e) { // swap
-        let tmp = f1m
-        f1m = f2m
-        f2m = tmp
-
-        let tmp2 = f1e
-        f1e = f2e
-        f2e = tmp2
-      }
-
       let f1ml = f1m.length, f2ml = f2m.length
       let shift = addMantissas(f1m, f1ml, f2m, f2ml, f1e - f2e, tm, tml, tPrec, rm)
 
       target.exp = shift + f1e
       target.sign = f1Sign
+    } else {
+      let f1ml = f1m.length, f2ml = f2m.length
+      // TODO rounding mode flip
+      let shift = subtractMantissas(f1m, f1ml, f2m, f2ml, f1e - f2e, tm, tml, tPrec, rm)
+
+      if (shift & 1) { // swap occurred
+        f1e = f2e
+        swp = !swp
+      } else if (shift & 0b10) { // zero
+        target.sign = f1Sign + f2Sign
+        return
+      }
+
+      target.exp = (shift >> 2) + f1e
+      target.sign = swp ? -f1Sign : f1Sign
     }
+  }
+
+  /**
+   * Add two big floats
+   */
+  static add(f1: BigFloat, f2: BigFloat, prec: number = WORKING_PRECISION, rm: RoundingMode = WORKING_RM): BigFloat {
+    let t = BigFloat.new(prec)
+    BigFloat.addTo(f1, f2, t, rm)
+    return t
   }
 }
 

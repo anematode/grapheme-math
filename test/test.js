@@ -6,7 +6,7 @@ function checkResult (f, args, res) {
 
   if (!Object.is(f(...args), res)) {
     // Converting to string helps with -0, etc since .to.equal is not Object.is
-    expect(pedanticToString(f(...args))).to.equal(pedanticToString(res), "Input: " + args.join(', '))
+    expect(pedanticToString(f(...args))).to.equal(pedanticToString(res), "Input: " + args.map(pedanticToString).join(', '))
   }
 }
 

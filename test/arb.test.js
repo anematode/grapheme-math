@@ -4,7 +4,8 @@ import {
     difficultMantissas,
     PATHOLOGICAL_NUMBERS,
     ROUNDING_MODES, STRICT_ROUNDING_MODES,
-    TYPICAL_NUMBERS, typicalMantissas
+    TYPICAL_NUMBERS, typicalMantissas,
+    ALL_NUMBERS, RANDOM_BIGINTS
 } from "./test_common.js"
 import {
     roundMantissaToPrecision,
@@ -45,7 +46,8 @@ function prettyPrintArg(arg, name, smart = true /* for rounding mode*/) {
 }
 
 // Passed: array of arguments, size of target mantissa, expected value of target mantissa, and expected returned shift
-function testMantissaCase(func, args, argNames, expectedTarget, expectedReturn) {
+// noCheck prevents checking whether the mantissa is correct
+function testMantissaCase(func, args, argNames, expectedTarget, expectedReturn, noCheck=false) {
 
     // Replace target argument with empty array of corresponding length
     let i = argNames.indexOf("target")
@@ -59,7 +61,7 @@ function testMantissaCase(func, args, argNames, expectedTarget, expectedReturn) 
     for (let i = 0; i < target.length; ++i) typedExpectedTarget[i] = expectedTarget[i]
 
     expectedTarget = typedExpectedTarget
-    validateMantissa(expectedTarget)
+    if (!noCheck) validateMantissa(expectedTarget)
 
     // Fill array with junk data, in case the array isn't cleared correctly
     target.fill(0x2BADBEEF)
@@ -79,7 +81,7 @@ function testMantissaCase(func, args, argNames, expectedTarget, expectedReturn) 
         return out
     }
 
-    let wrongTarget = !deepEquals(target, expectedTarget)
+    let wrongTarget = !noCheck && !deepEquals(target, expectedTarget)
     let wrongRet = !deepEquals(ret, expectedReturn)
     if (wrongTarget || wrongRet) {
         let toReproduce = `let target = ${prettyPrintArg(originalTarget)};
@@ -105,6 +107,12 @@ describe("BigFloat", function () {
 
         expectMultipleCases((n, rm) =>
             f.setFromNumber(n, rm).toNumber(), cases)
+    })
+
+    it("losslessly converts to and from bigints", () => {
+        let cases = RANDOM_BIGINTS.map(n => [[n], n])
+
+        expectMultipleCases(n => BigFloat.fromNativeBigInt(n).toBigInt(), cases)
     })
 
     it("behaves like Math.fround when f32=true", () => {
@@ -145,10 +153,6 @@ describe("BigFloat", function () {
                 testMantissaCase(roundMantissaToPrecision, c, args, c[2], c[7])
             }
         })
-
-        /*it("is correct on typical mantissas", () => {
-
-        })*/
     })
 
     describe("addMantissas", () => {
@@ -205,10 +209,6 @@ describe("BigFloat", function () {
                 for (const m2 of difficultMantissas) {
                     for (let shift = 0; shift < 5; ++shift) {
                         // Eliminate invalid cases
-                        if (shift === 0) {
-                            let cmp = compareMantissas(m1, m1.length, m2, m2.length)
-                            if (cmp !== 1) continue
-                        }
 
                         for (let targetSize = 1; targetSize < 5; ++targetSize) {
                             for (let precision of [30, 53, 59, 60, 120]) {
@@ -216,9 +216,10 @@ describe("BigFloat", function () {
                                     let target = new Int32Array(Math.max(neededWordsForPrecision(precision), targetSize))
                                     let ret = referenceSubtractMantissas(m1, m2, shift, precision, target, roundingMode)
 
-                                    //console.log(shift, m1, m2)
+                                    let noCheck = shift === 0 && (compareMantissas(m1, m1.length, m2, m2.length) === 0)
+                                    //console.log(shift, m1, m2, ret, target, noCheck)
 
-                                    testMantissaCase(subtractMantissas, [m1, m1.length, m2, m2.length, shift, target, target.length, precision, roundingMode], argNames, target, ret)
+                                    testMantissaCase(subtractMantissas, [m1, m1.length, m2, m2.length, shift, target, target.length, precision, roundingMode], argNames, target, ret, noCheck)
                                     cases++
                                 }
                             }
@@ -266,4 +267,27 @@ describe("BigFloat", function () {
             console.log(`Completed ${cases} test cases for multiplyMantissas, comparing to referenceMultiplyMantissas, in ${(endTime - startTime) / 1000} seconds.`)
         })
     })
+
+    describe("BigFloat.addTo", () => {
+        it("Should work for f64", () => {
+            expectMultipleCases((a, b) => {
+                return BigFloat.add(BigFloat.fromNumber(a), BigFloat.fromNumber(b)).toNumber()
+            }, cartesianProduct(ALL_NUMBERS, ALL_NUMBERS).map(([a, b]) => {
+                return [[a, b], a + b]
+            }))
+        })
+
+        it("Should work for f32", () => {
+            expectMultipleCases((a, b) => {
+                return BigFloat.add(BigFloat.fromNumber(a, 24), BigFloat.fromNumber(b, 24)).toNumber(ROUNDING_MODE.NEAREST, true)
+            }, cartesianProduct(ALL_NUMBERS, ALL_NUMBERS).map(([a, b]) => {
+                a = Math.fround(a)
+                b = Math.fround(b)
+                return [[a, b], Math.fround(a + b)]
+            }))
+        })
+
+        it("Should work for bigints", () => {})
+    })
+
 })
