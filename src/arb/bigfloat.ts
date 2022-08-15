@@ -1,7 +1,15 @@
-import {isRoundingMode, ROUNDING_MODE, RoundingMode} from "../other/rounding_modes.js"
+import {flipRoundingMode, isRoundingMode, ROUNDING_MODE, RoundingMode} from "../other/rounding_modes.js"
 import {leftZeroPad} from "../utils.js"
-import { flrLog2, getFloatStoreExponent, getFloatStoreMantissa, isDenormal, pow2, setFloatStore } from "../fp/manip.js"
-import {getTrailingInfo2, rightShiftMantissa} from "./old.js";
+import {
+  flrLog2,
+  getFloatStoreExponent,
+  getFloatStoreMantissa,
+  isDenormal,
+  pow2,
+  setFloatStore,
+  ulp
+} from "../fp/manip.js"
+import {getTrailingInfo2} from "./old.js";
 
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
 // the float. m = m_1 / 2^30 + m_2 / 2^60 + ... . The precision is the number of bits kept track of in the words. Since
@@ -39,6 +47,18 @@ let WORKING_PRECISION: number = 53
 let WORKING_RM: RoundingMode = ROUNDING_MODE.NEAREST
 
 type Mantissa = Int32Array
+
+/**
+ * Takes in an arbitrary input and converts to a corresponding big float. If passed a BigFloat, it does nothing; if
+ * passed a number, it converts to BigFloat. Used for user-facing operations
+ * @param arg
+ */
+function cvtToBigFloat (arg) {
+  if (arg instanceof BigFloat) return arg
+  if (typeof arg === 'number') return BigFloat.fromNumber(arg, 53)
+
+  throw new TypeError(`Cannot convert argument ${arg} to BigFloat`)
+}
 
 /**
  * Set the working precision. Silently fails if the precision is invalid
@@ -216,6 +236,26 @@ export function getTrailingInfo (mantissa: Mantissa, index: number): number {
   return 0
 }
 
+export function mulPowTwoMantissa (m: Mantissa, mLen: number, n: number, t: Mantissa, tLen: number): number {
+  let lz = Math.clz32(m[0]) - 2
+  let wordShift = Math.floor(n / 30)  // how many words to shift left (potentially negative)
+  let bitShift = n - wordShift * 30  // how many bits to shift left
+
+  if (bitShift > lz) {
+    wordShift++
+    bitShift -= 30
+  }
+
+  if (bitShift > 0) {
+    leftShiftMantissa(m, mLen, bitShift, t, tLen)
+  } else if (bitShift < 0) {
+    rightShiftMantissa(m, mLen, -bitShift, t, tLen)
+  } else {
+    for (let i = (mLen > tLen ? tLen : mLen) - 1; i >= 0; --i) t[i] = m[i]
+  }
+
+  return wordShift
+}
 
 /**
  * Left shift a mantissa by shift bits, destroying any bits that come off the front, writing the result to target.
@@ -264,6 +304,57 @@ export function leftShiftMantissa (m: Mantissa, mLen: number, shift: number, t: 
   }
 }
 
+function rightShiftMantissa (
+    m: Mantissa,
+    mLen: number,
+    shift,
+    t: Mantissa,
+    tLen: number
+) {
+  let integerShift = (shift / 30) | 0
+  let bitShift = shift % 30
+
+  if (bitShift === 0) {
+    let lastFilledIndex = Math.min(
+        mLen - 1,
+        tLen - integerShift - 1
+    )
+
+    // Since it's a multiple of 30, we just copy everything over
+    for (let i = lastFilledIndex; i >= 0; --i) {
+      t[i + integerShift] = m[i]
+    }
+
+    // Fill empty stuff with zeros
+    for (let i = 0; i < integerShift; ++i) t[i] = 0
+    for (let i = lastFilledIndex + integerShift + 1; i < tLen; ++i) {
+      t[i] = 0
+    }
+  } else {
+    let invBitShift = 30 - bitShift
+    let firstNeededIndex = mLen - integerShift - 1
+    let lastFilledIndex = firstNeededIndex + integerShift + 1
+
+    t[lastFilledIndex] = 0
+
+    for (let i = firstNeededIndex; i >= 0; --i) {
+      let word = m[i]
+
+      // Two components from each word
+      if (i !== firstNeededIndex) {
+        t[i + integerShift + 1] +=
+            (word & ((1 << bitShift) - 1)) << invBitShift
+      }
+      t[i + integerShift] = word >> bitShift
+    }
+
+    for (let i = 0; i < integerShift; ++i) t[i] = 0
+    for (let i = lastFilledIndex; i < tLen; ++i) {
+      t[i] = 0
+    }
+  }
+}
+
 /**
  * roundMantissaToPrecision, but permitting an invalid input mantissa with leading zero words. If all words are zero,
  * the target mantissa is untouched and a shift of 0 is returned.
@@ -301,14 +392,17 @@ export function roundMantissaToPrecisionWithSeek(m: Mantissa, mLen: number, t: M
  * @param prec {number} Precision (target mantissa length assumed to be sufficient)
  * @param rm {number} Rounding mode (assumed to be valid)
  * @param trailing {number} Trailing information about the mantissa. 0 -> all zeros, 1 -> between 0 and 0.5, 2 -> tie (0.5), 3 -> greater than 0.5
+ * @param trailingMode {number} Only used for divMantissas. When set to 1, the trailing info is interpreted as trailing info
+ * occurring after the end of precision, not after the last word in the mantissa
  * @return {number} The shift, in words, of the new mantissa
  */
-export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa, tLen: number, prec: number, rm: RoundingMode, trailing: number=0): number {
+export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa, tLen: number, prec: number, rm: RoundingMode, trailing: number=0, trailingMode: number=0): number {
   mLen = mLen | 0
   tLen = tLen | 0
   prec = prec | 0
   rm = (rm | 0) as RoundingMode
   trailing = trailing | 0
+  trailingMode = trailingMode | 0
 
   if (rm === 0) {
     // rounding mode whatever
@@ -366,6 +460,25 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
   let truncWord = (word >> truncLen) << truncLen
   let rem = word - truncWord
 
+  if (trailingMode === 1) {
+    switch (trailing) {
+      case 0:
+        rem = 0
+            break
+      case 1:
+        rem = (1 << (truncLen - 1)) - 1
+            break
+      case 2:
+        rem = (1 << (truncLen - 1))
+          trailing = 0
+            break
+      case 3:
+        rem = (1 << (truncLen - 1))
+            trailing = 1
+            break
+    }
+  }
+
   // true if we just truncate; false if we round up at the end of precision
   let doTruncation = true
 
@@ -375,6 +488,7 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
     if (rem < tieSplit) {
       doTruncation = true
     } else if (rem > tieSplit) {
+
       doTruncation = false
     } else {
       // Try to break the tie; any nonzero word implies a round up
@@ -459,7 +573,6 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
       }
     }
   }
-
 
   t[truncWordI] = truncWord
   for (let i = truncWordI + 1; i < tLen; ++i) t[i] = 0 // clear the remainder of target
@@ -714,11 +827,12 @@ export function subtractMantissas (m1: Mantissa,
             m1Len = m2Len
             m2Len = tmp
           }
+
+          rm = flipRoundingMode(rm)
         }
 
         positiveComputedI = wordIndex
         positiveComputedWord = computedWord
-
 
         break
       }
@@ -913,8 +1027,8 @@ export function multiplyMantissaByInteger (
     int: number,
     t: Mantissa,
     tLen: number,
-    rm: RoundingMode,
-    prec: number
+    prec: number,
+    rm: RoundingMode
 ): number {
     let newMantissa = new Int32Array(neededWordsForPrecision(prec) + 1) // extra word for overflow
 
@@ -1150,6 +1264,17 @@ function slowExactMultiplyMantissas (m1: Mantissa, m1Len: number, m2: Mantissa, 
   return shift
 }
 
+/**
+ * Multiply two mantissas and write to the target mantissa. Return the shift count.
+ * @param m1
+ * @param m1Len
+ * @param m2
+ * @param m2Len
+ * @param t
+ * @param tLen
+ * @param prec
+ * @param rm
+ */
 export function multiplyMantissas(m1: Mantissa, m1Len: number, m2: Mantissa, m2Len: number, t: Mantissa, tLen: number, prec: number, rm: RoundingMode): number {
     for (let i = 0; i < tLen; ++i) t[i] = 0
 
@@ -1209,12 +1334,13 @@ export function multiplyMantissas(m1: Mantissa, m1Len: number, m2: Mantissa, m2L
 
     if (highestWord !== 0) {
       maxErr = Math.ceil((t[tLen - 1] + maxErr) / 0x40000000)
-      rightShiftMantissa(t, 30)
+      rightShiftMantissa(t, tLen, 30, t, tLen)
 
       t[0] = highestWord
       shift = 0
     }
 
+    // TODO: fast path for obvious cases
     let canBeRounded = canMantissaBeRounded(t, tLen, prec, tLen - 1, rm, 0, maxErr)
 
     if (!canBeRounded) {
@@ -1234,6 +1360,159 @@ export function multiplyMantissas(m1: Mantissa, m1Len: number, m2: Mantissa, m2L
     )
 
     return shift + roundingShift
+}
+
+/**
+ * Ah, the formidable division. I really don't know how to do division besides a boring shift and subtract approach,
+ * generating a couple bits at a time. So in keeping with the challenge of doing this stuff without outside references,
+ * I guess that's what I'll do for now!!!11
+ * @param m1 {Int32Array}
+ * @param m1Len
+ * @param m2 {Int32Array}
+ * @param m2Len
+ * @param prec {number}
+ * @param t {Int32Array}
+ * @param tLen
+ * @param rm {number}
+ */
+export function divMantissas (
+    m1: Mantissa,
+    m1Len: number,
+    m2: Mantissa,
+    m2Len: number,
+    t: Mantissa,
+    tLen: number,
+    prec: number,
+    rm = WORKING_RM
+) {
+  // Init mant1Copy with a shifted copy of mant1
+  let m1cLen = Math.max(m1Len + 1, m2Len)
+  let mant1Copy = new Int32Array(m1cLen)
+  for (let i = 0; i < m1Len; ++i) mant1Copy[i + 1] = m1[i]
+
+  /**
+   * Get the number of leading zeros in the shifting mantissa, plus 2 (due to clz32), and -1 if it's all zeros.
+   * @returns {number}
+   */
+  function getMant1LeadingZeros () {
+    for (let i = 0; i < m1cLen; ++i) {
+      let word = mant1Copy[i]
+      if (word > 0) return Math.clz32(word) + 30 * i
+    }
+
+    return -1
+  }
+
+  for (let i = tLen; i >= 0; --i) {
+    t[i] = 0
+  }
+
+  let newMantissaShift = 1
+
+  // Index of the highest bit and last significant bit within newMantissa (uninitialized) TODO
+  let firstBitIndex = -1,
+      lastSignificantBit = 1 << 30 // maybe v8 can optimize this to be an integer :P
+
+  // Index of the current bit we are writing to
+  let bitIndex = -1
+
+  // Info of the bits coming after the last significant bit TODO
+  let trailingInfo = 0
+
+  function pushZeroBits (count) {
+    if (bitIndex === -1 && count >= 31) {
+      // For the cases in which the first word is 0
+      newMantissaShift -= 1
+      bitIndex += count - 30
+    } else {
+      bitIndex += count
+    }
+  }
+
+  function pushOneBit () {
+    if (bitIndex > lastSignificantBit) {
+      // At this point, we can determine the trailing info.
+
+      if (bitIndex === lastSignificantBit + 1) {
+        if (getMant1LeadingZeros() === -1) {
+          trailingInfo = 2
+        } else {
+          trailingInfo = 3
+        }
+      } else {
+        trailingInfo = 1
+      }
+
+      return true
+    }
+
+    let subIndex = (bitIndex / 30) | 0
+    let bit = 29 - (bitIndex % 30)
+
+    t[subIndex] += 1 << bit
+
+    if (firstBitIndex === -1) {
+      firstBitIndex = bitIndex
+      lastSignificantBit = firstBitIndex + prec - 1
+    }
+
+    return false
+  }
+
+  let mant2LeadingZeros = Math.clz32(m2[0])
+
+  while (true) {
+    let mant1Zeros = getMant1LeadingZeros()
+
+    if (mant1Zeros === -1) break
+    let shift = mant1Zeros - mant2LeadingZeros
+
+    if (shift !== 0) {
+      leftShiftMantissa(mant1Copy, m1cLen, shift, mant1Copy, m1cLen)
+      pushZeroBits(shift)
+    }
+
+    let cmp = compareMantissas(mant1Copy, m1cLen, m2, m2Len)
+    if (cmp === -1) {
+      leftShiftMantissa(mant1Copy, m1cLen, 1, mant1Copy, m1cLen)
+      pushZeroBits(1)
+    } else if (cmp === 0) {
+      pushOneBit()
+      break
+    }
+
+    // Subtract mant2 from mant1
+    let carry = 0
+    for (let i = m2.length - 1; i >= 0; --i) {
+      let word = mant1Copy[i] - m2[i] - carry
+      if (word < 0) {
+        word += BIGFLOAT_WORD_SIZE
+        carry = 1
+      } else {
+        carry = 0
+      }
+
+      mant1Copy[i] = word
+    }
+
+    // Note that carry will sometimes be -1 at this point, when the cmp === -1 shift has truncated off the highest bit
+    // of mant1Copy. This is intentional
+
+    if (pushOneBit()) break
+  }
+
+  const roundingShift = roundMantissaToPrecision(
+      t,
+      tLen,
+      t,
+      tLen,
+      prec,
+      rm,
+      trailingInfo,
+      1
+  )
+
+  return newMantissaShift + roundingShift
 }
 
 class BigFloat {
@@ -1330,8 +1609,8 @@ class BigFloat {
     let MIN_EXPONENT = f32 ? -149 : -1074
     let MIN_NORMAL_EXPONENT = f32 ? -126 : -1022
     let MAX_EXPONENT = f32 ? 127 : 1023
-    let MIN_VALUE = f32 ? 1.175494e-38 : Number.MIN_VALUE
-    let MAX_VALUE = f32 ? 3.40282347e38 : Number.MAX_VALUE
+    let MIN_VALUE = f32 ? 1.401298464324817e-45 : Number.MIN_VALUE
+    let MAX_VALUE = f32 ? 3.4028234663852886e+38  : Number.MAX_VALUE
 
     // Calculate an exponent and mant such that mant * 2^exponent = the number
     let mAsInt = 0, expShift = 0, exp = 0, denormal = false
@@ -1350,7 +1629,7 @@ class BigFloat {
       mAsInt /= pow2(expShift)
       exp = unshiftedExp + expShift
 
-      if (exp < MIN_NORMAL_EXPONENT && exp >= MIN_EXPONENT && !denormal) {
+      if (exp <= MIN_NORMAL_EXPONENT && exp > MIN_EXPONENT && !denormal) {
         // denormal, round to a different precision
         shift = roundMantissaToPrecision(m, mLen, roundedMantissa, 3, exp - MIN_EXPONENT, rm as RoundingMode)
         denormal = true // go back and calculate mAsInt
@@ -1358,13 +1637,13 @@ class BigFloat {
     } while (denormal)
 
     // If the exponent is outside of bounds, we clamp it to a value depending on the rounding mode
-    if (exp < MIN_EXPONENT) {
+    if (exp <= MIN_EXPONENT) {
       if (rm & 2) { // tie
         // Deciding between 0 and MIN_VALUE. Unfortunately at 0.5 * 2^-1074 there is a TIE omg
-        if (exp === MIN_EXPONENT - 1) {
+        if (exp === MIN_EXPONENT) {
           // If greater or ties away
-          if (mAsInt > 0.5 || (rm === ROUNDING_MODE.TIES_AWAY
-            || rm === ROUNDING_MODE.TIES_ODD)) {
+          if (mAsInt > 0.5 || (mAsInt === 0.5 && (rm === ROUNDING_MODE.TIES_AWAY
+            || rm === ROUNDING_MODE.TIES_ODD))) {
             return this.sign * MIN_VALUE
           }
         }
@@ -1711,15 +1990,238 @@ class BigFloat {
   /**
    * Add two big floats
    */
-  static add(f1: BigFloat, f2: BigFloat, prec: number = WORKING_PRECISION, rm: RoundingMode = WORKING_RM): BigFloat {
+  static add(f1: BigFloat | number, f2: BigFloat | number, prec: number = WORKING_PRECISION, rm: RoundingMode = WORKING_RM): BigFloat {
+    f1 = cvtToBigFloat(f1)
+    f2 = cvtToBigFloat(f2)
+
     let t = BigFloat.new(prec)
     BigFloat.addTo(f1, f2, t, rm)
     return t
+  }
+
+  static subTo(f1: BigFloat, f2: BigFloat, target: BigFloat, rm: RoundingMode = WORKING_RM) {
+    BigFloat.addTo(f1, f2, target, rm, true)
+  }
+
+  static sub(f1: BigFloat | number, f2: BigFloat | number, prec: number = WORKING_PRECISION, rm: RoundingMode = WORKING_RM): BigFloat {
+    f1 = cvtToBigFloat(f1)
+    f2 = cvtToBigFloat(f2)
+
+    let t = BigFloat.new(prec)
+    BigFloat.addTo(f1, f2, t, rm)
+    return t
+  }
+
+  static mulTo(f1: BigFloat, f2: BigFloat, target: BigFloat, rm: RoundingMode = WORKING_RM) {
+    let f1Sign = f1.sign, f2Sign = f2.sign
+    target.sign = f1Sign * f2Sign
+
+    if (!Number.isFinite(f1Sign) || !Number.isFinite(f2.sign) || f1Sign === 0 || f2Sign === 0) {
+      return
+    }
+
+    let f1m = f1.mant, f2m = f2.mant, f1e = f1.exp, f2e = f2.exp
+    let f1ml = f1m.length, f2ml = f2m.length
+    let tm = target.mant, tml = tm.length, tPrec = target.prec
+
+    let carry = multiplyMantissas(f1m, f1ml, f2m, f2ml, tm, tml, tPrec, rm)
+    target.exp = carry + f1e + f2e
+  }
+
+  static mul(f1: BigFloat | number, f2: BigFloat | number, prec: number = WORKING_PRECISION, rm: RoundingMode = WORKING_RM): BigFloat {
+    f1 = cvtToBigFloat(f1)
+    f2 = cvtToBigFloat(f2)
+
+    let t = BigFloat.new(prec)
+    BigFloat.mulTo(f1, f2, t, rm)
+    return t
+  }
+
+  /**
+   * Multiply float by an integer between -2^30+1 and 2^30-1. The function does not check for being in the correct range.
+   * @param f
+   * @param n
+   * @param target
+   * @param rm
+   */
+  static mulByIntTo(f: BigFloat, n: number, target: BigFloat, rm: RoundingMode = WORKING_RM) {
+    let sign = f.sign, e = f.exp, fm = f.mant, tm = target.mant
+
+    if (!Number.isFinite(sign) || n === 0) {
+      let s = sign * n
+      target.sign = !Number.isFinite(s) ? s : Math.sign(s)
+      return
+    }
+
+    let shift = multiplyMantissaByInteger(fm, fm.length, n, tm, tm.length, target.prec, rm)
+    target.exp = f.exp + shift
+  }
+
+  /**
+   * Setto one ulp of the given float. If the given float is special, the target is set to NaN.
+   * @param f
+   */
+  setUlp(f: BigFloat | number) {
+    if (typeof f === "number") {
+      let u = ulp(f)
+      this.setFromNumber(u)
+
+      return
+    }
+
+    let fs = f.sign
+
+    if (fs === 0 || !Number.isFinite(fs)) {
+      this.sign = NaN
+      return
+    }
+
+    let end = f.endOfPrecision()
+    let mod30 = (end % 30) + end
+    if (mod30 > end) mod30 -= end
+
+    let div30 = Math.floor(end / 30)
+    let k = 1 << mod30
+
+    let tm = this.mant
+    tm[0] = k
+
+    f.exp = div30
+    f.sign = 1
+
+    for (let i = 1; i < tm.length; ++i) tm[i] = 0
+  }
+
+  /**
+   * Return a low-precision big float of one ulp
+   * @param f
+   * @param prec
+   */
+  static ulp(f: BigFloat | number, prec=4): BigFloat {
+    let r = BigFloat.new(prec)
+    r.setUlp(f)
+
+    return r
+  }
+
+  /**
+   * Multiply f by 2^n.
+   * @param f
+   * @param n
+   * @param target
+   * @param rm
+   */
+  static mulPowTwoTo(f: BigFloat, n: number, target: BigFloat, rm: RoundingMode=WORKING_RM) {
+    target.setFromBigFloat(f, rm)
+    let fm = f.mant, tm = target.mant, tl = tm.length
+
+    let s = mulPowTwoMantissa(fm, fm.length, n, tm, tl)
+    let tp = target.prec
+    if (tp < f.prec) {
+      s += roundMantissaToPrecision(tm, tl, tm, tl, tp, rm)
+    }
+
+    target.exp = f.exp + s
+    target.sign = f.sign
+  }
+
+  static mulPowTwo(f: BigFloat | number, n: number, prec: number, rm: RoundingMode=WORKING_RM): BigFloat {
+    f = cvtToBigFloat(f)
+    let t = BigFloat.new(prec)
+
+    BigFloat.mulPowTwoTo(f, n, t, rm)
+
+    return t
+  }
+
+  static divTo(f1: BigFloat, f2: BigFloat, target: BigFloat, rm: RoundingMode = WORKING_RM) {
+    let f1Sign = f1.sign, f2Sign = f2.sign
+    target.sign = f1Sign / f2Sign
+
+    if (!Number.isFinite(f1Sign) || !Number.isFinite(f2.sign) || f1Sign === 0 || f2Sign === 0) {
+      return
+    }
+
+    let f1m = f1.mant, f2m = f2.mant, f1e = f1.exp, f2e = f2.exp
+    let f1ml = f1m.length, f2ml = f2m.length
+    let tm = target.mant, tml = tm.length, tPrec = target.prec
+
+    let carry = divMantissas(f1m, f1ml, f2m, f2ml, tm, tml, tPrec, rm)
+    target.exp = carry + f1e - f2e
+  }
+
+  static div(f1: BigFloat | number, f2: BigFloat | number, prec: number = WORKING_PRECISION, rm: RoundingMode = WORKING_RM): BigFloat {
+    f1 = cvtToBigFloat(f1)
+    f2 = cvtToBigFloat(f2)
+
+    let t = BigFloat.new(prec)
+    BigFloat.divTo(f1, f2, t, rm)
+
+    return t
+  }
+
+  /**
+   * Compute the (signed) number of ulps between correct and cmp. This function is mainly for correctness checking, so doesn't
+   * have to be blazingly fast. The precision of the cmp float is used to determine what a ulp is. If there are
+   * fractional ulps or more than 2^52 ulps, the result may be inexact.
+   * @param correct
+   * @param cmp
+   * @return Error, along with exactness information
+   */
+  static ulpError(correct: BigFloat | number, cmp: BigFloat | number): number {
+    if (typeof correct === "number") {
+      SCRATCH_DOUBLE.setFromNumber(correct)
+      correct = SCRATCH_DOUBLE
+    }
+    if (typeof cmp === "number") {
+      SCRATCH_DOUBLE_2.setFromNumber(cmp)
+      cmp = SCRATCH_DOUBLE_2
+    }
+
+    BigFloat.subTo(cmp, correct, SCRATCH_DOUBLE_3 /* err */, ROUNDING_MODE.TOWARD_INF)
+    BigFloat.mulPowTwoTo(SCRATCH_DOUBLE_3, -correct.endOfPrecision(), SCRATCH_DOUBLE_2)
+
+    return SCRATCH_DOUBLE_2.toNumber(ROUNDING_MODE.TOWARD_INF /* round up */)
+  }
+
+  /**
+   * Return the index, in bits, of the start of precision, as an offset from bit 0, the first bit of the integer part,
+   * where less significant bits are negative. For example, the start of precision of 1 is bit 0; the start of precision
+   * of 0.5 is bit -1.
+   */
+  startOfPrecision(): number {
+    return this.exp * 30 + 1 - Math.clz32(this.mant[0])
+  }
+
+  /**
+   * Return the index, in bits, of the end of precision, as an offset from bit 0, the first bit of the integer part,
+   * where less significant bits are negative. That is, return the index of the last stored bit.
+   * Therefore, under round-to-zero arithmetic, f + (2 ^ (f.endOfPrecision() - 1)) is f, while f + (2 ^ (f.endOfPrecision())) is greater than f.
+   */
+  endOfPrecision(): number {
+    return this.exp * 30 + 2 - Math.clz32(this.mant[0]) - this.prec
+  }
+
+  /**
+   * Multiply float by a JS number, allowing a special case for
+   * @param f
+   * @param n
+   * @param target
+   * @param rm
+   */
+  static mulByNumberTo(f: BigFloat, n: number, target: BigFloat, rm: RoundingMode = WORKING_RM): BigFloat {
+    return f
+  }
+
+  flipSign() {
+    this.sign *= -1
   }
 }
 
 const SCRATCH_MANTISSA = createMantissa(53)
 const SCRATCH_DOUBLE = BigFloat.new(53)
+const SCRATCH_DOUBLE_2 = BigFloat.new(53)
+const SCRATCH_DOUBLE_3 = BigFloat.new(53)
 
 // Convenience functions
 

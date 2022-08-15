@@ -104,7 +104,7 @@ export function cartesianProduct (...args) {
   return args.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat(1))))
 }
 
-export const ALL_NUMBERS = [ ...TYPICAL_NUMBERS, ...RANDOM_NUMBERS, ...PATHOLOGICAL_NUMBERS ]
+export const ALL_NUMBERS = [ [...new Array(1000).keys()].map(x => [x, -x]).flat(), ...TYPICAL_NUMBERS, ...RANDOM_NUMBERS, ...PATHOLOGICAL_NUMBERS ]
 export const RANDOM_BIGINTS = []
 
 let rng = getRNG(11)

@@ -25,6 +25,7 @@ import {
     subtractMantissas as referenceSubtractMantissas,
     multiplyMantissas as referenceMultiplyMantissas
 } from "../build/arb/reference.js";
+import {isDenormal} from "../build/fp/manip.js";
 
 const BF = BigFloat
 const RM = ROUNDING_MODE
@@ -271,6 +272,7 @@ describe("BigFloat", function () {
     describe("BigFloat.addTo", () => {
         it("Should work for f64", () => {
             expectMultipleCases((a, b) => {
+
                 return BigFloat.add(BigFloat.fromNumber(a), BigFloat.fromNumber(b)).toNumber()
             }, cartesianProduct(ALL_NUMBERS, ALL_NUMBERS).map(([a, b]) => {
                 return [[a, b], a + b]
@@ -284,6 +286,37 @@ describe("BigFloat", function () {
                 a = Math.fround(a)
                 b = Math.fround(b)
                 return [[a, b], Math.fround(a + b)]
+            }))
+        })
+
+        it("Should work for bigints", () => {})
+    })
+
+    describe("BigFloat.divTo", () => {
+        it("Should work for f64", () => {
+
+            expectMultipleCases((a, b) => {
+                let prec = 53
+                if (isDenormal(a / b)) {
+                    prec = 100  // weird intermediate rounding effects
+                }
+
+                return BigFloat.div(BigFloat.fromNumber(a), BigFloat.fromNumber(b), prec).toNumber()
+            }, cartesianProduct(ALL_NUMBERS, ALL_NUMBERS).map(([a, b]) => {
+                return [[a, b], a / b]
+            }))
+        })
+
+        it("Should work for f32", () => {
+            expectMultipleCases((a, b) => {
+                let prec = 24
+                if (Math.abs(a / b) < 1.1754943508222875e-38) {
+                    prec = 60  // weird intermediate rounding effects
+                }
+
+                return BigFloat.div(BigFloat.fromNumber(a, 24), BigFloat.fromNumber(b, 24), prec).toNumber(ROUNDING_MODE.NEAREST, true)
+            }, cartesianProduct(ALL_NUMBERS.map(Math.fround), ALL_NUMBERS.map(Math.fround)).map(([a, b]) => {
+                return [[a, b], Math.fround(a / b)]
             }))
         })
 

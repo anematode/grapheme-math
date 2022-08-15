@@ -84,7 +84,7 @@ export function isRoundingMode (n: any): boolean {
  * @param n Rounding mode
  * @returns Flipped rounding mode
  */
-export function flipRoundingMode (n: number): number {
-  return (n & 16) ? (n ^ 1) : n
+export function flipRoundingMode (n: RoundingMode): RoundingMode {
+  return ((n & 16) ? (n ^ 1) : n) as RoundingMode
 }
 
