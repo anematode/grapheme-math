@@ -2,7 +2,7 @@
 // Reference functions. Slow but (hopefully) accurate
 import {compareMantissas, leftShiftMantissa, prettyPrintMantissa, rightShiftMantissa} from "./old.js"
 import {roundMantissaToPrecision, roundMantissaToPrecisionWithSeek} from "./bigfloat.js";
-import {ROUNDING_MODE} from "../other/rounding_modes.js"
+import {flipRoundingMode, ROUNDING_MODE} from "../other/rounding_modes.js"
 
 const BIGFLOAT_WORD_BITS = 30
 const RECIP_BIGFLOAT_WORD_BITS = 1 / BIGFLOAT_WORD_BITS
@@ -62,6 +62,7 @@ export function subtractMantissas (mant1, mant2, mant2Shift, prec, target, round
   if (mant2Shift === 0 && cmp === 0) return 0b10;  // equal
   else if (mant2Shift === 0 && cmp === -1) {
     ;[mant1, mant2] = [mant2, mant1]
+    round = flipRoundingMode(round)
     swp = 1
   }
 

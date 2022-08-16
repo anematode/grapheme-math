@@ -35,7 +35,8 @@ let currentInput = ""
 let historyIndex = 0
 
 function pushToConsole(str) {
-  consoleContents.value += str + '\n'
+  consoleContents = document.getElementById("console-contents")
+  if (consoleContents) consoleContents.value += str + '\n'
 }
 
 let oldLog = console.log
@@ -206,6 +207,7 @@ export function benchmark(f, {
   inputs=[], // default is a single empty input; each input is an array
   exchangeLoops = false, // if true, run individual inputs multiple times in sequence; if false, run all inputs in sequence multiple times
   deoptimize = true, // TODO
+    subiters = 1,
   name = ++benchName
 } = {}) {
   if (typeof f !== "function") throw new TypeError("f must be a function")
@@ -275,7 +277,7 @@ export function benchmark(f, {
 
   return {
     ...res,
-    explain: () => `Benchmark ${res.name} completed ${res.totalInputs} inputs in ${showTime(res.total)}, average ${showTime(res.msPerInput)} per input`
+    explain: () => `Benchmark ${res.name} completed ${res.totalInputs} inputs in ${showTime(res.total)}, average ${showTime(res.msPerInput / subiters)} per input`
   }
 }
 
