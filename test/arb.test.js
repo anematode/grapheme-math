@@ -124,34 +124,34 @@ describe("BigFloat", function () {
     })
 
     describe("roundMantissaToPrecision", () => {
-        let args = ["m", "mLen", "t", "tLen", "prec", "rm", "trailing"]
+        let args = ["m", "mLen", "t", "tLen", "prec", "rm", "trailing", "trailingMode"]
         it("satisfies difficult test cases", () => {
             let testCases = [
-                [[0x3fffffff, 0x3fffffff, 0x3fffffff], 3, [1, 0, 0], 3, 50, RM.NEAREST, 0, 1],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [1, 0, 0], 3, 50, RM.NEAREST, 0, 1],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [1, 0, 0], 3, 55, RM.NEAREST, 0, 1],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.NEAREST, 0, 0],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3fffffe0, 0x00000000], 3, 55, RM.TIES_ODD, 0, 0],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3fffffe0, 0x00000000], 3, 55, RM.TIES_ZERO, 0, 0],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.TIES_AWAY, 0, 0],
-                [[0x3fffffff, 0x3ffffff8, 0x00000000], 3, [1, 0, 0], 3, 56, RM.NEAREST, 0, 1],
-                [[0x3fffffff, 0x3ffffff8, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.TIES_ODD, 0, 0],
-                [[0x3fffffff, 0x3ffffff8, 0x00000001], 3, [1, 0, 0], 3, 56, RM.TIES_ODD, 0, 1],
-                [[0x3fffffff, 0x3ffffff8, 0x00000000], 3, [1, 0, 0], 3, 56, RM.TIES_ODD, 1, 1],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.UP, 0, 0],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [1, 0, 0], 3, 56, RM.UP, 1, 1],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.DOWN, 0, 0],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.DOWN, 1, 0],
-                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.DOWN, 1, 0],
+                [[0x3fffffff, 0x3fffffff, 0x3fffffff], 3, [1, 0, 0], 3, 50, RM.NEAREST, 0, 0, 1],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [1, 0, 0], 3, 50, RM.NEAREST, 0, 0, 1],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [1, 0, 0], 3, 55, RM.NEAREST, 0, 0, 1],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.NEAREST, 0, 0, 0],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3fffffe0, 0x00000000], 3, 55, RM.TIES_ODD, 0, 0, 0],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3fffffe0, 0x00000000], 3, 55, RM.TIES_ZERO, 0, 0, 0],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.TIES_AWAY, 0, 0, 0],
+                [[0x3fffffff, 0x3ffffff8, 0x00000000], 3, [1, 0, 0], 3, 56, RM.NEAREST, 0, 0, 1],
+                [[0x3fffffff, 0x3ffffff8, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.TIES_ODD, 0, 0, 0],
+                [[0x3fffffff, 0x3ffffff8, 0x00000001], 3, [1, 0, 0], 3, 56, RM.TIES_ODD, 0, 0, 1],
+                [[0x3fffffff, 0x3ffffff8, 0x00000000], 3, [1, 0, 0], 3, 56, RM.TIES_ODD, 1, 0, 1],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.UP, 0, 0, 0],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [1, 0, 0], 3, 56, RM.UP, 1, 0, 1],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.DOWN, 0, 0, 0],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.DOWN, 1, 0, 0],
+                [[0x3fffffff, 0x3ffffff0, 0x00000000], 3, [0x3fffffff, 0x3ffffff0, 0x00000000], 3, 56, RM.DOWN, 1, 0, 0],
 
                 // Rounding occurs at a word boundary
-                [[0x008954e2, 0x3089d80e, 0x00000000], 3, [0x008954e3, 0x00000000], 2, 24, RM.NEAREST, 0, 0],
-                [[0x008954e2, 0x3089d80e, 0x00000000], 3, [0x008954e2, 0x00000000], 2, 24, RM.DOWN, 0, 0],
-                [[0x008954e2, 0x3089d80e, 0x00000000], 3, [0x008954e3, 0x00000000], 2, 24, RM.UP, 0, 0],
+                [[0x008954e2, 0x3089d80e, 0x00000000], 3, [0x008954e3, 0x00000000], 2, 24, RM.NEAREST, 0, 0, 0],
+                [[0x008954e2, 0x3089d80e, 0x00000000], 3, [0x008954e2, 0x00000000], 2, 24, RM.DOWN, 0, 0, 0],
+                [[0x008954e2, 0x3089d80e, 0x00000000], 3, [0x008954e3, 0x00000000], 2, 24, RM.UP, 0, 0, 0],
             ]
 
             for (let c of testCases) {
-                testMantissaCase(roundMantissaToPrecision, c, args, c[2], c[7])
+                testMantissaCase(roundMantissaToPrecision, c, args, c[2], c[8])
             }
         })
     })

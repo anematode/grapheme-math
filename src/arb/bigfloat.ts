@@ -410,7 +410,7 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
       // just need to copy over m to t (if there is no aliasing)
       let len = mLen > tLen ? tLen : mLen
       for (let i = 0; i < len; ++i) t[i] = m[i]
-      // We don't even need to clear the rest of t to zeros, because it's rounding mode whatever
+      // We don't even need to clear the rest of t to zeros, because it's rounding mode whatever :)
     }
 
     return 0
@@ -421,7 +421,7 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
 
   let trunc = (prec + offset) | 0                   // what BIT after which the mantissa should be all zeros
   let truncWordI = (trunc / BIGFLOAT_WORD_BITS) | 0 // which word this bit occurs in
-  // How many bits needs to be removed off the word; always between 1 and 30 inclusive
+  // How many bits need to be removed off the word; always between 1 and 30 inclusive
   let truncLen = BIGFLOAT_WORD_BITS - (trunc - Math.imul(truncWordI, BIGFLOAT_WORD_BITS) /* will never overflow */)
 
   /**
@@ -448,7 +448,7 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
 
   if (truncWordI >= mLen) {
     // End of precision occurs after the given mantissa, so the entire mantissa fits in the target; copy it over
-    if (m !== t) for (let i = 0; i < mLen; ++i) t[i] = m[i]
+    if (m !== t /* aliasing */) for (let i = 0; i < mLen; ++i) t[i] = m[i]
 
     // clear rest of target. the trailing info is not enough to recover any information
     for (let i = mLen; i < tLen; ++i) t[i] = 0
@@ -482,7 +482,7 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
   // true if we just truncate; false if we round up at the end of precision
   let doTruncation = true
 
-
+  debugger
   // The rounding mode now matters
   if (rm & 2) { // ties
     let tieSplit = 1 << (truncLen - 1)
@@ -782,10 +782,13 @@ export function subtractMantissas (m1: Mantissa,
   // Relative to start of m1
   let m2End = m2Len + m2shift
   let subEnd = m2End > m1Len ? m2End : m1Len
-  let allEnd = subEnd > tLen ? subEnd : tLen
 
-  // Another common special case: m2 is entirely after the end of precision
+  // Common special case: m2 is entirely after the end of precision
   if (m2shift > tLen) {
+    if (!(rm & 0b11)) { // rm whatever or up/inf. Fast path for unchanging mantissa
+      return roundMantissaToPrecision(m1, m1Len, t, tLen, prec, rm, 0) << 2
+    }
+
     let i = 0
     for (; i < m1Len; ++i) t[i] = m1[i]
     for (; i < tLen; ++i) t[i] = 0x3fffffff
@@ -815,7 +818,7 @@ export function subtractMantissas (m1: Mantissa,
   }
 
   // Seek the first different word
-  let firstDiffI = 0
+  let firstDiffI = 0, swp = 0
   if (m2shift === 0) {
     let fEnd = m1Len > m2Len ? m2Len : m1Len
     for (; firstDiffI < fEnd && (m1[firstDiffI] == m2[firstDiffI]); ++firstDiffI);
@@ -846,44 +849,97 @@ export function subtractMantissas (m1: Mantissa,
 
       return (-firstDiffI + carry) << 2
     }
+
+    swp = +((firstDiffI < m1Len ? m1[firstDiffI] : 0) < (firstDiffI < m2Len ? m2[firstDiffI] : 0))
   }
+
+  let trailing = 0, writeStart = 0, firstUncomputed = 0
+  while (1) {
+    trailing = 0
+    // When subtracting, we have four sections in some order: m1 only, m1-m2, -m2, and 0
+
+    // m1 only (pre m2)
+    let i, j
+    for (i = firstDiffI, j = writeStart; i < m1Len && j < m2shift; ++i, ++j) t[j] = m1[i]
+    // 0s
+    for (; j < m2shift; ++j) t[j] = 0
+    // m1-m2
+    let maxI = m2End > m1Len ? m1Len : m2End
+    for (i = j + firstDiffI; i < maxI && j < tLen; ++i, ++j) t[j] = m1[i] - m2[i - m2shift]
+    // m1 only
+    for (i = m2End > firstUncomputed ? m2End : firstUncomputed, j = i - firstDiffI; i < m1Len && j < tLen; ++i, ++j)
+      t[j] = m1[i]
+    // -m2
+    for (i = m1Len > firstUncomputed ? m1Len : firstUncomputed, j = i - firstDiffI; i < m2End && j < tLen; ++i, ++j)
+      t[j] = -m2[i - m2shift] | 0
+    // 0s
+    for (; j < tLen; ++j) t[j] = 0
+
+    // Trailing info
+    trailing: if (rm) {
+      // Check words after tLen + firstDiffI
+      let lw = tLen + firstDiffI
+      let i, j
+
+      for (i = lw, j = lw - m2shift; i < m1Len && j < m2Len; ++i, ++j) {
+        let w = (m1[i] - m2[j]) | 0
+
+        if (w < 0) {
+          trailing = -1
+          break trailing
+        } else if (w > 0) {
+          trailing = 1
+          break trailing
+        }
+      }
+
+      for (; i < m1Len; ++i) if (m1[i]) {
+        trailing = 1
+        break trailing
+      }
+      for (; j < m2Len; ++j) if (m2[j]) {
+        trailing = -1
+        break trailing
+      }
+    }
+
+    trailing = swp ? -trailing : trailing
+
+    let carry = trailing === -1 ? -1 : 0
+    for (let i = tLen - 1; i >= 0; --i) {
+      let wc = t[i]
+      let w = (swp ? -wc : wc) + carry
+      carry = -(w < 0) | 0
+      w = (w < 0) ? w + 0x40000000 : w
+
+      t[i] = w
+    }
+
+    if (t[0] === 0) {  // uh oh. need to do some funny business.
+      if (trailing === -1) t[tLen - 1]++
+      let lzc = 1  // leading zero words
+
+      for (; lzc < tLen && !t[lzc]; ++lzc);
+      for (let i = 0; i < tLen - lzc; ++i) { // left shift
+        let w = t[i + lzc]
+        t[i] = swp ? -w : w
+      }
+
+      writeStart = tLen - lzc
+      firstDiffI += lzc
+      firstUncomputed = firstDiffI + writeStart
+
+      continue
+    }
+
+    break
+  }
+
+  return ((-firstDiffI + (rm ? (roundMantissaToPrecision(t, tLen, t, tLen, prec,
+      swp ? flipRoundingMode(rm) : rm, +!!trailing)) : 0)) << 2) + (+swp)
+
+
   //return referenceSubtractMantissas(m1, m2, m2shift, prec, t, rm)
-
-  let scratch = getScratchChunk(subEnd)
-
-  // Four potential chunks: m1, m1-m2, -m2, m1
-
-  let swp = (firstDiffI < m1Len ? m1[firstDiffI] : 0)
-      < ((firstDiffI > m2shift && firstDiffI < m2End) ? m2[firstDiffI - m2shift] : 0)
-
-  for (let i = 0; i < m2shift; ++i) {
-    scratch[i] = m1[i]
-  }
-  let m = m1Len > m2End ? m2End : m1Len
-  for (let i = m2shift; i < m; ++i) {
-    scratch[i] = m1[i] - m2[i - m2shift]
-  }
-  for (let i = m1Len; i < m2End; ++i) {
-    scratch[i] = -m2[i - m2shift]
-  }
-  for (let i = m2End; i < m1Len; ++i) { // no checks needed
-    scratch[i] = m1[i]
-  }
-
-  let carry = 0
-  for (let i = subEnd - 1; i >= 0; --i) {
-    let w = scratch[i]
-    w = swp ? -w : w
-    w += carry
-
-    carry = -(w < 0)
-    w = (w < 0) ? w + 0x40000000 : w
-
-    scratch[i] = w
-  }
-
-  return ((-firstDiffI + roundMantissaToPrecisionWithSeek(scratch, subEnd, t, tLen, prec, rm, 0)) << 2) + (+swp)
-
 }
 
 /**
