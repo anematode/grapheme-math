@@ -10,6 +10,7 @@ import {
   ulp
 } from "../fp/manip.js"
 import {getTrailingInfo2} from "./old.js";
+import {subtractMantissas as referenceSubtractMantissas} from "./reference.js";
 
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
 // the float. m = m_1 / 2^30 + m_2 / 2^60 + ... . The precision is the number of bits kept track of in the words. Since
@@ -94,11 +95,10 @@ export function getWorkingRM (): RoundingMode {
 }
 
 /**
- * The minimum number of words needed to store a mantissa with prec bits. The +2 is because the bits need to be stored
- * at any shift within the word, from 1 to 29, so some space may be needed. +2 means that no matter the precision, the
- * end of precision will never be the exact end of the mantissa. For example,
+ * The minimum number of words needed to store a mantissa with prec bits. We have a bit of padding for convenience.
  *
- * prec = 30, neededWords = 2              --> end of precision
+ * TODO FIX
+ * prec = 30, neededWords = 3              --> end of precision
  * m = [ 1, 0b111111111111111111111111111111 ]
  *       <------------- prec ------------->
  * prec = 31, neededWords = 3                 --> end of precision
@@ -110,7 +110,7 @@ export function getWorkingRM (): RoundingMode {
 export function neededWordsForPrecision (prec: number): number {
   prec |= 0
 
-  return ((prec - 1) / BIGFLOAT_WORD_BITS + 2) | 0
+  return ((prec - 1) / BIGFLOAT_WORD_BITS + 3) | 0
 }
 
 // Whether a precision is valid
@@ -482,6 +482,7 @@ export function roundMantissaToPrecision (m: Mantissa, mLen: number, t: Mantissa
   // true if we just truncate; false if we round up at the end of precision
   let doTruncation = true
 
+
   // The rounding mode now matters
   if (rm & 2) { // ties
     let tieSplit = 1 << (truncLen - 1)
@@ -725,6 +726,24 @@ export function addMantissas (m1: Mantissa, m1l: number, m2: Mantissa, m2l: numb
   return roundingShift + shift
 }
 
+let SCRATCH_CHUNK = new Int32Array()
+
+/**
+ * Get a chunk of words to use for intermediate calculations, avoiding repeat allocations
+ * @param minLength
+ */
+function getScratchChunk(minLength: number): Int32Array {
+  minLength = minLength | 0
+  if (minLength > SCRATCH_CHUNK.length) SCRATCH_CHUNK = new Int32Array(minLength)
+  return SCRATCH_CHUNK
+}
+
+function leftShiftMantissaByOneWord(t: Mantissa, tLen: number) {
+  for (let i = 0; i < tLen - 1; ++i) {
+    t[i] = t[i + 1]
+  }
+}
+
 /**
  * Subtract two (positive) mantissas, with mant2 under a given shift, returning a bit field of the
  * following:
@@ -752,268 +771,119 @@ export function subtractMantissas (m1: Mantissa,
                                    tLen: number,
                                    prec: number,
                                    rm: RoundingMode): number {
-  // The algorithm for (efficient) subtraction is a bit complicated. The reference implementation allocates a mantissa
-  // large enough to store the exact result, computes the exact result, and rounds it. But if mant2Shift is large, this
-  // approach allocates and calculates way more stuff than it needs to. Ideally, we allocate little or nothing and only
-  // compute as much as necessary for the target mantissa to be rounded to prec bits.
+  // Efficient subtraction without extra allocation is nontrivial.
 
-  // We already assume that mant1 and mant2 are both valid mantissas, and that mant1 > mant2. We need to find the
-  // location of the first word of the result mantissa.
+  m1Len = m1Len | 0
+  m2Len = m2Len | 0
+  tLen = tLen | 0
+  prec = prec | 0
+  rm = (rm | 0) as RoundingMode
 
-  let mant2End = m2Len + m2shift
-  let exactEnd = Math.max(m1Len, mant2End) // The end of exact computation, relative to the first word of mant1
+  // Relative to start of m1
+  let m2End = m2Len + m2shift
+  let subEnd = m2End > m1Len ? m2End : m1Len
+  let allEnd = subEnd > tLen ? subEnd : tLen
 
-  // We can visualize the situation as follows:
-  //  <--           mant1Len = 4                  -->
-  // [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0xcafecafe]
-  //  <-- mant2Shift = 2 --> [ 0xdeadbeef, 0xdeadbeef, 0xdeadbeef ]
-  //                          <--         mant2Len = 3         -->
-  //  <--               exactEnd = mant2End = 5                -->
+  // Another common special case: m2 is entirely after the end of precision
+  if (m2shift > tLen) {
+    let i = 0
+    for (; i < m1Len; ++i) t[i] = m1[i]
+    for (; i < tLen; ++i) t[i] = 0x3fffffff
 
-  // We calculate words of the result relative to the first word of mant1 (generally, this is how we index things). If a
-  // word is 0, then the start of the result occurs later. If a word is 1, the start of the result may be there, or may
-  // be later, depending on the next computed word: If the next computed word is negative, then the result begins later;
-  // if the next computed word is 0, then the result may begin later; if the next computed word is positive, the result
-  // begins at the word that is 1. If a word is 2 or greater, the start of the result is there.
+    if (m1Len <= tLen) {
+      let lw = --t[m1Len - 1]  // decrement by one ulp + trailing info 3
+      let carry = 0
 
-  // mant1:      [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0x00000001 ]
-  // mant2:      [ 0xcafecafe, 0xcafecafe, 0xcafecafd, 0x00000000 ]
-  // computed words:    0           0           1       1 (positive)
-  //                                            ^ result begins here
+      if (lw < 0) {
+        for (let i = m1Len - 1; i >= 0; --i) {
+          let w = t[i] + carry
+          carry = -(w < 0) | 0
+          w = (w < 0) ? w + 0x40000000 : w
 
-  // mant1:      [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0x00000000 ]
-  // mant2:      [ 0xcafecafe, 0xcafecafe, 0xcafecafd, 0x00000001 ]
-  // computed words:    0           0           1       -1 (negative)
-  //                                            result begins later due to carry -->
-  // after carry:[ 0x00000000, 0x00000000, 0x00000000, 0x3fffffff ]
-  //                                                        ^ result begins here
-
-  // In any case, once a positive word is discovered, we start storing computed words in the target mantissa. Once the
-  // target mantissa is exhausted, we do the carry and count how many of the first n words are 0. If n > 0, we shift the
-  // target mantissa left by n words and continue computing words, etc. etc. If n == 0, we note that the maximum
-  // possible imprecision in the result is +-1 units in the last place (of the last word), so we check whether this
-  // error bound is sufficient for us to call it quits under the current precision and rounding mode. If not, we must
-  // compute the (positive or negative) trailing information of words following the target mantissa. In particular, we
-  // need to know which range the stuff after the target lies in: (-0x40000000, -0x20000000), -0x20000000 (tie),
-  // (-0x20000000, 0x00000000), 0x00000000 (zero), (0x00000000, 0x20000000), 0x20000000 (tie), (0x20000000, 0x40000000).
-  // These cases are enumerated as -3, -2, -1, 0, 1, 2, and 3, respectively.
-
-  let positiveComputedI = -1
-  let positiveComputedWord = 0
-  let wordIndex = 0
-  let swp = 0
-
-  for (; wordIndex < exactEnd; ++wordIndex) {
-    let mant2Index = wordIndex - m2shift
-    let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
-        mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
-
-    let computedWord = mant1Word - mant2Word
-    if (computedWord !== 0) {
-      if (computedWord < 0) {
-        // Oops, m2 > m1. Swap them
-        swp = 1
-        computedWord = -computedWord
-
-        // Swap m1 and m2
-        {
-          let tmp = m1
-          m1 = m2
-          m2 = tmp
+          t[i] = w
+          if (carry === 0) break
         }
-
-        {
-          let tmp = m1Len
-          m1Len = m2Len
-          m2Len = tmp
-        }
-
-        rm = flipRoundingMode(rm)
       }
 
-      positiveComputedI = wordIndex
-      positiveComputedWord = computedWord
-
-      break
-    }
-  }
-
-  if (wordIndex === exactEnd) {
-    // Equality
-    return 0b10  // bit field indicating zero, see above for meaning
-  }
-
-  t[0] = positiveComputedWord
-
-  // mant1:      [ 0xcafecafe, 0xcafecafe, 0xcafecafe, 0x00000000 ]
-  // mant2:      [ 0xcafecafe, 0xcafecafe, 0xcafecafd, 0x00000001 ]
-  // computed words:    0           0           1 = positiveComputedWord
-  //                                            ^ positiveComputedWordIndex
-
-  // Returns the number of zero words that occurred at the beginning of target
-  function doCarry (startIndex = tLen-1) {
-    // Before: [ 0x00000002, -0x3fffffff, -0x3fffffff, -0x3ffffffe ]
-    // After:  [ 0x00000001,  0x00000000,  0x00000000,  0x00000002 ]
-    //          n = 0 zero words
-
-    // Before: [ 0x00000001, -0x3fffffff, -0x3fffffff, -0x3ffffffe ]
-    // After:  [ 0x00000000,  0x00000000,  0x00000000,  0x00000002 ]
-    //          <--       n = 3 zero words        -->
-
-    let carry = 0
-    for (let i = startIndex; i >= 0; --i) {
-      let computedWord = t[i] + carry
-
-      if (computedWord < 0) {
+      if (t[0] === 0) {
         carry = -1
-        computedWord += 0x40000000
-      } else {
-        carry = 0
+        leftShiftMantissaByOneWord(t, tLen)
       }
 
-      t[i] = computedWord
+      return (carry + (rm ? roundMantissaToPrecision(t, tLen, t, tLen, prec, rm, 3 /* m2 */) : 0)) << 2
     }
-
-    let zeroWords = 0
-    for (; zeroWords < tLen && (!t[zeroWords]); ++zeroWords);
-
-    // Before: [ 0x00000000,  0x00000000,  0x00000000,  0x00000002 ]
-    //          <--       n = 3 zero words        -->
-    // After:  [ 0x00000002,  0x00000000,  0x00000000,  0x00000000 ]
-    if (zeroWords > 0) {
-      // We shift the target left so the first positive word is at index 0, then adjust positiveComputedWordIndex
-      leftShiftMantissa(t, tLen, 30 * zeroWords, t, tLen)
-      positiveComputedI += zeroWords
-    }
-
-    return zeroWords
   }
 
-  // Compute words after the first positive computed word, carrying whenever the target is exhausted
-  for (wordIndex = positiveComputedI + 1; wordIndex < exactEnd; ++wordIndex) {
-    let targetIndex = wordIndex - positiveComputedI
-    if (targetIndex >= tLen) {
-      let zeroWords = doCarry()
+  // Seek the first different word
+  let firstDiffI = 0
+  if (m2shift === 0) {
+    let fEnd = m1Len > m2Len ? m2Len : m1Len
+    for (; firstDiffI < fEnd && (m1[firstDiffI] == m2[firstDiffI]); ++firstDiffI);
 
-      if (zeroWords !== 0) {
-        // The carry caused zeros to appear at the beginning, so we continue computing words
-        targetIndex = wordIndex - positiveComputedI
-      } else {
-        // The target is full of computed words, and the first word is positive
-        break
-      }
+    if (firstDiffI === m1Len) for (; firstDiffI < m2Len && !m2[firstDiffI]; ++firstDiffI);
+    else if (firstDiffI === m2Len) for (; firstDiffI < m1Len && !m1[firstDiffI]; ++firstDiffI);
+
+    if (firstDiffI === subEnd) return 0b10
+
+    if (firstDiffI > m1Len) {
+      // Special case: all is negative m2Len
+      let j = 0
+      for (let i = firstDiffI; i < m2Len && j < tLen; ++i, ++j) t[j] = m2[i]
+      for (; j < tLen; ++j) t[j] = 0
+
+      let carry = rm ? roundMantissaToPrecision(t, tLen, t, tLen, prec, flipRoundingMode(rm),
+          tLen < m2Len ? getTrailingInfo(m2, tLen + 1) : 0) : 0
+
+      return 1 + ((-firstDiffI + carry) << 2)
+    } else if (firstDiffI > m2Len) {
+      let j = 0
+      for (let i = firstDiffI; i < m1Len && j < tLen; ++i, ++j) t[j] = m1[i]
+
+      for (; j < tLen; ++j) t[j] = 0
+
+      let carry = rm ? roundMantissaToPrecision(t, tLen, t, tLen, prec, rm,
+          tLen < m1Len ? getTrailingInfo(m1, tLen + 1) : 0) : 0
+
+      return (-firstDiffI + carry) << 2
     }
+  }
+  //return referenceSubtractMantissas(m1, m2, m2shift, prec, t, rm)
 
-    let mant2Index = wordIndex - m2shift
-    let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
-        mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
-    let computedWord = (mant1Word - mant2Word) | 0
+  let scratch = getScratchChunk(subEnd)
 
-    t[targetIndex] = computedWord
+  // Four potential chunks: m1, m1-m2, -m2, m1
+
+  let swp = (firstDiffI < m1Len ? m1[firstDiffI] : 0)
+      < ((firstDiffI > m2shift && firstDiffI < m2End) ? m2[firstDiffI - m2shift] : 0)
+
+  for (let i = 0; i < m2shift; ++i) {
+    scratch[i] = m1[i]
+  }
+  let m = m1Len > m2End ? m2End : m1Len
+  for (let i = m2shift; i < m; ++i) {
+    scratch[i] = m1[i] - m2[i - m2shift]
+  }
+  for (let i = m1Len; i < m2End; ++i) {
+    scratch[i] = -m2[i - m2shift]
+  }
+  for (let i = m2End; i < m1Len; ++i) { // no checks needed
+    scratch[i] = m1[i]
   }
 
-  if (wordIndex === exactEnd) {
-    // Target was large enough to store the exact result. We clear everything after the last word and round
-    let lastIndex = wordIndex - positiveComputedI
-    for (let i = lastIndex; i < tLen; ++i) t[i] = 0
+  let carry = 0
+  for (let i = subEnd - 1; i >= 0; --i) {
+    let w = scratch[i]
+    w = swp ? -w : w
+    w += carry
 
-    doCarry(lastIndex - 1)
+    carry = -(w < 0)
+    w = (w < 0) ? w + 0x40000000 : w
 
-    return swp | ((-positiveComputedI + roundMantissaToPrecision(t, tLen, t, tLen, prec, rm)) << 2)
-  } else {
-    let canBeRounded = canMantissaBeRounded(t, tLen, prec, wordIndex, rm, 1, 1)
-    let trailingInfo = 0
-
-    if (!canBeRounded) {
-      // Compute trailing info
-      let nextWord = 0
-
-      while (1) {
-        let mant2Index = wordIndex - m2shift
-        let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
-            mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
-
-        nextWord = (mant1Word - mant2Word) | 0
-
-        if (nextWord < 0) {
-          t[tLen - 1] -= 1
-          nextWord += 0x40000000
-
-          let zeros = doCarry(tLen - 1)
-
-          if (zeros) {
-            // Rare edge case:
-            // mant1:          [ 0x00000001, 0x00000000, 0x00000000 ]
-            // mant2:          [ 0x00000000, 0x00000000, 0x00000001 ]
-            // target before:  [ 0x00000001, 0x00000000 ]
-            // nextWord before: -0x00000001
-            // target after:   [ 0x3fffffff, 0x3fffffff ]
-
-            t[tLen - 1] = nextWord
-            wordIndex++
-
-            continue
-          }
-        }
-
-        break
-      }
-
-      // Various splitting points for rounding. 0 and 2 require more words to be examined
-      if (nextWord === 0x00000000) {
-        trailingInfo = 0
-      } else if (nextWord < 0x20000000) {
-        trailingInfo = 1
-      } else if (nextWord === 0x20000000) {
-        trailingInfo = 2
-      } else {
-        trailingInfo = 3
-      }
-
-      if (!(trailingInfo & 1)) {
-        // trailingInfo = 0 or 2
-        ++wordIndex
-
-        // If the second mantissa is wholly after the first mantissa, skip ahead to the second mantissa since all the
-        // words in between will be 0
-        if (m2shift > m1Len)
-          wordIndex = Math.max(wordIndex, m2shift)
-
-        for (; wordIndex < exactEnd; ++wordIndex) {
-          let mant2Index = wordIndex - m2shift
-          let mant1Word = (wordIndex < m1Len) ? m1[wordIndex] : 0,
-              mant2Word = (mant2Index >= 0 && mant2Index < m2Len) ? m2[mant2Index] : 0
-
-          let word = (mant1Word - mant2Word) | 0
-
-          if (word === 0) continue
-          else if (word < 0) {
-            if (trailingInfo === 2) {
-              // Negative word on a tie means it's below a tie
-              trailingInfo = 1
-              break
-            }
-
-            // Subtract one ulp, then set trailing info to 3 (equivalent to "trailing mode -1")
-            t[tLen - 1]--
-            let zeros = doCarry(tLen - 1)
-
-            if (zeros) t[tLen - 1] = 0x3fffffff
-
-            trailingInfo = 3
-            break
-          } else if (word > 0) {
-            if (trailingInfo === 2) {
-              trailingInfo = 3
-            } else trailingInfo = 1
-            break
-          }
-        }
-      }
-    }
-
-    return swp | ((-positiveComputedI + roundMantissaToPrecision(t, tLen, t, tLen, prec, rm, trailingInfo)) << 2)
+    scratch[i] = w
   }
+
+  return ((-firstDiffI + roundMantissaToPrecisionWithSeek(scratch, subEnd, t, tLen, prec, rm, 0)) << 2) + (+swp)
+
 }
 
 /**
