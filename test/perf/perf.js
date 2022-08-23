@@ -131,17 +131,19 @@ const DESIRED_BENCHMARK_TIME = 1000
 function _benchmarkGeneric(f, iterations, inputs, exchangeLoops) {
   let start = performance.now()
   let inputCount = inputs.length
+  let result, results = []
 
   if (inputs.length === 1) {
     let input = inputs[0]
-    for (let i = 0; i < iterations; ++i) f(...input)
+    for (let i = 0; i < iterations; ++i) results.push(result =  f(...input))
   } else if (exchangeLoops) {
-    for (let j = 0; j < inputCount; ++j) for (let i = 0; i < iterations; ++i) f(...inputs[j])
+    for (let j = 0; j < inputCount; ++j) for (let i = 0; i < iterations; ++i) results.push(result = f(...inputs[j]))
   } else {
-    for (let i = 0; i < iterations; ++i) for (let j = 0; j < inputCount; ++j) f(...inputs[j])
+    for (let i = 0; i < iterations; ++i) for (let j = 0; j < inputCount; ++j) results.push(result = f(...inputs[j]))
   }
 
   let end = performance.now()
+  deopt = results
 
   let totalInputs = iterations * inputCount
   let msPerInput = (end - start) / totalInputs
@@ -152,12 +154,15 @@ function _benchmarkNoInput(f, iterations, inputCount) {
   iterations *= inputCount
 
   let start = performance.now()
-  for (let i = 0; i < iterations; ++i) f()
+  let result, results = []
+  for (let i = 0; i < iterations; ++i) results.push(result = f())
   let end = performance.now()
+
+  deopt = results
 
   let msPerInput = (end - start) / iterations
 
-  return { f, iterations, exchangeLoops: false, inputs: [[]], totalInputs: iterations, msPerInput, total: end - start }
+  return { f, iterations, exchangeLoops: false, inputs: [[]], totalInputs: iterations, msPerInput, total: end - start, result }
 }
 
 function _benchmarkSingleArg(f, iterations, inputs, exchangeLoops) {
@@ -166,14 +171,17 @@ function _benchmarkSingleArg(f, iterations, inputs, exchangeLoops) {
   let inputCount = inputs.length
 
   let start = performance.now()
-  let result = 0
+  let results = []
+  let result
   if (exchangeLoops) {
-    for (let j = 0; j < inputCount; ++j) for (let i = 0; i < iterations; ++i) result = f(flattenedInputs[j])
+    for (let j = 0; j < inputCount; ++j) for (let i = 0; i < iterations; ++i) results.push(result = f(flattenedInputs[j]))
   } else {
-    for (let i = 0; i < iterations; ++i) for (let j = 0; j < inputCount; ++j) result = f(flattenedInputs[j])
+    for (let i = 0; i < iterations; ++i) for (let j = 0; j < inputCount; ++j) results.push(result = f(flattenedInputs[j]))
   }
 
   let end = performance.now()
+
+  deopt = results
 
   let totalInputs = iterations * inputCount
   let msPerInput = (end - start) / totalInputs
@@ -194,6 +202,7 @@ function showTime(ms) {
 }
 
 let benchName = 0
+window.deopt = undefined
 
 /**
  *
@@ -219,17 +228,21 @@ export function benchmark(f, {
   if (!inputs.length) inputs = [[]]
   let warmupTime = 0
 
+  let results = []
+
   if (doWarmup) {
     warmupTime = performance.now()
     for (let i = 0; i < warmupIterations; ++i) {
       for (let input of inputs) {
-        f(...input) // since this is a warmup, we're not going to be terribly precise
+        let result = f(...input) // since this is a warmup, we're not going to be terribly precise
+        results.push(result)
       }
     }
     warmupTime = performance.now() - warmupTime
   }
 
   warmupTime /= warmupIterations
+  deopt = results
 
   if (warmupTime === 0 && iterations < 0) {
     warn("Warmup was unmeasurable, using " + DEFAULT_ITERATIONS)

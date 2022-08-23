@@ -152,3 +152,7 @@ export function multiplyMantissas (mant1, mant2, precision, targetMantissa, roun
 
   return shift
 }
+
+export function bfFromString(s: string, prec: number) {
+
+}

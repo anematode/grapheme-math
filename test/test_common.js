@@ -1,5 +1,6 @@
 import {rightZeroPad} from "../build/utils.js"
 import {ROUNDING_MODE} from "../build/other/rounding_modes.js"
+import {BigFloat} from "../build/arb/bigfloat.js";
 
 export const NONFINITE_NUMBERS = [ NaN, Infinity, -Infinity ]
 
@@ -93,7 +94,7 @@ troublesomeWords.forEach(w => w ? difficultMantissas.push([ w ]) : 0)
 troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => difficultMantissas.push([ w1, w2 ])) : 0)
 troublesomeWords.forEach(w1 => w1 ? troublesomeWords.forEach(w2 => troublesomeWords.forEach(w3 => difficultMantissas.push([ w1, w2, w3 ]))) : 0)
 
-const typicalWords = [ 0x20000000, 0x2eefcafe, 0x32ab30ca, 0x00000000, 0x00000040 ]
+const typicalWords = [ 0x20000000, 0x2eefcafe, 0x32ab30ca, 0x00000000, 0x00000040, 0x2faaaaaa, 0x2bbbbbbb, 0x00000001 ]
 
 typicalWords.forEach(w => w ? typicalMantissas.push([ w ]) : 0)
 typicalWords.forEach(w1 => w1 ? typicalWords.forEach(w2 => typicalMantissas.push([ w1, w2 ])) : 0)
@@ -104,8 +105,34 @@ export function cartesianProduct (...args) {
   return args.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat(1))))
 }
 
+export function* cartesianProductGen(...args) {
+  if (args.length === 0) {
+    yield []
+    return
+  }
+
+  if (args.length === 1) {
+    for (let k of args[0]) {
+      yield [ k ]
+    }
+  } else {
+    for (let k of args[0]) {
+      for (let g of cartesianProductGen(args.slice(1)))
+        yield [ k, ...g ]
+    }
+  }
+}
+
 export const ALL_NUMBERS = [ [...new Array(1000).keys()].map(x => [x, -x]).flat(), ...TYPICAL_NUMBERS, ...RANDOM_NUMBERS, ...PATHOLOGICAL_NUMBERS ]
 export const RANDOM_BIGINTS = []
+
+export const RANDOM_BIGFLOATS = [
+        ...cartesianProduct([-2, -1, 0, 1, 2, -30, 30, 100, -100, -19], typicalMantissas, [-1, 1], [30, 60, 120]).map(([exp, m, s, p]) => {
+          return new BigFloat(s, exp, p, m)
+    }),
+
+...[NaN, -Infinity, Infinity, 0, -0].map(x => BigFloat.fromNumber(x, 53, ROUNDING_MODE.NEAREST))
+]
 
 let rng = getRNG(11)
 let k = 14204n

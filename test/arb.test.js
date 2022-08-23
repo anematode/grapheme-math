@@ -1,11 +1,12 @@
 import {ROUNDING_MODE, roundingModeToString} from "../build/other/rounding_modes.js"
 import {
-    cartesianProduct,
+    cartesianProduct, cartesianProductGen,
     difficultMantissas,
     PATHOLOGICAL_NUMBERS,
     ROUNDING_MODES, STRICT_ROUNDING_MODES,
     TYPICAL_NUMBERS, typicalMantissas,
-    ALL_NUMBERS, RANDOM_BIGINTS
+    ALL_NUMBERS, RANDOM_BIGINTS,
+    RANDOM_BIGFLOATS
 } from "./test_common.js"
 import {
     roundMantissaToPrecision,
@@ -289,7 +290,68 @@ describe("BigFloat", function () {
             }))
         })
 
-        it("Should work for bigints", () => {})
+        it("Should work for whatever rounding", () => {
+            expectMultipleCases((an, bn) => {
+                let a = BigFloat.fromNumber(an)
+                let b = BigFloat.fromNumber(bn)
+                let prec = 53
+
+                let precise = BigFloat.add(a, b, 1000, RM.NEAREST)
+                let whatever = BigFloat.add(a, b, prec, RM.WHATEVER)
+
+                let err = BigFloat.ulpError(precise, whatever)
+
+                if (Math.abs(err) <= 1 || err !== err) return true
+                return false
+            }, (function* () {
+                let g = cartesianProductGen(RANDOM_BIGFLOATS, RANDOM_BIGFLOATS)
+                    for (let k of g) {
+                        yield [k, true]
+                    }
+                })())
+        })
+    })
+
+    describe("BigFloat.mulTo", () => {
+        it("Should work for f64", () => {
+            expectMultipleCases((a, b) => {
+
+                return BigFloat.mul(BigFloat.fromNumber(a), BigFloat.fromNumber(b)).toNumber()
+            }, cartesianProduct(ALL_NUMBERS, ALL_NUMBERS).map(([a, b]) => {
+                return [[a, b], a * b]
+            }))
+        })
+
+        it("Should work for f32", () => {
+            expectMultipleCases((a, b) => {
+                return BigFloat.mul(BigFloat.fromNumber(a, 24), BigFloat.fromNumber(b, 24)).toNumber(ROUNDING_MODE.NEAREST, true)
+            }, cartesianProduct(ALL_NUMBERS, ALL_NUMBERS).map(([a, b]) => {
+                a = Math.fround(a)
+                b = Math.fround(b)
+                return [[a, b], Math.fround(a * b)]
+            }))
+        })
+
+        it("Should work for whatever rounding", () => {
+            expectMultipleCases((an, bn) => {
+                let a = BigFloat.fromNumber(an)
+                let b = BigFloat.fromNumber(bn)
+                let prec = 53
+
+                let precise = BigFloat.mul(a, b, 1000, RM.NEAREST)
+                let whatever = BigFloat.mul(a, b, prec, RM.WHATEVER)
+
+                let err = BigFloat.ulpError(precise, whatever)
+
+                if (Math.abs(err) <= 1 || err !== err) return true
+                return false
+            }, (function* () {
+                let g = cartesianProductGen(RANDOM_BIGFLOATS, RANDOM_BIGFLOATS)
+                for (let k of g) {
+                    yield [k, true]
+                }
+            })())
+        })
     })
 
     describe("BigFloat.divTo", () => {

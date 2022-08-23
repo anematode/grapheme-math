@@ -3,6 +3,7 @@ node_modules
 dist
 turbo-*
 build/*
+**/.DS_Store
 
 # Allow
 !/build/main.js

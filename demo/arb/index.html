@@ -29,6 +29,7 @@
     function play() {
         BI = Grapheme.BigInt
         BF = Grapheme.BigFloat
+        RM = Grapheme.ROUNDING_MODE
 
         Decimal.config({precision})
         BF.setPrecision(precision)
@@ -103,7 +104,7 @@
 
         for (let i = 0; i < floats.length; ++i) {
             for (let j = 0; j < floats.length; ++j) {
-                BF.mulTo(boundedBigFloats[i], boundedBigFloats[j], res, Grapheme.ROUNDING_MODE.WHATEVER)
+                BF.mulTo(boundedBigFloats[i], boundedBigFloats[j], res, Grapheme.ROUNDING_MODE.NEAREST)
             }
         }
         return floats.length ** 2
@@ -188,7 +189,7 @@
     }
 
     function benchmarkMultiplication () {
-        benchmark_(decimalMultiplication, "decimal.js multiplication", 10)
+        //benchmark_(decimalMultiplication, "decimal.js multiplication", 10)
         benchmark_(multiplication, "BF multiplication", 10)
     }
 
