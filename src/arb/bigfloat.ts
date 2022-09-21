@@ -1541,21 +1541,87 @@ export function divMantissas (
   return newMantissaShift + roundingShift
 }
 
+/**
+ * Get how many ulps down this number can be tweaked until the next ulp down is half the magnitude. The result may be
+ * inexact if there are more than 2^30 - 1 ulps to go down, in which case it will return (1 << 30). That's because this
+ * function isn't really meant for large counts. There are more powerful ways to do that, such as good ol' subtraction.
+ */
+export function getAllowedEqualUlpsDown(m: Mantissa, mLen: number, prec: number): number {
+  const MAX_ULPS = 1 << 30
+
+  // [ 0x00100000, 0x00000400, 0x03200001, .... ]
+  //       <----------------------->   --->  unrounded junk
+  //      start of prec      end of prec
+  //          \____________________\____
+  //             00000000  00000400  032  -> to number 0x400032
+  // Our policy is that unrounded junk does not count toward the ulp count. Therefore we only need to extract the
+  // contents in the annotated region and convert them to a count.
+
+  let lw = m[0]
+  let lz = Math.clz32(lw) - 2
+
+  if (prec > 60) { // fairly common and trivial cases
+    if ((lw & (lw - 1)) !== 0 || (prec > 90 && m[1] !== 0)) {  // too many
+      return MAX_ULPS
+    }
+  }
+
+  // Do a proper checking
+  let trunc = (prec + lz) | 0
+  let truncWordI = (trunc / BIGFLOAT_WORD_BITS) | 0
+  let truncLen = (BIGFLOAT_WORD_BITS - (trunc - Math.imul(truncWordI, BIGFLOAT_WORD_BITS)) | 0) | 0
+
+  let secondToLast = m[truncWordI - 1] - ((truncWordI === 1 /* low precision */) ? (1 << (30 - lz)) : 0)
+  let shl = 30 - truncLen
+  let stlContribution = secondToLast << shl
+  let kk = (m[truncWordI] >> truncLen) + stlContribution
+
+  let overflow = secondToLast - (stlContribution >> shl)
+  console.log(overflow)
+
+  if (overflow === 0) {
+    for (let i = truncWordI - 2; i >= 1; --i) {
+      if (m[i] !== 0) return MAX_ULPS
+    }
+
+    return kk
+  }
+
+  return MAX_ULPS
+}
+
+/**
+ * Given a mantissa, round it up or down by some number of ulp (should be between -2^29 and 2^29), to a given
+ * precision. If the mantissa is already not fully rounded, no extra rounding is done; it's just incremented
+ * by the appropriate amount.
+ * @param m
+ * @param mLen
+ * @param cnt
+ * @param prec
+ */
 export function tweakMantissaUlpInPlace(m: Mantissa, mLen: number, cnt: number, prec: number): number {
   let offset = Math.clz32(m[0]) - 2
 
-  let trunc = (prec + offset) | 0                   // what BIT after which the mantissa should be all zeros
+  let fakePrec = prec
+
+  let trunc = (fakePrec + offset) | 0                   // what BIT after which the mantissa should be all zeros
   let truncWordI = (trunc / BIGFLOAT_WORD_BITS) | 0 // which word this bit occurs in
   // How many bits need to be removed off the word; always between 1 and 30 inclusive
-  let truncLen = BIGFLOAT_WORD_BITS - (trunc - Math.imul(truncWordI, BIGFLOAT_WORD_BITS) /* will never overflow */)
+  let truncLen = (BIGFLOAT_WORD_BITS - (trunc - Math.imul(truncWordI, BIGFLOAT_WORD_BITS) /* will never overflow */) | 0) | 0
 
-  m[truncWordI] += (cnt << truncLen) & 0x3fffffff
-  m[truncWordI - 1 /* TODO check */] += cnt >> truncLen
+  // Compute how many ulps up/down can be done until a new ulp threshold is reached
+
+
+  let nw1 = (m[truncWordI] + (cnt << truncLen) & 0x3fffffff) | 0
+  let nw2 = (m[truncWordI - 1] + (cnt >> truncLen)) | 0
+
+  m[truncWordI] = nw1
+  m[truncWordI - 1] = nw2
 
   let carry = 0
   if (cnt < 0) {
     for (let i = truncWordI - 1; i >= 0; --i) {
-      let w = m[i] + carry
+      let w = (m[i] + carry) | 0
       carry = -(w < 0) | 0
       w = (w < 0) ? w + 0x40000000 : w
 
@@ -1578,17 +1644,18 @@ export function tweakMantissaUlpInPlace(m: Mantissa, mLen: number, cnt: number, 
     }
   }
 
+  let sh = 0
   if (carry === 1) {
     rightShiftMantissaByOneWord(m, mLen)
     m[0] = 1
 
-    return 1
+    sh = 1
   } else if (m[0] === 0) {
     leftShiftMantissaByOneWord(m, mLen)
-    return -1
+    sh = -1
   }
 
-  return 0
+  return sh
 }
 
 /**
