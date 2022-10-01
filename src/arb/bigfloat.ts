@@ -1577,7 +1577,6 @@ export function getAllowedEqualUlpsDown(m: Mantissa, mLen: number, prec: number)
   let kk = (m[truncWordI] >> truncLen) + stlContribution
 
   let overflow = secondToLast - (stlContribution >> shl)
-  console.log(overflow)
 
   if (overflow === 0) {
     for (let i = truncWordI - 2; i >= 1; --i) {

@@ -9,7 +9,6 @@ import {
   SceneContextInstruction
 } from "./renderer_instruction.js"
 
-
 class AnnotatedSceneCopy {
 
 }
@@ -177,6 +176,12 @@ export class SceneGraph {
 
   perfCounters: SceneGraphPerfCounters
 
+  // one node for each context, after flattening and reordering, instructions remain uncompiled and unmerged
+  // children nodes are either instructions (generally unmodified) or other contexts. Context ids are the same
+  // as ids in the annotated scene
+  annotatedContextNodes: Map<string, SceneAnnotatedNode>
+  annotatedContextCount: number
+
   constructor (renderer: WebGLRenderer | null) {
     this.renderer = renderer
     this.id = getStringID()
@@ -189,7 +194,7 @@ export class SceneGraph {
   }
 
   /**
-   * Whether this scene graph has been built from a scene
+   * Whether this scene graph has been built
    */
   hasScene (): boolean {
     return !!this.sceneTopNode
@@ -376,6 +381,14 @@ export class SceneGraph {
     this._getSceneRenderingInfo(scene)
   }
 
+  assembleInstructions () {
+    this.orderInstructions()
+    this.forEachAnnotatedNode(console.log)
+  }
+
+  compile () {
+
+  }
 
   // Sort and shift around instructions based on their zIndices and escapeContext status
   orderInstructions () {

@@ -354,6 +354,25 @@ describe("BigFloat", function () {
         })
     })
 
+    describe("BigFloat.ulpError", () => {
+        it("Should give correct results", () => {
+            expectMultipleCases((a, b) => {
+                return BigFloat.ulpError(a, b)
+            },
+                [
+                    [[1, 1], 0],
+                    [[1, 1 + Number.EPSILON], 1],
+                    [[1, 1 - Number.EPSILON / 2], -1],
+                    [[-2, -2 - 2 * Number.EPSILON], -1],
+                    [[2, 2 + 4 * Number.EPSILON], 2],
+                    [[Infinity, Infinity], NaN],
+                    [[-Infinity, Infinity], Infinity],
+                    [[NaN, 4], NaN],
+                    [[1042, 1042.000005], 21990233],
+            ])
+        })
+    })
+
     describe("BigFloat.divTo", () => {
         it("Should work for f64", () => {
 

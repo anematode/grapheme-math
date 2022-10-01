@@ -408,6 +408,7 @@ export class WebGLRenderer {
 
   renderDOMScene (scene) {
     let graph = new SceneGraph(this)
+    scene.updateAll()
 
     window.graph = graph
 

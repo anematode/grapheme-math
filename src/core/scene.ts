@@ -2,7 +2,6 @@ import { Group } from './group.js'
 import { BoundingBox } from '../other/bounding_box.js'
 import { SceneDimensions } from "../other/scene_dims.js"
 
-
 const DEFAULT_SCENE_DIMS = new SceneDimensions(640, 480, 1)
 const MIN_SIZE = 100, MAX_SIZE = 16384
 const MIN_DPR = 0.1, MAX_DPR = 16
