@@ -1,6 +1,7 @@
 import { Group } from './group.js'
 import { BoundingBox } from '../other/bounding_box.js'
 import { SceneDimensions } from "../other/scene_dims.js"
+import {Color, ColorLike} from "../other/color";
 
 const DEFAULT_SCENE_DIMS = new SceneDimensions(640, 480, 1)
 const MIN_SIZE = 100, MAX_SIZE = 16384
@@ -28,6 +29,7 @@ export class Scene extends Group {
     this.scene = this
 
     this.props.set('sceneDims', new SceneDimensions(640, 480, 1))
+    this.props.set('backgroundColor', new Color(0, 0, 0, 0))
     this.props.setPropertyInheritance('sceneDims', true)
   }
 
@@ -73,6 +75,10 @@ export class Scene extends Group {
     return this
   }
 
+  setBackgroundColor(color: ColorLike) {
+    this.props.set("backgroundColor", Color.fromObj(color))
+  }
+
   /**
    * Compute the internal property "sceneDimensions"
    */
@@ -111,8 +117,8 @@ export class Scene extends Group {
 
     this.internal.renderInfo = {
       contexts: [{
-        insnType: 'scene',
-        dims: this.props.get('sceneDims'),
+        type: 'scene',
+        sceneDims: this.props.get('sceneDims'),
         backgroundColor: this.props.get('backgroundColor')
       }]
     }

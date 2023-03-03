@@ -262,5 +262,6 @@ export class MathematicalAssignmentGraph extends AssignmentGraph<MathematicalGra
 export class ConcreteAssignmentGraph extends AssignmentGraph<ConcreteGraphNode> {
   optimize (opts={}) {
     // Crude optimization
+
   }
 }

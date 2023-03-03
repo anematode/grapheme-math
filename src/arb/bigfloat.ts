@@ -2562,8 +2562,24 @@ export class BigFloat {
   }
 
   setFromString(s: string, rm: RoundingMode = WORKING_RM) {
+    // Steps:
+    //  Convert to form   i * 10^e * 2^k, where i is an odd integer (exact scale doesn't matter)
+    //  A: Compute 10^e lazily to (prec - flrLog2(i) + slop) bits, where slop is chosen so that the probability of needing
+    //    further calculation is unlikely. Results may be cached if appropriate
+    //  Compute i * 10^e, tracking possible rounding error
+    //  If rounding error is too large to conclude the correct result, go to A
 
   }
+
+  toString(opts: BigFloatToStringOpts) {
+
+  }
+}
+
+type BigFloatToStringOpts = {
+  // if -1, print as many digits as necessary to unambiguously identify the number under the current precision.
+  // otherwise, use as many digits
+  effectivePrecision: -1
 }
 
 const SCRATCH_MANTISSA = createMantissa(53)

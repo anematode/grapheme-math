@@ -12,6 +12,7 @@
   },
   "type": "module",
   "dependencies": {
-    "prettier-standard": "^16.4.1"
+    "prettier-standard": "^16.4.1",
+    "ts-node": "^10.9.1"
   }
 }

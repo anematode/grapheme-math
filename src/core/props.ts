@@ -3,7 +3,7 @@ import { deepEquals, getVersionID } from '../utils.js'
 /**
  * The properties class stores an element's internal properties, in contrast to the user-facing properties. There are
  * benefits and costs to this approach. One of the main benefits is an easier
- * API for the programmer to manipulate complex stylings and properties. Another benefit is the built-in ability to
+ * way for the programmer to manipulate complex stylings and properties. Another benefit is the built-in ability to
  * track whether a value has changed and whether it should be passed on to child elements. It also provides a sort of
  * abstract concept where the properties are the definition of how a given object is rendered.
  */
@@ -48,17 +48,20 @@ export class Props {
   proxy: PropsProxy
   // Stores whether any property has changed as a bitmask
   hasChangedProperties: number
-  // 0 when no inheritable properties have changed, 1 when an inheritable property has changed since the last time
-  // the scene was fully updated, and 2 when the actual list of inheritable properties has changed (different
-  // signature of inheritance, if you will).
-  hasChangedInheritableProperties: PropertyInheritanceChanged
+  // Largest version of a change to an inheritable property, including changed signature, removal, changed value, etc.
+  // -- used to check whether it needs to be updated
+  lastInheritableChanged: number
+  // Last version when all inheritable properties were scanned
+  lastInherited: number
 
   constructor () {
     this.store = new Map()
 
     this.proxy = new Proxy(this, proxyHandlers)
     this.hasChangedProperties = 0
-    this.hasChangedInheritableProperties = 0
+
+    this.lastInheritableChanged = -1
+    this.lastInherited = -1
   }
 
   static toBit (as: AccessorName): AccessorNameBit {
@@ -75,11 +78,11 @@ export class Props {
     throw new Error(`Unknown accessor name ${as}`)
   }
 
-  _getPropertyStore (propName: string): PropStore | undefined {
+  private _getPropertyStore (propName: string): PropStore | undefined {
     return this.store.get(propName)
   }
 
-  _setPropertyStore (propName: string, value: PropStore) {
+  private _setPropertyStore (propName: string, value: PropStore) {
     this.store.set(propName, value)
   }
 
@@ -88,7 +91,7 @@ export class Props {
    * @param propName
    * @returns Property store associated with the given property name
    */
-  _createPropertyStore (propName: string): PropStore {
+  private _createPropertyStore (propName: string): PropStore {
     let existing = this._getPropertyStore(propName)
 
     if (!existing) {
@@ -103,11 +106,11 @@ export class Props {
    * Deletes a property store wholesale, not trying to account for changed values and the like.
    * @param propName
    */
-  _deletePropertyStore (propName: string) {
+  private _deletePropertyStore (propName: string) {
     this.store.delete(propName)
   }
 
-  _forEachStore (callback: (store: PropStore) => void) {
+  private _forEachStore (callback: (store: PropStore) => void) {
     for (let value of this.store.values()) {
       callback(value)
     }
@@ -187,14 +190,15 @@ export class Props {
    */
   inheritPropertiesFrom (props: Props, updateAll = false) {
     // Early exit condition, where if no inheritable properties have changed, we need not do anything
-    if (!(updateAll || props.hasChangedInheritableProperties)) return
+    let inheritanceNeeded = this.lastInherited < props.lastInheritableChanged
+    if (!(updateAll || inheritanceNeeded)) return
 
-    updateAll = updateAll || props.hasChangedInheritableProperties === 2
+    updateAll = updateAll || inheritanceNeeded
 
     // We recalculate all local properties whose inheritance is 1, indicating they were inherited from above. Properties
     // not found above are deleted, properties found above are copied if their version is greater than or equal to the
     // version of the current property. This ensures that this props does not have any extraneous properties or any
-    // incorrect/nonupdated values.
+    // incorrect/nonupdated values, but it may be missing values. These will be scanned for if updateAll is true.
     for (const [propName, propStore] of this.store.entries()) {
       if (propStore.inherit !== 1) continue
 
@@ -211,7 +215,7 @@ export class Props {
         propStore.inherit = 0
 
         this.markHasChangedProperties()
-        this.markHasChangedInheritableProperties()
+        this.markHasChangedInheritable()
 
         continue
       }
@@ -223,7 +227,7 @@ export class Props {
         propStore.changed |= 0b1
 
         this.markHasChangedProperties()
-        this.markHasChangedInheritableProperties()
+        this.markHasChangedInheritable()
       }
     }
 
@@ -247,7 +251,7 @@ export class Props {
             ourPropStore.inherit = 1
             ourPropStore.value = propStore.value
 
-            this.markHasChangedInheritanceSignature()
+            this.markHasChangedInheritable()
           }
 
           ourPropStore.version = propStore.version
@@ -324,7 +328,7 @@ export class Props {
         // If setting the real value, need to change the version
         if (as === 0) {
           store.version = getVersionID()
-          if (markChanged) this.markHasChangedInheritanceSignature()
+          if (markChanged) this.markHasChangedInheritable()
         }
       } else {
         // Set its value to undefined
@@ -366,7 +370,7 @@ export class Props {
       // For values to be inherited, store the version of this value. Only for inherit: 2 properties
       if (store.inherit === 2 && as === 0) {
         store.version = getVersionID()
-        this.markHasChangedInheritableProperties()
+        this.markHasChangedInheritable()
       }
     }
 
@@ -377,13 +381,8 @@ export class Props {
     this.hasChangedProperties |= 0b1
   }
 
-  markHasChangedInheritableProperties () {
-    let c = this.hasChangedInheritableProperties
-    this.hasChangedInheritableProperties = (c > 1) ? c : 1
-  }
-
-  markHasChangedInheritanceSignature () {
-    this.hasChangedInheritableProperties = 2
+  markHasChangedInheritable () {
+    this.lastInheritableChanged = getVersionID()
   }
 
   configureProperty (propName, opts: PropertyConfigurationOptions = {}) {
@@ -417,7 +416,7 @@ export class Props {
       delete store.inherit
     }
 
-    if (store.value !== undefined) this.hasChangedInheritableProperties = 2
+    if (store.value !== undefined) this.markHasChangedInheritable()
 
     return this
   }
@@ -495,7 +494,7 @@ export class Props {
     // If the store is inheritable, we need to generate a version ID
     if (store.inherit) {
       store.version = getVersionID()
-      this.markHasChangedInheritableProperties()
+      this.markHasChangedInheritable()
     }
   }
 
@@ -504,7 +503,8 @@ export class Props {
    */
   _markGlobalUpdateComplete () {
     if (this.hasChangedProperties) this.markAllUpdated()
-    this.hasChangedInheritableProperties = 0
+
+    // TODO ??
   }
 
   stringify () {

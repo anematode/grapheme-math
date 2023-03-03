@@ -91,7 +91,9 @@ export class Element extends Eventful {
    * Derived class–implemented function that is called when the element needs to be updated (usually to change how
    * it's displayed)
    */
-  _update () {}
+  _update () {
+    this._defaultInheritProps()
+  }
 
   /**
    * Add a given element as a child to this element. Fails on elements that are not groups.
@@ -189,11 +191,7 @@ export class Element extends Eventful {
     if (this.props.hasChangedProperties)
       this.updateStage = Math.min(this.updateStage, 0)
 
-    if (this.updateStage === 100) return
-
     this._update()
-
-    this.updateStage = 100
   }
 
   getChildren (): Element[] {

@@ -4,5 +4,6 @@ module.exports = {
   "allowSyntheticDefaultImports": true,
   "isolatedModules": true,
   "noEmit": true,
-  "strict": true
+  "strict": true,
+  loader: 'ts-node/esm'
 }

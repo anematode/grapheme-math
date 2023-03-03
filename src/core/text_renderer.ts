@@ -1,9 +1,27 @@
 import { potpack } from '../algorithm/rectangle_packing.js'
-import { nextPowerOfTwo } from '../utils.js'
+import {getVersionID, nextPowerOfTwo} from '../utils.js'
+import {TextStyle} from "../other/text_style";
+
+export type TextRect = {
+  w: number
+  h: number
+  x?: number
+  y?: number
+}
+
+export type TextInfo = {
+  style: TextStyle
+  rect: TextRect
+
+  text: string
+  metrics?: TextMetrics
+}
 
 export class TextRenderer {
   canvas: HTMLCanvasElement
   ctx: CanvasRenderingContext2D
+
+  textureObject: string
 
   constructor () {
     this.canvas = document.createElement('canvas')
@@ -15,6 +33,8 @@ export class TextRenderer {
 
     ctx.textAlign = 'left'
     ctx.textBaseline = 'alphabetic'
+
+    this.textureObject = getVersionID() + ''
   }
 
   /**
@@ -25,7 +45,7 @@ export class TextRenderer {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
   }
 
-  getMetrics (textInfo) {
+  getMetrics (textInfo: TextInfo) {
     const { ctx } = this
     const { fontSize, font } = textInfo.style
 
@@ -44,16 +64,20 @@ export class TextRenderer {
     ctx.textBaseline = 'alphabetic'
   }
 
-  drawText (textInfos) {
+  /**
+   * Draw a list of text, setting the w/h/x/y data in each TextInfo to the appropriate value
+   * @param textInfos
+   */
+  drawText (textInfos: TextInfo[]) {
     const { ctx } = this
     const padding = 2 // Extra padding to allow for various antialiased pixels to spill over
 
     // Sort by font to avoid excess ctx.font modifications
-    textInfos.sort((c1, c2) => c1.style.font < c2.style.font)
+    textInfos.sort((c1, c2) => +(c1.style.font < c2.style.font))
 
     // Compute where to place the text. Note that the text instructions are mutated in this process (in fact, the point
     // of this process is to provide the instruction compiler with enough info to get the correct vertices)
-    const rects = []
+    const rects: TextRect[] = []
     for (const draw of textInfos) {
       const metrics = this.getMetrics(draw)
 
@@ -96,8 +120,8 @@ export class TextRenderer {
       ctx.font = `${style.fontSize}px ${style.font}`
       const shadowRadius = draw.style.shadowRadius ?? 0
 
-      let x = draw.rect.x + draw.metrics.actualBoundingBoxLeft + shadowRadius
-      let y = draw.rect.y + draw.metrics.actualBoundingBoxAscent + shadowRadius
+      let x = draw.rect!.x! + draw.metrics!.actualBoundingBoxLeft + shadowRadius
+      let y = draw.rect!.y! + draw.metrics!.actualBoundingBoxAscent + shadowRadius
 
       // Stroke text behind the text with white
       if (shadowRadius) {
@@ -117,3 +141,8 @@ export class TextRenderer {
     }
   }
 }
+
+/**
+ * Globally used/shared text renderer
+ */
+export const TEXT_RENDERER = new TextRenderer()

@@ -79,6 +79,10 @@ import { Color, Colors } from '../other/color.js'
 import { calculateRectShift } from '../other/text_utils.js'
 import { BoundingBox } from '../other/bounding_box.js'
 import { Vec2 } from "../vec/vec2.js";
+import {Scene} from "./scene.js";
+import {PrimitiveRendererInstruction, SceneContextInstruction} from "./renderer_instruction.js";
+import {SceneDimensions} from "../other/scene_dims.js";
+import {MonochromaticGeometryProgram} from "./shaders.js";
 
 type ShaderType = number
 
@@ -336,7 +340,7 @@ export class WebGLRenderer {
       let glVao = this.gl.createVertexArray()
       if (!glVao) return null
 
-      this.vaos.set(vaoName, { vao: glVao })
+      this.vaos.set(vaoName, vao = { vao: glVao })
     }
 
     return vao
@@ -406,19 +410,104 @@ export class WebGLRenderer {
     return new Vec2(2 / canvas.width * dpr, -2 / canvas.height * dpr)
   }
 
+  private _monoDrawProgram(): GLProgramStore {
+    let program = this.getProgram('__MonochromaticGeometry')
+
+    if (!program) {
+      const programDesc = MonochromaticGeometryProgram
+      program = this.createProgram(
+          '__MonochromaticGeometry',
+          programDesc.vertex,
+          programDesc.fragment,
+          { vertexPosition: 0 },
+          ['xyScale', 'color']
+      )
+    }
+
+    if (!program) throw new Error("Unable to create program")
+
+    return program
+  }
+
+  renderGraph(graph: SceneGraph) {
+    let insns = graph.compiledInstructions
+    let gl = this.gl
+    let monoProgram = this._monoDrawProgram()
+    let xyScale = this.getXYScale()
+
+    console.log(xyScale)
+
+    for (let i = 0; i < insns.length; ++i) {
+      let _insn = insns[i]
+
+      switch (_insn.type) {
+        case "scene": {
+          let insn = _insn as SceneContextInstruction
+          let dims = insn.sceneDims
+
+          let w = dims.canvasWidth, h = dims.canvasHeight, dpr = dims.dpr
+          let color = insn.backgroundColor
+
+          this.clearAndResizeCanvas(w, h, dpr, color)
+          xyScale = this.getXYScale()
+
+          break
+        }
+
+        case "primitive": {
+          let insn = _insn as PrimitiveRendererInstruction
+          let primitive = insn.primitive
+
+          let compiled = insn.compiled
+          if (!compiled) break
+
+          gl.useProgram(monoProgram.program)
+
+          let vao = this.getVAO(compiled.vaoName)!.vao
+
+          gl.bindVertexArray(vao)
+          const color = insn.color
+
+          gl.uniform2f(monoProgram.uniforms.xyScale, xyScale.x, xyScale.y)
+          let r = 0.0039215
+          gl.uniform4f(
+              monoProgram.uniforms.color,
+              color.r * r,
+              color.g * r,
+              color.b * r,
+              color.a * r
+          )
+
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, insn.vertexData.vertexCount)
+
+          break
+        }
+
+        case "pop":
+          // no-op for now
+
+          break
+
+        // @ts-ignore
+        case "default":
+          // @ts-ignore
+          throw new Error("Unknown type " + _insn.type)
+      }
+    }
+  }
+
   renderDOMScene (scene) {
     let graph = new SceneGraph(this)
     scene.updateAll()
 
-    window.graph = graph
-
     graph.buildFromScene(scene)
-    graph.assembleInstructions()
     graph.compile()
 
+    this.renderGraph(graph)
+
     createImageBitmap(this.canvas).then(bitmap => {
-      console.log(bitmap)
       scene.bitmapRenderer.transferFromImageBitmap(bitmap)
     })
   }
+
 }

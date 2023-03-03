@@ -1,6 +1,6 @@
 ## Grapheme math
 
-![Grapheme logo](./demo/logo.svg)
+![Grapheme logo](../grapheme-math-new/tools/logo.svg)
 
 Computational parts of Grapheme.
 

@@ -40,7 +40,7 @@ export class Group extends Element {
    * Run callback(element) on this element and all the element's children
    * @param callback {Function}
    */
-  apply (callback: (elem: Element) => void) {
+  apply (callback: (childElem: Element) => void) {
     callback(this)
 
     this.children.forEach(child => child.apply(callback))
@@ -51,7 +51,7 @@ export class Group extends Element {
    * stages to 0. May change how this works later
    */
   informChildrenOfInheritance () {
-    if (this.props.hasChangedInheritableProperties && this.children) {
+    if (this.props.lastInheritableChanged /* TODO */ && this.children) {
       this.children.forEach(child => {
         let st = child.updateStage
         child.updateStage = (st < 0) ? 0 : st

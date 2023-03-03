@@ -1,4 +1,3 @@
-import {Element} from "../core/element.js"
 import {LinearPlot2DTransform} from "../other/linear_plot_transform.js"
 import {Group} from "../core/group.js"
 import {BoundingBox, BoundingBoxLike} from "../other/bounding_box.js"
@@ -19,11 +18,8 @@ export class Plot2D extends Group {
   init (params) {
     let props = this.props
 
-    // Inherits all the way down
     props.setPropertyInheritance("plotTransform", true)
-
     props.set("plotTransform", new LinearPlot2DTransform())
-
   }
 
   setPreserveAspectRatio (v: boolean) {
@@ -64,6 +60,7 @@ export class Plot2D extends Group {
   }
 
   _update () {
+    this._defaultInheritProps()
     this.updateTransform()
   }
 

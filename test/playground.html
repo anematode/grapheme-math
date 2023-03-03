@@ -13,41 +13,25 @@
         </div>
 
         <script>
-            let BF
             function play() {
-                BF = Grapheme.BigFloat
-
-
-            }
-
-
-            /*function play() {
-              n = Grapheme.compileNode("x * x + y", {
-                inputFormat: ['x', 'y'],
-                typechecks: true
-              })
-            }
-
-            function play2() {
               renderer = new Grapheme.WebGLRenderer()
               scene = new Grapheme.InteractiveScene()
 
               document.getElementById('container').appendChild(scene.domElement)
-
-              polyline = new Grapheme.PolylineElement()
               plot2d = new Grapheme.Plot2D()
 
+                polyline = new Grapheme.PolylineElement()
+
+                plot2d.add(polyline)
+                polyline.setVertices([ 0, 0, 200, 200, 10, 0, 210, 200 ])
+
               scene.add(plot2d)
-              scene.add(polyline)
-
-              polyline.setVertices([100, 100, 200, 200])
-
               scene.updateAll()
-              plot2d.fitScene()
-              scene.updateAll()
+
+                plot2d.fitScene()
 
               renderer.renderDOMScene(scene)
-            }*/
+            }
         </script>
 
     </body>

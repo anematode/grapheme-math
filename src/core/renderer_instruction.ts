@@ -3,6 +3,8 @@ import { Vec2Like } from "../vec/vec2.js";
 import { BoundingBoxLike } from "../other/bounding_box.js";
 import { SceneDimensions } from "../other/scene_dims.js";
 import { Color } from "../other/color.js";
+import {TextStyle} from "../other/text_style";
+import {TextRect} from "./text_renderer";
 
 export class VertexData {
   vertices: null | Float32Array // null implies no data
@@ -20,96 +22,64 @@ export class VertexData {
   }
 }
 
-type BaseContextInstruction = {
-  zIndex?: number
+type InstructionPrimitiveType = "triangles" | "lines" | "points" | "triangle_strip" | "line_strip"
 
+type BaseRendererInstruction = {
+  // Displayed z-index (higher is toward front, default: 0)
+  zIndex?: number,
+  // Level of contexts to escape when rendering (default: 0)
+  escapeContext?: number
+  // Number indicating whether an instruction has changed (default: -1)
+  version?: number
+}
+
+export type PrimitiveRendererInstruction = BaseRendererInstruction & {
+  type: "primitive"
+  primitive: InstructionPrimitiveType
+  vertexData: VertexData
+  color: Color
+
+  compiled?: {     // somewhat of an implementation detail...
+    vaoName: string    // key to VAO
+    buffName: string
+  }
+}
+
+type BaseContextInstruction = {
   version?: number
 }
 
 export type SceneContextInstruction = BaseContextInstruction & {
-  insnType: "scene"
-  dims: SceneDimensions
-  backgroundColor: Color
-}
-
-type BaseInstruction = {
-  zIndex?: number
-  // Must be updated every time the instruction changes
-  version?: number
-}
-
-export type PolylineRendererInstruction = BaseInstruction & {
-  insnType: "polyline"
-  // Flattened array of vertices; typed array is preferred
-  vertices: Float32Array | Float64Array | number[]
-  pen: Pen
-}
-
-type PrimitiveInstructionType = "triangles" | "lines" | "points" | "triangle_strip" | "line_strip"
-
-export type PrimitiveRendererInstruction = BaseInstruction & {
-  insnType: "primitive"
-  primitiveType: PrimitiveInstructionType
-  vertexData: VertexData
-  color: Color
-}
-
-type DebugType = "rectangle" | "point"
-
-// Because it's used for debugging, we're relatively permissive about inputs for convenience
-export type DebugInstruction = BaseInstruction & {
-  insnType: "debug"
-  type: DebugType
-  location?: Vec2Like
-  rect?: BoundingBoxLike
-}
-
-// Elements use these instructions
-export type RendererInstruction = PolylineRendererInstruction | DebugInstruction | PrimitiveRendererInstruction
-export type RendererContextInstruction = SceneContextInstruction
-
-type BaseCompiledRendererInstruction = {
-
-}
-
-export type CompiledPrimitiveRendererInstruction = BaseCompiledRendererInstruction & {
-  insnType: "primitive"
-  primitiveType: PrimitiveInstructionType
-  vao: string  // ptr to VAO array
-  buffers: string[]  // ptr to relevant buffers
-  color: Color
-  vertexCount: number
-}
-
-type BaseCompiledRendererContextInstruction = {
-
-}
-
-export type CompiledSceneContextInstruction = BaseCompiledRendererInstruction & {
-  insnType: "scene"
+  type: "scene"
   sceneDims: SceneDimensions
   backgroundColor: Color
 }
 
-// Good in case the previous render fucked something up
-export type ContextPopAllRendererInstruction = BaseCompiledRendererInstruction & {
-  insnType: "pop_all"
-}
-export type ContextPushRendererInstruction = CompiledSceneContextInstruction
-export type ContextPopRendererInstruction = BaseCompiledRendererInstruction & {
-  insnType: "pop_context"
+// Sui generis instruction which indicates the end of a context. Should never be used by elements
+type PopContextInstruction = BaseContextInstruction & {
+  type: "pop"
 }
 
-export type CompiledRendererContextInstruction = ContextPopAllRendererInstruction | ContextPushRendererInstruction | ContextPopRendererInstruction
+export type TextInstruction = BaseContextInstruction & {
+  type: "text",
 
-// The renderer understands these instructions
-export type CompiledRendererInstruction = CompiledPrimitiveRendererInstruction | CompiledRendererContextInstruction
+  style: TextStyle
+  text: string
+
+  compiled?: {
+    rect: TextRect
+    textureObject: string
+  }
+}
+
+export type RendererInstruction = PrimitiveRendererInstruction | TextInstruction
+export type ContextInstruction = SceneContextInstruction | PopContextInstruction
 
 /**
  * General form of rendering info outputted by a given element
  */
 export type RenderingInfo = {
-  contexts?: RendererContextInstruction[]
+  contexts?: ContextInstruction[]
   instructions?: RendererInstruction[]
   version?: number
 } | null

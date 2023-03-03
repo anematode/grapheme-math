@@ -246,7 +246,7 @@ export class Assembler {
     }
 
     function addPreamble (s: string) {
-      add (s, "preamble")
+      add(s, "preamble")
     }
 
     function addInternalFunction (args?: string[], forcedName: string = ""): string {

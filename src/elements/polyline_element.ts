@@ -122,10 +122,10 @@ export class PolylineElement extends Element {
     this.internal.renderInfo = vertexData ? {
       instructions: [
         {
-          insnType: "primitive",
-          primitiveType: "triangle_strip",
+          type: "primitive",
+          primitive: "triangle_strip",
           vertexData,
-          pen: pen,
+          color: pen.color,
           version: getVersionID()
         }
       ]
