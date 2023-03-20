@@ -1,9 +1,5 @@
 module.exports = {
-  "spec": "./test/**/*.test.js",
-  "esModuleInterop": true,
-  "allowSyntheticDefaultImports": true,
-  "isolatedModules": true,
-  "noEmit": true,
-  "strict": true,
-  loader: 'ts-node/esm'
+  "extension": ["ts"],
+  "spec": "test/**/*.test.ts",
+  "loader": "ts-node/esm"
 }

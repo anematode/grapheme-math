@@ -1,15 +1,15 @@
-import {WebGLRenderer} from "./renderer";
-import {Scene} from "./scene";
-import {Element} from "./element";
+import {WebGLRenderer} from "./renderer.js"
+import {Scene} from "./scene.js"
+import {Element} from "./element.js"
 import {
   ContextInstruction,
   PrimitiveRendererInstruction,
   RendererInstruction,
   RenderingInfo, TextInstruction
-} from "./renderer_instruction";
-import {Group} from "./group";
-import {getVersionID} from "../utils";
-import {TEXT_RENDERER, TextInfo} from "./text_renderer";
+} from "./renderer_instruction.js";
+import {Group} from "./group.js"
+import {getVersionID} from "../utils.js";
+import {TEXT_RENDERER, TextInfo} from "./text_renderer.js"
 
 class SceneGraphPerfCounters {
   insns: number

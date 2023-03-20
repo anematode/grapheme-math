@@ -1,6 +1,7 @@
 import { potpack } from '../algorithm/rectangle_packing.js'
 import {getVersionID, nextPowerOfTwo} from '../utils.js'
-import {TextStyle} from "../other/text_style";
+import {TextStyle} from "../other/text_style.js"
+import {inDOM} from "../utils.js";
 
 export type TextRect = {
   w: number
@@ -69,6 +70,8 @@ export class TextRenderer {
    * @param textInfos
    */
   drawText (textInfos: TextInfo[]) {
+    return
+
     const { ctx } = this
     const padding = 2 // Extra padding to allow for various antialiased pixels to spill over
 
@@ -145,4 +148,4 @@ export class TextRenderer {
 /**
  * Globally used/shared text renderer
  */
-export const TEXT_RENDERER = new TextRenderer()
+export const TEXT_RENDERER = inDOM ? new TextRenderer() : null

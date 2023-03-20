@@ -1,5 +1,6 @@
 import {parseExpression, ParseExpressionError, Complex, compileNode, RealInterval} from "../build/index.js"
 import { expect } from "chai"
+import { describe, it } from "mocha"
 import {expectMultipleCases} from "./test.js"
 
 describe("ast", () => {

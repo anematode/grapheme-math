@@ -31,6 +31,17 @@ type PropertyConfigurationOptions = {
   inherit?: boolean
 }
 
+// Scene
+//   ---> dimensions {width: 640, height: 320}  inheritance: 2
+// |
+// |---> Plot2D
+//    ----> plotTransform { ... }     inheritance: 2
+//    |
+//    |
+//    ----> FunctionPlot2D f(x)
+//       ---> f "sin(x)"
+//       ---> plotTransform { ... }    (inherited from Plot2D)
+
 // See Props description for more
 type PropertyInheritanceChanged = number
 // For each property, types of values which may be accessed

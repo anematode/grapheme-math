@@ -3,8 +3,8 @@ import { Vec2Like } from "../vec/vec2.js";
 import { BoundingBoxLike } from "../other/bounding_box.js";
 import { SceneDimensions } from "../other/scene_dims.js";
 import { Color } from "../other/color.js";
-import {TextStyle} from "../other/text_style";
-import {TextRect} from "./text_renderer";
+import {TextStyle} from "../other/text_style.js"
+import {TextRect} from "./text_renderer.js"
 
 export class VertexData {
   vertices: null | Float32Array // null implies no data

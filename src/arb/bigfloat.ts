@@ -10,7 +10,7 @@ import {
   ulp
 } from "../fp/manip.js"
 import {subtractMantissas as referenceSubtractMantissas} from "./reference.js";
-import {BigBall} from "./bigball";
+import {BigBall} from "./bigball.js"
 
 // A float is of the following form: sign * (2^30)^e * m, where m is a list of 30-bit words that contain the mantissa of
 // the float. m = m_1 / 2^30 + m_2 / 2^60 + ... . The precision is the number of bits kept track of in the words. Since

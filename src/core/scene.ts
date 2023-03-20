@@ -1,7 +1,7 @@
 import { Group } from './group.js'
 import { BoundingBox } from '../other/bounding_box.js'
 import { SceneDimensions } from "../other/scene_dims.js"
-import {Color, ColorLike} from "../other/color";
+import {Color, ColorLike} from "../other/color.js";
 
 const DEFAULT_SCENE_DIMS = new SceneDimensions(640, 480, 1)
 const MIN_SIZE = 100, MAX_SIZE = 16384

@@ -10,6 +10,9 @@ export function getVersionID () {
   return ++version
 }
 
+const inDOM = "document" in globalThis
+export { inDOM }
+
 // Generate an id of the form xxxx-xxxx
 // TODO: guarantee no collisions via LFSR or something similar
 export function getStringID () {
@@ -436,4 +439,96 @@ export function isValidVariableName (s: string) {
 
 export function staticImplements<T>(ctor: T) {
 
+}
+
+type TypedArrayHash = {
+  length: number
+  firstEntry: number
+
+  hash1: number
+  hash2: number
+}
+type NumericArrayHash = TypedArrayHash
+
+function computeNumericArrayHash(asU32: number[] | Int32Array, hash: NumericArrayHash) {
+  let a1 = 0xab784fa3, a2 = 0x105ff1c2
+  for (let i = 0; i < asU32.length; ++i) {
+    let e = asU32[i]
+
+    a1 = (((Math.imul(e, 0xa5a19b11) + 0x51aa1301) | 0) + a2) | 0
+    a2 = (((Math.imul(e, 0xa19b2a01) + 0xa5a19b11) | 0) + a2) | 0
+
+    a1 ^= a2 << 5
+    a2 ^= a1 >> 5
+  }
+
+  hash.hash1 = a1
+  hash.hash2 = a2
+}
+
+// Interpret as u32 , compute two 32-bit accumulators
+function computeTypedArrayHash(a: TypedArray, hash: TypedArrayHash) {
+  let asU32 = new Int32Array(a.buffer)
+
+  computeNumericArrayHash(asU32, hash)
+}
+
+/**
+ * Compare two typed arrays as raw memory
+ */
+export function memcmp(a: TypedArray, b: TypedArray): boolean {
+  let aBuf = a.buffer, bBuf = b.buffer, len = aBuf.byteLength | 0
+  if (len !== b.byteLength) return false
+
+  let truncatedLen = (len >> 2) << 2, aligned = truncatedLen === len
+
+  if (!aligned) {
+    // Compare last few bytes
+    let aAsU8 = new Uint8Array(aBuf), bAsU8 = new Uint8Array(bBuf)
+
+    for (let i = truncatedLen; i < len; ++i) {
+      if (aAsU8[i] !== bAsU8[i]) {
+        return false
+      }
+    }
+  }
+
+  if (truncatedLen !== 0) {
+    let aAsI32 = (a.constructor === Int32Array) ? a :
+        new Int32Array(aligned ? aBuf : aBuf.slice(0, truncatedLen))
+    let bAsI32 = (b.constructor === Int32Array) ? b :
+        new Int32Array(aligned ? bBuf : bBuf.slice(0, truncatedLen))
+
+    len >>= 2
+    for (let i = 0; i < len; ++i) {
+      if (aAsI32[i] !== bAsI32[i]) {
+        return false
+      }
+    }
+  }
+
+  return true
+}
+
+export function typedArrayEquals(a: TypedArray, b: TypedArray) {
+  if (a.constructor !== b.constructor) return false
+  let al = a.length, bl = b.length
+  if (al !== bl) return false
+
+  return memcmp(a, b)
+}
+
+export function hashTypedArray(a: TypedArray) : TypedArrayHash {
+  let len = a.length
+  let hash = {
+    length: len,
+    firstEntry: (len > 0) ? a[0] : 0,
+
+    hash1: 0,
+    hash2: 0
+  }
+
+  computeTypedArrayHash(a, hash)
+
+  return hash
 }

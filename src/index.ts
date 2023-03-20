@@ -19,6 +19,7 @@ export * from './complex/domain_coloring.js'
 
 export * from './bolus/bolus.js'
 export * from './core/renderer.js'
+export * from './core/scene.js'
 export * from './other/color.js'
 export * from './other/linear_plot_transform.js'
 export * from './vec/vec2.js'
@@ -29,3 +30,6 @@ export * from './algorithm/miscellaneous_geometry.js'
 export * from './algorithm/wasm/wasm_wrapper.js'
 export * from './elements/plot2d.js'
 export * from './core/text_renderer.js'
+
+import * as utils from "./utils.js"
+export { utils }
